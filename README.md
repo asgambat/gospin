@@ -6,7 +6,7 @@ go_spin is a Go application for scheduled management of Docker containers. Defin
 
 Thanks to [spinnerr](https://github.com/drgshub/spinnerr) project for the inspiration and design patterns.
 I have decided to rewrite the project in Go to leverage its performance, concurrency model, and strong ecosystem for Docker integration and to create a solution that could be easily integrated with my [Cosmos](https://github.com/azukaar/cosmos-server
-) installation. 
+) installation.
 
 ## ✨ Features
 
@@ -23,7 +23,7 @@ I have decided to rewrite the project in Go to leverage its performance, concurr
 
 ### Prerequisites
 
-- Go 1.25.6+ 
+- Go 1.25.6+
 - Docker
 
 ### Installation
@@ -229,7 +229,7 @@ curl -X POST http://localhost:8084/schedule \
   -H "Content-Type: application/json" \
   -d '{
     "id": "nginx-schedule",
-    "target": "nginx", 
+    "target": "nginx",
     "targetType": "container",
     "timers": [{"startTime":"08:00","stopTime":"18:00","days":[1,2,3,4,5],"active":true}]
   }'
@@ -415,13 +415,13 @@ graph TD
     E --> F[Background Persister]
     F --> G[JSON Repository]
     G --> H[File System]
-    
+
     I[File Watcher] --> J[Auto Reload]
     J --> D
-    
+
     K[Scheduler] --> L[Runtime]
     L --> M[Docker API]
-    
+
     N[Web UI] --> O[REST API]
     O --> C
 ```
@@ -476,8 +476,8 @@ graph TD
 ```yaml
 # docker-compose.prod.yml
 services:
-  go-spin:
-    image: go-spin:latest
+  gospin:
+    image: bassista/gospin:latest
     ports:
       - "8084:8084"
       - "8085:8085"
@@ -485,8 +485,9 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
       - ./config:/app/config
     environment:
-      - GO_SPIN_MISC_GIN_MODE=release
-      - GO_SPIN_MISC_CORS_ALLOWED_ORIGINS=https://your-domain.com
+      - GO_SPIN_MISC_CORS_ALLOWED_ORIGINS=https://your-domain.com #optional
+      - UID=1000 #docker user id or your user id
+      - GID=991 #docker group id
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8084/health"]
