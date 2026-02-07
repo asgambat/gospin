@@ -1,4 +1,4 @@
-# 🐳 go_spin
+# 🐳 Gospin
 
 **Scheduled Docker Container Management**
 
