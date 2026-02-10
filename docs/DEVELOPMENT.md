@@ -37,7 +37,7 @@
 
 1. **Clone and Setup**
    ```bash
-   git clone https://github.com/bassista/gospin.git
+   git clone https://github.com/asgambat/gospin.git
    cd gospin
    
    # Install dependencies
@@ -397,24 +397,6 @@ dlv test ./internal/cache -- -test.run TestStore
 ```
 
 ### Logging Best Practices
-
-**Structured Logging:**
-```go
-import "github.com/bassista/go_spin/internal/logger"
-
-// Component-specific logger
-log := logger.WithComponent("scheduler")
-
-// Context logging
-log.WithFields(logrus.Fields{
-    "container": containerName,
-    "operation": "start",
-    "duration": elapsed,
-}).Info("Container operation completed")
-
-// Error context
-log.WithError(err).Error("Failed to start container")
-```
 
 **Log Levels:**
 - `Debug`: Detailed internal information

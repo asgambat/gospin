@@ -30,7 +30,7 @@ I have decided to rewrite the project in Go to leverage its performance, concurr
 
 ```bash
 # Clone the repository
-git clone https://github.com/bassista/gospin.git
+git clone https://github.com/asgambat/gospin.git
 cd gospin
 
 # Build
@@ -349,9 +349,9 @@ go test ./...
 
 
 ## 📊 Coverage Report
-👉 [View the coverage report here](https://bassista.github.io/gospin/)
+👉 [View the coverage report here](https://asgambat.github.io/gospin/)
 
-[![Coverage](https://bassista.github.io/gospin/coverage.png)](https://bassista.github.io/gospin/)
+[![Coverage](https://asgambat.github.io/gospin/coverage.png)](https://asgambat.github.io/gospin/)
 
 
 ## 🏗️ Architecture
