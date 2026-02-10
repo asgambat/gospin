@@ -1,8 +1,8 @@
 {
 	"info": {
 		"_postman_id": "go-spin-collection",
-		"name": "go_spin API",
-		"description": "Collection to test go_spin application endpoints - scheduled Docker container management",
+		"name": "GoSpin API",
+		"description": "Collection to test GoSpin application endpoints - scheduled Docker container management",
 		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
 	},
 	"variable": [

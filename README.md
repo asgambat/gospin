@@ -1,8 +1,8 @@
-# 🐳 go_spin
+# 🐳 GoSpin
 
 **Scheduled Docker Container Management**
 
-go_spin is a Go application for scheduled management of Docker containers. Define containers, groups, and schedules with timers to automatically start/stop containers based on configured times and days.
+GoSpin is a Go application for scheduled management of Docker containers. Define containers, groups, and schedules with timers to automatically start/stop containers based on configured times and days.
 
 Thanks to [spinnerr](https://github.com/drgshub/spinnerr) project for the inspiration and design patterns.
 I have decided to rewrite the project in Go to leverage its performance, concurrency model, and strong ecosystem for Docker integration and to create a solution that could be easily integrated with my [Cosmos](https://github.com/azukaar/cosmos-server
@@ -30,8 +30,8 @@ I have decided to rewrite the project in Go to leverage its performance, concurr
 
 ```bash
 # Clone the repository
-git clone https://github.com/bassista/go_spin.git
-cd go_spin
+git clone https://github.com/bassista/gospin.git
+cd gospin
 
 # Build
 go build -o .build/main ./cmd/server/main.go
@@ -115,12 +115,12 @@ misc:
 
 ### Docker Socket Security
 
-go_spin requires access to the Docker socket (`/var/run/docker.sock`). This grants significant privileges:
+GoSpin requires access to the Docker socket (`/var/run/docker.sock`). This grants significant privileges:
 
 - **Development**: Use `runtime_type: memory` for testing without Docker access
 - **Production**: Consider running in a restricted environment or using Docker-in-Docker
 - **Container mode**: Mount Docker socket as read-only when possible
-- **User Permissions**: Run go_spin under a user with limited permissions and add it to the `docker` group. Provide userId and groupId as Environment Variables when running in Docker (UID and GID environment variables).
+- **User Permissions**: Run GoSpin under a user with limited permissions and add it to the `docker` group. Provide userId and groupId as Environment Variables when running in Docker (UID and GID environment variables).
 
 ### File System Permissions
 
@@ -247,7 +247,7 @@ sudo systemctl status docker
 # Test Docker socket access
 docker info
 
-# Check go_spin logs for Docker connection errors
+# Check gospin logs for Docker connection errors
 ./main 2>&1 | grep -i docker
 ```
 
@@ -349,15 +349,15 @@ go test ./...
 
 
 ## 📊 Coverage Report
-👉 [View the coverage report here](https://bassista.github.io/go_spin/)
+👉 [View the coverage report here](https://bassista.github.io/gospin/)
 
-[![Coverage](https://bassista.github.io/go_spin/coverage.png)](https://bassista.github.io/go_spin/)
+[![Coverage](https://bassista.github.io/gospin/coverage.png)](https://bassista.github.io/gospin/)
 
 
 ## 🏗️ Architecture
 
 ```
-go_spin/
+gospin/
 ├── cmd/server/           # Application entrypoint
 ├── config/               # Configuration files
 │   └── data/             # JSON data storage

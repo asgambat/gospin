@@ -1,7 +1,7 @@
-# Agent Knowledge Base - go_spin
+# Agent Knowledge Base - GoSpin
 
 ## Panoramica del Progetto
-**go_spin** è un'applicazione Go per la gestione schedulata dei container Docker. Include un'interfaccia Web SPA (Alpine.js) per la gestione visuale e un'API REST completa per l'accesso programmatico.
+**GoSpin** è un'applicazione Go per la gestione schedulata dei container Docker. Include un'interfaccia Web SPA (Alpine.js) per la gestione visuale e un'API REST completa per l'accesso programmatico.
 
 ### Funzionalità Principali
 - **Gestione Container**: Registrazione e controllo di container Docker con nomi friendly e URL

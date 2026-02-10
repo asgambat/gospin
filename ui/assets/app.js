@@ -1,4 +1,4 @@
-// go_spin UI - Alpine.js Application
+// GoSpin UI - Alpine.js Application
 function app() {
     return {
             // Auto-refresh interval (seconds)
@@ -275,6 +275,7 @@ function app() {
                 this.containerStats = statsMap;
             } catch (e) {
                 // On error, don't show error to user, just reset stats
+                console.warn('Failed to load container stats:', e.message);
                 this.containerStats = {};
             }
         },
