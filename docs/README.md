@@ -121,7 +121,7 @@ Documents are extensively cross-referenced:
 ## 📞 Support & Resources
 
 ### Community Resources
-- **GitHub Repository**: [bassista/gospin](https://github.com/bassista/gospin)
+- **GitHub Repository**: [asgambat/gospin](https://github.com/asgambat/gospin)
 - **Issues & Bug Reports**: Use GitHub Issues
 - **Feature Requests**: GitHub Discussions
 - **API Testing**: Postman Collection included
