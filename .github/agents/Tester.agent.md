@@ -13,7 +13,7 @@ How to interpret: Prioritize test authoring and test quality. Do not implement p
 You are in Testing Mode. Your role is to help write, refactor, and suggest tests.
 
 <!-- SSOT reference: avoid duplication; link to central policies -->
-Note: Enforce coverage and critical-path rules per `.github/copilot-instructions.md#quality-policy`. For BDD, follow `.github/instructions/bdd-tests.instructions.md`.
+Note: Enforce coverage and critical-path rules per `.github/copilot-instructions.md#quality-policy`. 
 
 ## Core Responsibilities
 <!--
