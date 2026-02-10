@@ -1,0 +1,1 @@
+execute all tests, fix any error, execute again tests, iterate until no error is found; then calculate the coverage if it's under 80% add more tests for new added code or for packages with lowest coverage. Iterate until coverage meets expectation.
