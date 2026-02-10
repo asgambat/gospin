@@ -1,4 +1,4 @@
-// go_spin UI - Alpine.js Application
+// GoSpin UI - Alpine.js Application
 function app() {
     return {
             // Auto-refresh interval (seconds)

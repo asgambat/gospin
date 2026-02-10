@@ -2,7 +2,7 @@
 
 ## 🏗️ System Architecture Overview
 
-go_spin follows a modular, interface-driven architecture that prioritizes testability, maintainability, and extensibility.
+GoSpin follows a modular, interface-driven architecture that prioritizes testability, maintainability, and extensibility.
 
 ### High-Level Architecture
 

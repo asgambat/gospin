@@ -1,6 +1,6 @@
-# go_spin Documentation Index
+# GoSpin Documentation Index
 
-Welcome to the comprehensive documentation for **go_spin**, a Go application for scheduled management of Docker containers.
+Welcome to the comprehensive documentation for **GoSpin**, a Go application for scheduled management of Docker containers.
 
 ## 📑 Documentation Overview
 
@@ -121,7 +121,7 @@ Documents are extensively cross-referenced:
 ## 📞 Support & Resources
 
 ### Community Resources
-- **GitHub Repository**: [bassista/go_spin](https://github.com/bassista/go_spin)
+- **GitHub Repository**: [bassista/gospin](https://github.com/bassista/gospin)
 - **Issues & Bug Reports**: Use GitHub Issues
 - **Feature Requests**: GitHub Discussions
 - **API Testing**: Postman Collection included
@@ -139,9 +139,5 @@ Documents are extensively cross-referenced:
 - **API Reference**: Synchronized with code changes
 
 ---
-
-**Documentation Version**: 2.0 (February 2026)  
-**Project Version**: Latest  
-**Maintainers**: go_spin development team
 
 > 💡 **Tip**: Bookmark this index page for quick access to all documentation. Use browser search (Ctrl+F) to quickly find specific topics across documents.

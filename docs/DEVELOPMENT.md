@@ -4,14 +4,14 @@
 
 ### Prerequisites
 
-1. **Go 1.21+**
+1. **Go 1.25.6+**
    ```bash
    # Check version
    go version
    
    # Install if needed (Linux/macOS)
-   wget https://go.dev/dl/go1.21.6.linux-amd64.tar.gz
-   sudo tar -C /usr/local -xzf go1.21.6.linux-amd64.tar.gz
+   wget https://go.dev/dl/go1.25.6.linux-amd64.tar.gz
+   sudo tar -C /usr/local -xzf go1.25.6.linux-amd64.tar.gz
    export PATH=$PATH:/usr/local/go/bin
    ```
 
@@ -37,39 +37,12 @@
 
 1. **Clone and Setup**
    ```bash
-   git clone https://github.com/bassista/go_spin.git
-   cd go_spin
+   git clone https://github.com/bassista/gospin.git
+   cd gospin
    
    # Install dependencies
    go mod tidy
    
-   # Create configuration
-   cp config/config.yaml.example config/config.yaml
-   
-   # Create data directory
-   mkdir -p config/data
-   ```
-
-2. **IDE Configuration (VS Code)**
-   
-   Install recommended extensions:
-   - Go (Google)
-   - Docker (Microsoft) 
-   - YAML (Red Hat)
-   - REST Client (Huachao Mao)
-
-   `.vscode/settings.json`:
-   ```json
-   {
-     "go.formatTool": "gofmt",
-     "go.lintTool": "golangci-lint",
-     "go.testFlags": ["-v"],
-     "go.coverOnSave": true,
-     "files.associations": {
-       "*.yaml": "yaml",
-       "*.yml": "yaml"
-     }
-   }
    ```
 
 ## 🔄 Development Workflow
@@ -96,48 +69,6 @@ go test ./... -cover
 go mod tidy
 ```
 
-### Hot Reload Configuration
-
-**Linux/macOS** (`.air.toml`):
-```toml
-root = "."
-testdata_dir = "testdata"
-tmp_dir = "tmp"
-
-[build]
-  args_bin = []
-  bin = "./tmp/main"
-  cmd = "go build -o ./tmp/main ./cmd/server/main.go"
-  delay = 1000
-  exclude_dir = ["assets", "tmp", "vendor", "testdata", ".build", "ui"]
-  exclude_file = []
-  exclude_regex = ["_test.go"]
-  exclude_unchanged = false
-  follow_symlink = false
-  full_bin = ""
-  include_dir = []
-  include_ext = ["go", "tpl", "tmpl", "html", "yaml", "yml"]
-  kill_delay = "0s"
-  log = "build-errors.log"
-  send_interrupt = false
-  stop_on_root = false
-
-[color]
-  app = ""
-  build = "yellow"
-  main = "magenta"
-  runner = "green"
-  watcher = "cyan"
-
-[log]
-  time = false
-
-[misc]
-  clean_on_exit = false
-
-[screen]
-  clear_on_rebuild = false
-```
 
 ### Testing Strategy
 
@@ -160,13 +91,6 @@ go test -race ./...
 go test -v ./...
 ```
 
-#### Test Structure
-```
-package_test.go     # Package-level tests
-integration_test.go # Integration tests  
-mock.go            # Mocks and test utilities
-testdata/          # Test data files
-```
 
 #### Testing Patterns
 
@@ -331,7 +255,7 @@ func SetupRoutes(app *app.App) *gin.Engine {
 
 ### Test Coverage Requirements
 
-- **Minimum**: 70% overall coverage
+- **Minimum**: 80% overall coverage
 - **Critical paths**: 90%+ coverage (runtime, persistence)
 - **Controllers**: Test all HTTP endpoints
 - **Business logic**: Test all edge cases
@@ -405,7 +329,7 @@ docker run -p 8084:8084 -v /var/run/docker.sock:/var/run/docker.sock go-spin:lat
 
 - [ ] All tests passing: `go test ./...`
 - [ ] Linting clean: `golangci-lint run`
-- [ ] Coverage >70%: `go test -cover ./...`
+- [ ] Coverage >80%: `go test -cover ./...`
 - [ ] Dependencies updated: `go mod tidy`
 - [ ] Version bumped in appropriate files
 - [ ] CHANGELOG.md updated
@@ -449,7 +373,7 @@ dlv test ./internal/cache -- -test.run TestStore
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Debug go_spin",
+            "name": "Debug gospin",
             "type": "go",
             "request": "launch",
             "mode": "debug",
