@@ -69,7 +69,8 @@ function app() {
             friendly_name: '',
             url: '',
             running: false,
-            active: true
+            active: true,
+            favorite: false
         },
         groupForm: {
             name: '',
@@ -92,6 +93,7 @@ function app() {
         // Sorting and filtering for containers
         containerSort: { key: 'name', asc: true },
         containerFilter: { name: '' },
+        showFavoritesOnly: false,
         
         // Sorting and filtering for groups
         groupSort: { key: 'name', asc: true },
@@ -338,6 +340,10 @@ function app() {
             if (this.containerFilter.name.trim() !== '') {
                 arr = arr.filter(c => c.name.toLowerCase().includes(this.containerFilter.name.trim().toLowerCase()));
             }
+            // Favorites filter
+            if (this.showFavoritesOnly) {
+                arr = arr.filter(c => c.favorite);
+            }
             // Sorting
             const { key, asc } = this.containerSort;
             arr.sort((a, b) => {
@@ -517,7 +523,8 @@ function app() {
                     friendly_name: container.friendly_name,
                     url: container.url,
                     running: container.running || false,
-                    active: container.active || false
+                    active: container.active || false,
+                    favorite: container.favorite || false
                 };
                 this.showContainerSuggestions = false;
             } else {
@@ -527,7 +534,8 @@ function app() {
                     friendly_name: '',
                     url: '',
                     running: false,
-                    active: true
+                    active: true,
+                    favorite: false
                 };
                 await this.loadRuntimeContainers();
                 this.showContainerSuggestions = false;
@@ -542,7 +550,8 @@ function app() {
                     friendly_name: this.containerForm.friendly_name,
                     url: this.containerForm.url,
                     running: this.containerForm.running,
-                    active: this.containerForm.active
+                    active: this.containerForm.active,
+                    favorite: this.containerForm.favorite
                 };
                 const res = await fetch(`${this.apiBase}/container`, {
                     method: 'POST',
@@ -559,6 +568,42 @@ function app() {
                 this.showSuccess('Container saved successfully');
             } catch (e) {
                 this.showError('Failed to save container: ' + e.message);
+            }
+        },
+
+        async toggleFavorite(name) {
+            console.log('toggleFavorite called for:', name);
+            const idx = this.containers.findIndex(c => c.name === name);
+            if (idx === -1) {
+                console.log('Container not found');
+                return;
+            }
+            const container = this.containers[idx];
+            const currentFav = container.favorite === true;
+            const newFav = !currentFav;
+            console.log('Toggling favorite from', currentFav, 'to', newFav);
+            try {
+                const payload = {
+                    name: container.name,
+                    friendly_name: container.friendly_name,
+                    url: container.url,
+                    running: container.running || false,
+                    active: container.active || false,
+                    favorite: newFav
+                };
+                const res = await fetch(`${this.apiBase}/container`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                if (!res.ok) {
+                    const err = await res.json();
+                    throw new Error(err.error || 'Toggle favorite failed');
+                }
+                await this.loadContainers();
+            } catch (e) {
+                console.error('Toggle favorite error:', e);
+                this.showError('Failed to toggle favorite: ' + e.message);
             }
         },
 
