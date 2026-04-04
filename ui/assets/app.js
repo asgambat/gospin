@@ -97,6 +97,9 @@ function app() {
         groupSort: { key: 'name', asc: true },
         groupFilter: { name: '' },
         
+        // Sorting and filtering for schedules
+        scheduleFilter: { name: '' },
+        
         // Server configuration
         configuration: {
             baseUrl: '',
@@ -402,6 +405,15 @@ function app() {
                 this.groupSort.key = key;
                 this.groupSort.asc = true;
             }
+        },
+        
+        // Computed: filtered schedules
+        get filteredSchedules() {
+            let arr = [...this.schedules];
+            if (this.scheduleFilter.name.trim() !== '') {
+                arr = arr.filter(s => s.name.toLowerCase().includes(this.scheduleFilter.name.trim().toLowerCase()));
+            }
+            return arr;
         },
         
         // Generate URL based on container name and baseUrl configuration

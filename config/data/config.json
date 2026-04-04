@@ -1,6 +1,6 @@
 {
   "metadata": {
-    "lastUpdate": 1770373390450
+    "lastUpdate": 1775315476429
   },
   "containers": [
     {
@@ -32,8 +32,21 @@
     {
       "target": "Deluge",
       "targetType": "container",
-      "timers": [],
-      "id": "1770131961021-7029"
+      "timers": [
+        {
+          "startTime": "08:00",
+          "stopTime": "18:00",
+          "days": [
+            1,
+            2,
+            3,
+            4,
+            5
+          ],
+          "active": true
+        }
+      ],
+      "id": "1775314734886-553"
     }
   ]
 }
