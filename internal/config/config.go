@@ -45,10 +45,12 @@ type DataConfig struct {
 }
 
 type MiscConfig struct {
-	GinMode      string
-	SchedulingTZ string
-	RuntimeType  string // "docker" o "memory"
-	LogLevel     string // "debug", "info", "warn", "error", default "info"
+	GinMode       string
+	SchedulingTZ  string
+	RuntimeType   string // "docker" o "memory"
+	LogLevel      string // "debug", "info", "warn", "error", default "info"
+	CosmosBaseUrl string // Base URL for Cosmos API (e.g., "https://cosmos.example.com")
+	CosmosToken   string // Bearer token for Cosmos API authentication
 }
 
 // LoadConfig loads configuration from file, env vars and validates required fields.
@@ -87,6 +89,8 @@ func LoadConfig() (*Config, error) {
 	viper.SetDefault("misc.scheduling_timezone", "Local")
 	viper.SetDefault("misc.runtime_type", "docker")
 	viper.SetDefault("misc.log_level", "info")
+	viper.SetDefault("misc.cosmos_base_url", "")
+	viper.SetDefault("misc.cosmos_token", "")
 
 	// Environment variables automatically override config file values
 	viper.AutomaticEnv()
@@ -138,15 +142,17 @@ func LoadConfig() (*Config, error) {
 			StatsRefreshIntervalSecs: viper.GetInt("data.stats_refresh_interval_secs"),
 		},
 		Misc: MiscConfig{
-			GinMode:      viper.GetString("misc.gin_mode"),
-			SchedulingTZ: viper.GetString("misc.scheduling_timezone"),
-			RuntimeType:  viper.GetString("misc.runtime_type"),
-			LogLevel:     viper.GetString("misc.log_level"),
+			GinMode:       viper.GetString("misc.gin_mode"),
+			SchedulingTZ:  viper.GetString("misc.scheduling_timezone"),
+			RuntimeType:   viper.GetString("misc.runtime_type"),
+			LogLevel:      viper.GetString("misc.log_level"),
+			CosmosBaseUrl: viper.GetString("misc.cosmos_base_url"),
+			CosmosToken:   viper.GetString("misc.cosmos_token"),
 		},
 	}
 
-	logger.WithComponent("config").Debugf("configuration loaded: port=%d, gin_mode=%s, runtime_type=%s, scheduling_enabled=%v, scheduling_tz=%s",
-		cfg.Server.Port, cfg.Misc.GinMode, cfg.Misc.RuntimeType, cfg.Data.SchedulingEnabled, cfg.Misc.SchedulingTZ)
+	logger.WithComponent("config").Debugf("configuration loaded: port=%d, gin_mode=%s, runtime_type=%s, scheduling_enabled=%v, scheduling_tz=%s, cosmos_base_url=%s, cosmos_token=%s",
+		cfg.Server.Port, cfg.Misc.GinMode, cfg.Misc.RuntimeType, cfg.Data.SchedulingEnabled, cfg.Misc.SchedulingTZ, cfg.Misc.CosmosBaseUrl, maskToken(cfg.Misc.CosmosToken))
 
 	// Fail-fast validation
 	if err := cfg.validate(); err != nil {
@@ -247,4 +253,14 @@ func getEnvOrViperPort(envKey, viperKey string) (int, error) {
 		return port, nil
 	}
 	return viper.GetInt(viperKey), nil
+}
+
+func maskToken(token string) string {
+	if len(token) <= 8 {
+		if len(token) == 0 {
+			return "(not set)"
+		}
+		return "***"
+	}
+	return token[:4] + "..." + token[len(token)-4:]
 }

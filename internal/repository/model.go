@@ -28,6 +28,7 @@ type Container struct {
 	Running      *bool  `json:"running"`
 	Active       *bool  `json:"active" validate:"required"`
 	ActivatedAt  *int64 `json:"activatedAt"`
+	Favorite     *bool  `json:"favorite"`
 }
 
 // Group groups containers by name.
@@ -93,6 +94,10 @@ func (t *Container) applyDefaults() {
 	if t.Active == nil {
 		v := false
 		t.Active = &v
+	}
+	if t.Favorite == nil {
+		v := false
+		t.Favorite = &v
 	}
 }
 

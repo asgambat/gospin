@@ -96,7 +96,7 @@ func createWaitingServer(app *appctx.App, logger *logrus.Logger) *httpgrace.Serv
 
 	// Create RuntimeController for the waiting page
 	rc := controller.NewRuntimeController(app)
-	cc := controller.NewContainerController(app.BaseCtx, app.Cache, app.Runtime)
+	cc := controller.NewContainerController(app.BaseCtx, app.Cache, app.Runtime, app.Config.Misc.CosmosBaseUrl, app.Config.Misc.CosmosToken)
 
 	r.GET("/container/:name/ready", cc.Ready)
 	r.GET("/:name", rc.WaitingPage)

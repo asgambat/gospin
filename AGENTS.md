@@ -35,3 +35,137 @@ All documentation must be kept in sync with the codebase after every relevant ch
 Ensure to write all comments and log messages in English. All documentation must be in English except for the content of the file: "progetto.txt" (which remains in Italian).
 # Configuration Management
 When adding new configuration options, ensure they are properly defined in the configuration files and loaded into the application. Provide sensible default values and document the purpose and usage of each configuration option.
+
+Build Commands
+
+# Install dependencies
+
+npm install
+
+
+
+# Build production bundle
+
+npm run build
+
+
+
+# Build with watch mode
+
+npm run build:watch
+
+Linting Rules
+
+# Run ESLint with custom rules
+
+npm run lint
+
+
+
+# Fix linting issues automatically
+
+npm run lint:fix
+
+Testing Procedures
+
+# Run all tests
+
+npm test
+
+
+
+# Run single test file
+
+npm test src/components/Example.test.tsx
+
+
+
+# Run tests with coverage
+
+npm run test:coverage
+
+Code Style Guidelines
+
+Imports
+
+Use absolute imports from src/
+
+Group imports by type (dependencies, local)
+
+Use import * as for large objects
+
+Formatting
+
+Use Prettier with default settings
+
+Maintain 2-space indentation
+
+Avoid trailing commas
+
+Types
+
+Use TypeScript interfaces for complex types
+
+Prefer const over let for immutable values
+
+Use readonly for immutable objects
+
+Naming Conventions
+
+Use PascalCase for components
+
+Use camelCase for functions/variables
+
+Use underscores for private members
+
+Error Handling
+
+Always handle errors explicitly
+
+Use try/catch for async operations
+
+Log errors with context
+
+Never swallow errors
+
+Cursor Rules
+
+Cursor rules are managed in .cursor/rules/
+
+Include cursor rules in AGENTS.md for agent reference
+
+Rules should follow Cursor documentation standards
+
+Copilot Instructions
+
+Include Copilot instructions in .github/copilot-instructions.md
+
+Specify preferred coding patterns
+
+Document common patterns and anti-patterns
+
+AGENTS.md Maintenance
+
+Update AGENTS.md when:
+
+New build commands are added
+
+Code style rules change
+
+Testing procedures update
+
+Cursor/Copilot rules modify
+
+Always run lint and tests before committing changes
+
+Never commit AGENTS.md unless explicitly requested
+
+Important Notes
+
+This file is for agentic coding agents
+
+Agents should reference this file for standard procedures
+
+Updates to this file require AGENTS.md maintenance
+
+Never modify AGENTS.md directly - use proper channels

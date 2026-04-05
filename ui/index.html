@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>go_spin - Container Scheduler</title>
+    <title>Gospin - Container Managment</title>
     <link rel="manifest" href="ui/assets/pwa/manifest.json">
     <meta name="theme-color" content="#1976d2">
     <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
@@ -87,9 +87,14 @@
 <body class="bg-gray-100 min-h-screen">
     <div x-data="app()" x-init="init()" x-cloak class="container mx-auto px-4 py-8">
         <!-- Header -->
-        <header class="mb-8">
-            <h1 class="text-3xl font-bold text-gray-800">🐳 go_spin</h1>
-            <p class="text-gray-600">Scheduled Docker Container Management</p>
+        <header class="mb-8 flex justify-between items-center">
+            <div>
+                <h1 class="text-3xl font-bold text-gray-800">🐳 Gospin</h1>
+                <p class="text-gray-600">Docker Container Management</p>
+            </div>
+            <button type="button" @click="cosmosImport()" :disabled="isCosmosImporting" :class="isCosmosImporting ? 'bg-purple-400 cursor-not-allowed' : 'bg-purple-600 hover:bg-purple-700'" class="text-white px-4 py-2 rounded inline-flex items-center">
+                <span :class="isCosmosImporting ? 'animate-spin' : ''" class="mr-2">🌌</span> <span x-show="!isCosmosImporting">Cosmos Import</span><span x-show="isCosmosImporting">Importing...</span>
+            </button>
         </header>
 
         <!-- Error Alert -->
@@ -125,8 +130,15 @@
 
         <!-- Containers Tab -->
         <div x-show="activeTab === 'containers'" x-transition>
+            <!-- Filter UI + Actions -->
             <div class="flex justify-between items-center mb-4">
-                <h2 class="text-xl font-semibold">Containers</h2>
+                <div class="flex items-center gap-2">
+                    <input type="text" placeholder="Filter by Name" x-model="containerFilter.name" class="border rounded px-2 py-1 text-sm" />
+                    <button @click="showFavoritesOnly = !showFavoritesOnly" :class="showFavoritesOnly ? 'text-yellow-500' : 'text-gray-400'" class="px-2 py-1 text-sm hover:text-yellow-500" title="Toggle favorites only">
+                        <span x-show="showFavoritesOnly">⭐</span>
+                        <span x-show="!showFavoritesOnly">☆</span>
+                    </button>
+                </div>
                 <div :class="showStackButtons ? 'flex flex-col items-end space-y-2' : 'space-x-2'">
                     <button @click="refreshContainersWithStats()" :disabled="isContainerRefreshing" :class="isContainerRefreshing ? 'bg-gray-400 cursor-not-allowed' : 'bg-gray-500 hover:bg-gray-600'" class="text-white px-3 py-1 rounded inline-flex items-center">
                         <span :class="isContainerRefreshing ? 'animate-spin' : ''" class="mr-1">🔄</span> Refresh
@@ -134,16 +146,12 @@
                     <button @click="openContainerModal()" class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600">+ Add Container</button>
                 </div>
             </div>
-            <!-- Filter UI -->
-            <div class="flex gap-4 mb-2">
-                <div>
-                    <input type="text" placeholder="Filter by Name" x-model="containerFilter.name" class="border rounded px-2 py-1 text-sm" />
-                </div>
-            </div>
+
             <div class="bg-white rounded-lg shadow overflow-hidden">
                 <table class="min-w-full">
                     <thead class="bg-gray-50">
                         <tr>
+                            <th class="px-2 py-3 text-center text-xs font-medium text-gray-500 uppercase w-10">⭐</th>
                             <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer" @click="sortContainersBy('name')">
                                 Name
                                 <span x-show="containerSort.key === 'name'" x-text="containerSort.asc ? '▲' : '▼'" class="ml-1"></span>
@@ -162,11 +170,11 @@
                                 Running
                                 <span x-show="containerSort.key === 'running'" x-text="containerSort.asc ? '▲' : '▼'" class="ml-1"></span>
                             </th>
-                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer" @click="sortContainersBy('cpu')" :class="{ 'hidden': !showStatsColumns }">
+                            <th class="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase cursor-pointer" @click="sortContainersBy('cpu')" :class="{ 'hidden': !showStatsColumns }">
                                 CPU %
                                 <span x-show="containerSort.key === 'cpu'" x-text="containerSort.asc ? '▲' : '▼'" class="ml-1"></span>
                             </th>
-                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer" @click="sortContainersBy('mem')" :class="{ 'hidden': !showStatsColumns }">
+                            <th class="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase cursor-pointer" @click="sortContainersBy('mem')" :class="{ 'hidden': !showStatsColumns }">
                                 MEM (MB)
                                 <span x-show="containerSort.key === 'mem'" x-text="containerSort.asc ? '▲' : '▼'" class="ml-1"></span>
                             </th>
@@ -176,6 +184,11 @@
                     <tbody class="divide-y divide-gray-200">
                         <template x-for="container in filteredSortedContainers" :key="container.name">
                             <tr @click="openContainerDetails(container)" class="hover:bg-gray-50 cursor-pointer swipe-track" :data-name="container.name" data-type="container">
+                                <td class="px-2 py-3 text-center">
+                                    <button @click.stop="async () => { await toggleFavorite(container.name) }" :class="container.favorite ? 'text-yellow-500' : 'text-gray-300'" class="hover:text-yellow-500" title="Toggle favorite">
+                                        <span x-text="container.favorite ? '★' : '☆'" class="text-lg"></span>
+                                    </button>
+                                </td>
                                 <td class="px-4 py-3 font-medium" x-text="truncate(container.name,15)"></td>
                                 <td :class="{ 'hidden': !showMetaColumns }" class="px-4 py-3" x-text="truncate(container.friendly_name,15)"></td>
                                 <td class="px-4 py-3 hidden lg:table-cell">
@@ -193,10 +206,10 @@
                                     <span :class="container.running ? 'bg-blue-100 text-blue-800' : 'bg-gray-100 text-gray-800'" 
                                           class="px-2 py-1 rounded text-xs" x-text="container.running ? 'Running' : 'Stopped'"></span>
                                 </td>
-                                <td class="px-4 py-3 text-right" :class="{ 'hidden': !showStatsColumns }">
+                                <td class="px-4 py-3 text-center" :class="{ 'hidden': !showStatsColumns }">
                                     <span class="text-xs" x-text="getContainerCpu(container.name).toFixed(1)"></span>
                                 </td>
-                                <td class="px-4 py-3 text-right" :class="{ 'hidden': !showStatsColumns }">
+                                <td class="px-4 py-3 text-center" :class="{ 'hidden': !showStatsColumns }">
                                     <span class="text-xs" x-text="getContainerMem(container.name).toFixed(1)"></span>
                                 </td>
                                 <td class="px-4 py-3 space-x-1">
@@ -208,7 +221,7 @@
                             </tr>
                         </template>
                         <tr x-show="filteredSortedContainers.length === 0">
-                            <td :colspan="9 - (showStatsColumns ? 0 : 2) - (showMetaColumns ? 0 : 2)" class="px-4 py-8 text-center text-gray-500">No containers configured</td>
+                            <td :colspan="10 - (showStatsColumns ? 0 : 2) - (showMetaColumns ? 0 : 2)" class="px-4 py-8 text-center text-gray-500">No containers configured</td>
                         </tr>
                     </tbody>
                 </table>
@@ -269,19 +282,15 @@
 
         <!-- Groups Tab -->
         <div x-show="activeTab === 'groups'" x-transition>
+            <!-- Filter UI + Actions -->
             <div class="flex justify-between items-center mb-4">
-                <h2 class="text-xl font-semibold">Groups</h2>
+                <input type="text" placeholder="Filter by Name" x-model="groupFilter.name" class="border rounded px-2 py-1 text-sm" />
                 <div :class="showStackButtons ? 'flex flex-col items-end space-y-2' : 'space-x-2'">
                     <button @click="loadGroups()" :class="isContainerRefreshing ? 'bg-gray-400 cursor-not-allowed' : 'bg-gray-500 hover:bg-gray-600'" class="text-white px-3 py-1 rounded">🔄 Refresh</button>
                     <button @click="openGroupModal()" class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600">+ Add Group</button>
                 </div>
             </div>
-            <!-- Filter UI -->
-            <div class="flex gap-4 mb-2">
-                <div>
-                    <input type="text" placeholder="Filter by Name" x-model="groupFilter.name" class="border rounded px-2 py-1 text-sm" />
-                </div>
-            </div>
+
             <div class="bg-white rounded-lg shadow overflow-hidden">
                 <table class="min-w-full">
                     <thead class="bg-gray-50">
@@ -331,8 +340,9 @@
 
         <!-- Schedules Tab -->
         <div x-show="activeTab === 'schedules'" x-transition>
+            <!-- Filter UI + Actions -->
             <div class="flex justify-between items-center mb-4">
-                <h2 class="text-xl font-semibold">Schedules</h2>
+                <input type="text" placeholder="Filter by Name" x-model="scheduleFilter.name" class="border rounded px-2 py-1 text-sm" />
                 <div :class="showStackButtons ? 'flex flex-col items-end space-y-2' : 'space-x-2'">
                     <button @click="loadSchedules()" class="bg-gray-500 text-white px-3 py-1 rounded hover:bg-gray-600">🔄 Refresh</button>
                     <button @click="openScheduleModal()" class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600">+ Add Schedule</button>
@@ -445,7 +455,10 @@
                             <input type="checkbox" x-model="containerForm.active" class="rounded mr-2">
                             <span class="text-sm">Active</span>
                         </label>
-
+                        <label class="flex items-center">
+                            <input type="checkbox" x-model="containerForm.favorite" class="rounded mr-2">
+                            <span class="text-sm">⭐ Favorite</span>
+                        </label>
                     </div>
                     <div class="flex justify-end gap-2 pt-4">
                         <button type="button" @click="showContainerModal = false" class="px-4 py-2 border rounded hover:bg-gray-50">Cancel</button>
@@ -647,18 +660,19 @@
 
     </div>
 
-        <script src="/ui/assets/app.js"></script>
-        <script>
-            if ('serviceWorker' in navigator) {
-                window.addEventListener('load', function() {
-                    navigator.serviceWorker.register('ui/assets/pwa/service-worker.js')
-                        .then(function(registration) {
-                            console.log('ServiceWorker registration successful:', registration.scope);
-                        }, function(err) {
-                            console.log('ServiceWorker registration failed:', err);
-                        });
-                });
-            }
-        </script>
+    <script src="/ui/assets/app.js"></script>
+
+    <script>
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', function() {
+                navigator.serviceWorker.register('ui/assets/pwa/service-worker.js')
+                    .then(function(registration) {
+                        console.log('ServiceWorker registration successful:', registration.scope);
+                    }, function(err) {
+                        console.log('ServiceWorker registration failed:', err);
+                    });
+            });
+        }
+    </script>
 </body>
 </html>

@@ -186,7 +186,7 @@ func TestWaitingServerRouting_ContainerReady(t *testing.T) {
 
 	testApp := newTestAppCtx(rt, store)
 	rc := controller.NewRuntimeController(testApp)
-	cc := controller.NewContainerController(testApp.BaseCtx, testApp.Cache, testApp.Runtime)
+	cc := controller.NewContainerController(testApp.BaseCtx, testApp.Cache, testApp.Runtime, "", "")
 
 	r := gin.New()
 	setupWaitingServerRoutes(r, rc, cc)
@@ -218,7 +218,7 @@ func TestWaitingServerRouting_WaitingPage(t *testing.T) {
 
 	testApp := newTestAppCtx(rt, store)
 	rc := controller.NewRuntimeController(testApp)
-	cc := controller.NewContainerController(testApp.BaseCtx, testApp.Cache, testApp.Runtime)
+	cc := controller.NewContainerController(testApp.BaseCtx, testApp.Cache, testApp.Runtime, "", "")
 
 	r := gin.New()
 	setupWaitingServerRoutes(r, rc, cc)
@@ -248,7 +248,7 @@ func TestWaitingServerRouting_BothRoutesWork(t *testing.T) {
 
 	testApp := newTestAppCtx(rt, store)
 	rc := controller.NewRuntimeController(testApp)
-	cc := controller.NewContainerController(testApp.BaseCtx, testApp.Cache, testApp.Runtime)
+	cc := controller.NewContainerController(testApp.BaseCtx, testApp.Cache, testApp.Runtime, "", "")
 
 	r := gin.New()
 	setupWaitingServerRoutes(r, rc, cc)
