@@ -19,6 +19,8 @@ function app() {
             showStackButtons: false,
             // Container refresh loading state
             isContainerRefreshing: false,
+            // Cosmos import loading state
+            isCosmosImporting: false,
         // State
         activeTab: 'containers',
         containers: [],
@@ -478,6 +480,43 @@ function app() {
                 this.containers = await res.json();
             } catch (e) {
                 this.showError('Failed to load containers: ' + e.message);
+            }
+        },
+        
+        async cosmosImport() {
+            console.error('Cosmos import started');
+            this.isCosmosImporting = true;
+            this.clearMessages();
+            try {
+                console.error('Calling API...');
+                const res = await fetch(`${this.apiBase}/containers/import`, { method: 'POST' });
+                console.error('Response status:', res.status);
+                if (res.status === 503) {
+                    this.showError('Cosmos integration not configured. Please set cosmos_base_url and cosmos_token in config.');
+                    this.isCosmosImporting = false;
+                    return;
+                }
+                if (!res.ok) {
+                    const err = await res.text();
+                    this.showError('Cosmos import failed: ' + err);
+                    this.isCosmosImporting = false;
+                    return;
+                }
+                const result = await res.json();
+                if (result.imported > 0) {
+                    this.showSuccess(`Successfully imported ${result.imported} container(s) from Cosmos`);
+                } else if (result.skipped_existing > 0) {
+                    this.showSuccess(`No new containers to import. ${result.skipped_existing} already exist.`);
+                } else {
+                    this.showSuccess('No containers imported from Cosmos');
+                }
+                await this.loadContainers();
+            } catch (e) {
+                console.error('Error:', e.message);
+                this.showError('Cosmos import failed: ' + e.message);
+            } finally {
+                console.error('Cosmos import finished');
+                this.isCosmosImporting = false;
             }
         },
         
@@ -973,6 +1012,11 @@ function app() {
             this.success = msg;
             this.error = '';
             setTimeout(() => this.success = '', 3000);
+        },
+        
+        clearMessages() {
+            this.error = '';
+            this.success = '';
         }
     };
 }

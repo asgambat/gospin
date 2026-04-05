@@ -71,6 +71,8 @@ misc:
   scheduling_enabled: true       # Enable/disable automatic containers starting/stopping based on schedules
   scheduling_poll_interval_secs: 30
   cors_allowed_origins: "*"      # CORS origins, default "*"
+  cosmos_base_url: ""            # Cosmos API base URL (e.g., "https://cosmos.example.com")
+  cosmos_token: ""               # Cosmos API bearer token for authentication
 ```
 
 ### Environment Variables
@@ -86,6 +88,10 @@ GO_SPIN_MISC_LOG_LEVEL=debug
 GO_SPIN_MISC_CORS_ALLOWED_ORIGINS=*
 # Config path
 GO_SPIN_CONFIG_PATH=./config
+# Cosmos API base URL
+GO_SPIN_MISC_COSMOS_BASE_URL=https://cosmos.example.com
+# Cosmos API bearer token
+GO_SPIN_MISC_COSMOS_TOKEN=your-token-here
 ```
 ### Base URL for Container Links
 
@@ -175,6 +181,7 @@ Access the UI at `http://localhost:8084/ui`
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | GET | `/containers` | List all containers |
+| POST | `/containers/import` | Import containers from Cosmos API |
 | POST | `/container` | Create/update container |
 | DELETE | `/container/:name` | Delete container |
 

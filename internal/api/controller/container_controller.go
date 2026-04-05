@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/bassista/go_spin/internal/cache"
+	"github.com/bassista/go_spin/internal/cosmos"
 	"github.com/bassista/go_spin/internal/logger"
 	"github.com/bassista/go_spin/internal/repository"
 	"github.com/bassista/go_spin/internal/runtime"
@@ -15,22 +16,35 @@ import (
 	"github.com/go-playground/validator/v10"
 )
 
-// ContainerController handles container-related HTTP endpoints using the generic CRUD controller.
 type ContainerController struct {
-	crud *CrudController[repository.Container]
+	crud          *CrudController[repository.Container]
+	importService *cosmos.ImportService
+	cosmosEnabled bool
+	cosmosBaseUrl string
+	cosmosToken   string
 }
 
-// NewContainerController creates a new ContainerController with the given cache store.
-func NewContainerController(ctx context.Context, store cache.ContainerStore, runtime runtime.ContainerRuntime) *ContainerController {
+func NewContainerController(ctx context.Context, store cache.ContainerStore, runtime runtime.ContainerRuntime, cosmosBaseUrl, cosmosToken string) *ContainerController {
 	v := validator.New()
 	service := &ContainerCrudService{Store: store, Runtime: runtime, Ctx: ctx}
 	validator := &ContainerCrudValidator{validator: v}
+
+	cosmosEnabled := cosmosBaseUrl != "" && cosmosToken != ""
+	var importService *cosmos.ImportService
+	if cosmosEnabled {
+		cosmosClient := cosmos.NewClient()
+		importService = cosmos.NewImportService(cosmosClient, store)
+	}
 
 	return &ContainerController{
 		crud: &CrudController[repository.Container]{
 			Service:   service,
 			Validator: validator,
 		},
+		importService: importService,
+		cosmosEnabled: cosmosEnabled,
+		cosmosBaseUrl: cosmosBaseUrl,
+		cosmosToken:   cosmosToken,
 	}
 }
 
@@ -164,4 +178,24 @@ func (cc *ContainerController) Ready(c *gin.Context) {
 	isContainerUrlReady := resp.StatusCode == http.StatusOK || resp.StatusCode == http.StatusPermanentRedirect || resp.StatusCode == http.StatusTemporaryRedirect
 	logger.WithComponent("container-controller").Debugf("GET /container/%s/ready handled with status: %v", name, isContainerUrlReady)
 	c.JSON(http.StatusOK, gin.H{"ready": isContainerUrlReady})
+}
+
+func (cc *ContainerController) ImportContainers(c *gin.Context) {
+	logger.WithComponent("container-controller").Debugf("POST /containers/import handler called")
+
+	if !cc.cosmosEnabled {
+		logger.WithComponent("container-controller").Warnf("import containers: cosmos integration not configured")
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Cosmos integration not configured"})
+		return
+	}
+
+	result, err := cc.importService.ImportContainers(c.Request.Context(), cc.cosmosBaseUrl, cc.cosmosToken)
+	if err != nil {
+		logger.WithComponent("container-controller").Errorf("import containers failed: %v", err)
+		c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
+		return
+	}
+
+	logger.WithComponent("container-controller").Infof("import completed: imported=%d, skipped=%d", result.Imported, result.SkippedExisting)
+	c.JSON(http.StatusOK, result)
 }

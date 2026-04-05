@@ -14,6 +14,8 @@ misc:
   runtime_type: docker  # possible values: memory, docker
   cors_allowed_origins: "*"   
   log_level: debug
-  log_format: text  
+  log_format: text
+  cosmos_base_url: ""  # Base URL for Cosmos API (e.g., "https://cosmos.example.com")
+  cosmos_token: ""     # Bearer token for Cosmos API authentication  
     
 

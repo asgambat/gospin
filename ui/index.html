@@ -87,9 +87,14 @@
 <body class="bg-gray-100 min-h-screen">
     <div x-data="app()" x-init="init()" x-cloak class="container mx-auto px-4 py-8">
         <!-- Header -->
-        <header class="mb-8">
-            <h1 class="text-3xl font-bold text-gray-800">🐳 Gospin</h1>
-            <p class="text-gray-600">Docker Container Management</p>
+        <header class="mb-8 flex justify-between items-center">
+            <div>
+                <h1 class="text-3xl font-bold text-gray-800">🐳 Gospin</h1>
+                <p class="text-gray-600">Docker Container Management</p>
+            </div>
+            <button type="button" @click="cosmosImport()" :disabled="isCosmosImporting" :class="isCosmosImporting ? 'bg-purple-400 cursor-not-allowed' : 'bg-purple-600 hover:bg-purple-700'" class="text-white px-4 py-2 rounded inline-flex items-center">
+                <span :class="isCosmosImporting ? 'animate-spin' : ''" class="mr-2">🌌</span> <span x-show="!isCosmosImporting">Cosmos Import</span><span x-show="isCosmosImporting">Importing...</span>
+            </button>
         </header>
 
         <!-- Error Alert -->

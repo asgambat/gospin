@@ -1,6 +1,6 @@
 {
   "metadata": {
-    "lastUpdate": 1775319716939
+    "lastUpdate": 1775321713206
   },
   "containers": [
     {
@@ -10,7 +10,7 @@
       "running": false,
       "active": true,
       "activatedAt": null,
-      "favorite": true
+      "favorite": false
     },
     {
       "name": "airsonic-advanced",
@@ -19,7 +19,7 @@
       "running": false,
       "active": true,
       "activatedAt": null,
-      "favorite": false
+      "favorite": true
     }
   ],
   "order": [
