@@ -399,10 +399,14 @@ func TestJSONRepository_MakeWatcherCallback_SkipsWhenSameContent(t *testing.T) {
 	repo, _ := NewJSONRepository(configPath)
 	jsonRepo := repo.(*JSONRepository)
 
+	cacheDoc := createTestDataDocument()
+	cacheDoc.Metadata.LastUpdate = 1000
+	cacheDoc.ApplyDefaults() // Apply defaults to match what Load() returns
+
 	cache := &MockCacheStore{
 		lastUpdate: 1000, // Same as disk
 		dirty:      false,
-		doc:        doc, // Same content
+		doc:        cacheDoc, // Same content after ApplyDefaults
 	}
 
 	callback := jsonRepo.MakeWatcherCallback(cache)
