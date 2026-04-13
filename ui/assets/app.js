@@ -7,6 +7,13 @@ function app() {
             // Stats refresh interval (seconds)
             statsRefreshInterval: 120, // default 120 seconds
             statsRefreshTimer: null,
+            // System stats
+            systemStats: {
+                cpu: 0,
+                memory: { used: 0, total: 0 },
+                disk: { used: 0, total: 0 }
+            },
+            systemStatsTimer: null,
             // Container stats map (name -> {cpu, mem})
             containerStats: {},
             // Show CPU/MEM columns (responsive)
@@ -131,6 +138,8 @@ function app() {
             await this.loadContainerStats();
             this.startAutoRefresh();
             this.startStatsRefresh();
+            await this.loadSystemStats();
+            this.startSystemStatsRefresh();
         },
 
         // Setup swipe and mouse-drag to delete
@@ -254,7 +263,18 @@ function app() {
             }, this.statsRefreshInterval * 1000);
         },
 
+        // Start system stats refresh timer (every 5 seconds)
+        startSystemStatsRefresh() {
+            if (this.systemStatsTimer) {
+                clearInterval(this.systemStatsTimer);
+            }
+            this.systemStatsTimer = setInterval(() => {
+                this.loadSystemStats();
+            }, 5000);
+        },
+        
         // Allow changing stats refresh interval at runtime
+
         setStatsRefreshInterval(seconds) {
             // Only restart timer if interval actually changed
             if (this.statsRefreshInterval === seconds && this.statsRefreshTimer) {
@@ -284,6 +304,17 @@ function app() {
                 // On error, don't show error to user, just reset stats
                 console.warn('Failed to load container stats:', e.message);
                 this.containerStats = {};
+            }
+        },
+
+        // Load system-wide stats
+        async loadSystemStats() {
+            try {
+                const res = await fetch(`${this.apiBase}/runtime/system-stats`);
+                if (!res.ok) throw new Error(await res.text());
+                this.systemStats = await res.json();
+            } catch (e) {
+                console.warn('Failed to load system stats:', e.message);
             }
         },
 

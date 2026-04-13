@@ -22,4 +22,7 @@
 
 - Risks, trade-offs, or areas needing extra attention
 
+## Copilot review prompt (optional but recommended)
+Copilot: review this PR for correctness, security, missing tests, and backward compatibility. Focus on the diff.
+
 <!-- © Capgemini 2025 -->

@@ -21,4 +21,5 @@ func NewRuntimeRouter(appCtx *app.App, group *gin.RouterGroup) {
 	// Stats endpoint needs a longer timeout since it queries all containers
 	statsRequestTimeout := appCtx.Config.Server.ReadTimeout
 	group.GET("runtime/stats", middleware.RequestTimeout(statsRequestTimeout), rc.AllStats)
+	group.GET("runtime/system-stats", middleware.RequestTimeout(statsRequestTimeout), rc.SystemStats)
 }

@@ -467,3 +467,15 @@ func (rc *RuntimeController) AllStats(c *gin.Context) {
 
 	c.JSON(http.StatusOK, results)
 }
+
+// SystemStats returns system-wide resource usage (CPU, RAM, disk).
+func (rc *RuntimeController) SystemStats(c *gin.Context) {
+	collector := runtime.NewSystemStatsCollector(rc.config.Data.SystemMonitorMountPoint)
+	stats, err := collector.GetStats(c.Request.Context())
+	if err != nil {
+		logger.WithComponent("runtime_controller").Errorf("failed to get system stats: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("failed to get system stats: %v", err)})
+		return
+	}
+	c.JSON(http.StatusOK, stats)
+}
