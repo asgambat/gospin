@@ -9,13 +9,14 @@ data:
   spin_up_url: "http://localhost/"  # Base URL for container lazy startup URL generation, supports $1 token
   refresh_interval_secs: 60       # Interval for UI auto-refresh (seconds)
   stats_refresh_interval_secs: 120  # Interval for container stats refresh (seconds)
+  system_monitor_mount_point: "/mnt/extSSD"
 misc:
-  gin_mode: debug 
+  gin_mode: debug
   runtime_type: docker  # possible values: memory, docker
-  cors_allowed_origins: "*"   
+  cors_allowed_origins: "*"
   log_level: debug
   log_format: text
   cosmos_base_url: ""  # Base URL for Cosmos API (e.g., "https://cosmos.example.com")
-  cosmos_token: ""     # Bearer token for Cosmos API authentication  
-    
+  cosmos_token: ""     # Bearer token for Cosmos API authentication
+
 

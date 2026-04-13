@@ -92,9 +92,26 @@
                 <h1 class="text-3xl font-bold text-gray-800">🐳 Gospin</h1>
                 <p class="text-gray-600">Docker Container Management</p>
             </div>
-            <button type="button" @click="cosmosImport()" :disabled="isCosmosImporting" :class="isCosmosImporting ? 'bg-purple-400 cursor-not-allowed' : 'bg-purple-600 hover:bg-purple-700'" class="text-white px-4 py-2 rounded inline-flex items-center">
-                <span :class="isCosmosImporting ? 'animate-spin' : ''" class="mr-2">🌌</span> <span x-show="!isCosmosImporting">Cosmos Import</span><span x-show="isCosmosImporting">Importing...</span>
-            </button>
+            <div class="flex items-center gap-4">
+                <!-- System Stats -->
+                <div class="hidden md:flex items-center gap-2 text-xs font-mono text-gray-500">
+                    <div class="flex items-center bg-white border px-2 py-1 rounded shadow-sm">
+                        <span class="mr-1">⚡</span>
+                        <span class="text-right" x-text="systemStats.cpu + '%'"></span>
+                    </div>
+                    <div class="flex items-center bg-white border px-2 py-1 rounded shadow-sm">
+                        <span class="mr-1">💾</span>
+                        <span class="text-right" x-text="systemStats.memory.used.toFixed(2) + 'GB / ' + systemStats.memory.total.toFixed(2) + 'GB'"></span>
+                    </div>
+                    <div class="flex items-center bg-white border px-2 py-1 rounded shadow-sm">
+                        <span class="mr-1">💿</span>
+                        <span class="text-right" x-text="systemStats.disk.used.toFixed(2) + 'GB / ' + systemStats.disk.total.toFixed(2) + 'GB'"></span>
+                    </div>
+                </div>
+                <button type="button" @click="cosmosImport()" :disabled="isCosmosImporting" :class="isCosmosImporting ? 'bg-purple-400 cursor-not-allowed' : 'bg-purple-600 hover:bg-purple-700'" class="text-white px-4 py-2 rounded inline-flex items-center">
+                    <span :class="isCosmosImporting ? 'animate-spin' : ''" class="mr-2">🌌</span> <span x-show="!isCosmosImporting">Cosmos Import</span><span x-show="isCosmosImporting">Importing...</span>
+                </button>
+            </div>
         </header>
 
         <!-- Error Alert -->

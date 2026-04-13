@@ -42,6 +42,7 @@ type DataConfig struct {
 	SpinUpUrl                string
 	RefreshIntervalSecs      int
 	StatsRefreshIntervalSecs int
+	SystemMonitorMountPoint  string
 }
 
 type MiscConfig struct {
@@ -85,6 +86,7 @@ func LoadConfig() (*Config, error) {
 	viper.SetDefault("data.spin_up_url", "http://localhost/")
 	viper.SetDefault("data.refresh_interval_secs", 60)
 	viper.SetDefault("data.stats_refresh_interval_secs", 120)
+	viper.SetDefault("data.system_monitor_mount_point", "/")
 	viper.SetDefault("misc.gin_mode", "release")
 	viper.SetDefault("misc.scheduling_timezone", "Local")
 	viper.SetDefault("misc.runtime_type", "docker")
@@ -140,7 +142,9 @@ func LoadConfig() (*Config, error) {
 			SpinUpUrl:                viper.GetString("data.spin_up_url"),
 			RefreshIntervalSecs:      viper.GetInt("data.refresh_interval_secs"),
 			StatsRefreshIntervalSecs: viper.GetInt("data.stats_refresh_interval_secs"),
+			SystemMonitorMountPoint:  viper.GetString("data.system_monitor_mount_point"),
 		},
+
 		Misc: MiscConfig{
 			GinMode:       viper.GetString("misc.gin_mode"),
 			SchedulingTZ:  viper.GetString("misc.scheduling_timezone"),
