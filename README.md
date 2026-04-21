@@ -19,6 +19,12 @@ I have decided to rewrite the project in Go to leverage its performance, concurr
 - **File Watching**: Auto-reload configuration when the JSON file changes externally
 - **Graceful Shutdown**: Proper cleanup on application termination
 
+## Screenshots
+
+![CONTAINERS](docs/screenshots/containers.png)
+![GROUPS](docs/screenshots/groups.png)
+![SCHEDULES](docs/screenshots/schedules.png)
+
 ## 🚀 Quick Start
 
 ### Prerequisites
