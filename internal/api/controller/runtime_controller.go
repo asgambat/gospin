@@ -21,11 +21,12 @@ import (
 const DefaultWaitingTemplatePath = "./ui/templates/waiting.html"
 
 type RuntimeController struct {
-	runtime         runtime.ContainerRuntime
-	containerStore  cache.ContainerStore
-	config          *config.Config
-	baseCtx         context.Context
-	waitingTemplate string
+	runtime              runtime.ContainerRuntime
+	containerStore       cache.ContainerStore
+	config               *config.Config
+	baseCtx              context.Context
+	waitingTemplate      string
+	systemStatsCollector runtime.SystemStatsCollector
 }
 
 // NewRuntimeController creates a new RuntimeController with the waiting template loaded from file.
@@ -39,11 +40,12 @@ func NewRuntimeController(appCtx *app.App) *RuntimeController {
 	}
 
 	return &RuntimeController{
-		runtime:         appCtx.Runtime,
-		containerStore:  appCtx.Cache,
-		baseCtx:         appCtx.BaseCtx,
-		config:          appCtx.Config,
-		waitingTemplate: string(templateContent),
+		runtime:              appCtx.Runtime,
+		containerStore:       appCtx.Cache,
+		baseCtx:              appCtx.BaseCtx,
+		config:               appCtx.Config,
+		waitingTemplate:      string(templateContent),
+		systemStatsCollector: runtime.NewSystemStatsCollector(appCtx.Config.Data.SystemMonitorMountPoint),
 	}
 }
 
@@ -470,8 +472,7 @@ func (rc *RuntimeController) AllStats(c *gin.Context) {
 
 // SystemStats returns system-wide resource usage (CPU, RAM, disk).
 func (rc *RuntimeController) SystemStats(c *gin.Context) {
-	collector := runtime.NewSystemStatsCollector(rc.config.Data.SystemMonitorMountPoint)
-	stats, err := collector.GetStats(c.Request.Context())
+	stats, err := rc.systemStatsCollector.GetStats(c.Request.Context())
 	if err != nil {
 		logger.WithComponent("runtime_controller").Errorf("failed to get system stats: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("failed to get system stats: %v", err)})

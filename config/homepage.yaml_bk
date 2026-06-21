@@ -1,0 +1,46 @@
+services:
+  - group: Media
+    items:
+      - name: Jellyfin
+        url: https://jellyfin.local
+        description: Media server
+        icon: jellyfin.svg
+      - name: Sonarr
+        url: https://sonarr.local
+        description: TV shows
+        icon: sonarr.svg
+  - group: Management
+    items:
+      - name: Portainer
+        url: https://portainer.local
+        description: Docker management
+        icon: portainer.svg
+      - name: Traefik
+        url: https://traefik.local
+        description: Reverse proxy
+        icon: traefik.svg
+
+bookmarks:
+  - group: Developer
+    items:
+      - name: GitHub
+        url: https://github.com
+        abbr: GH
+      - name: Stack Overflow
+        url: https://stackoverflow.com
+        abbr: SO
+  - group: Social
+    items:
+      - name: Reddit
+        url: https://reddit.com
+        abbr: RD
+      - name: Hacker News
+        url: https://news.ycombinator.com
+        abbr: HN
+
+settings:
+  theme: catppuccin-latte
+  title: SGAMBATO HOME
+  version: "1.0.0"
+  polling_interval_seconds: 10
+  stats_polling_interval_seconds: 3

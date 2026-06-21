@@ -53,6 +53,21 @@ watch: ## Run the application and watch for changes with air to automatically re
 test: ## Run all tests
 	go test ./...
 
+.PHONY: vet
+vet: ## Run go vet
+	go vet ./...
+
+.PHONY: staticcheck
+staticcheck: ## Run staticcheck
+	staticcheck ./...
+
+.PHONY: golangci-lint
+golangci-lint: ## Run golangci-lint (comprehensive linter suite)
+	golangci-lint run ./...
+
+.PHONY: lint
+lint: vet staticcheck golangci-lint ## Run all linters (go vet + staticcheck + golangci-lint)
+
 .PHONY: check-updates
 check-updates: ## Check for direct dependency updates
 	go list -u -m -f '{{if not .Indirect}}{{.}}{{end}}' all | grep "\["
@@ -62,7 +77,7 @@ css: ## Build and minify Tailwind CSS
 	./tailwindcss -i tailwind.css -o public/static/main.css -m
 
 .PHONY: build
-build: ## Build and compile the application binary
+build: vet test ## Build and compile the application binary (runs vet + test first)
 	go build -o ./.build/main ./cmd/server
 
 .PHONY: docker_build

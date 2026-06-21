@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Homepage</title>
+    <link rel="manifest" href="ui/assets/pwa/manifest.json">
+    <meta name="theme-color" content="#1e1e2e">
+    <script defer src="/ui/home.js"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <style>
+        [x-cloak] { display: none !important; }
+
+        /* ===== Theme Variables ===== */
+        :root,
+        body.theme-tokyo-night {
+            --bg-color: #1a1b26;
+            --fg-color: #a9b1d6;
+            --card-bg: #24283b;
+            --card-border: #414868;
+            --accent: #7aa2f7;
+            --subtle-color: #565f89;
+            --stat-cpu: #f7768e;
+            --stat-ram: #9ece6a;
+            --stat-disk: #7aa2f7;
+            --hover-glow: rgba(122,162,247,0.08);
+        }
+        body.theme-catppuccin-latte {
+            --bg-color: #eff1f5;
+            --fg-color: #4c4f69;
+            --card-bg: #ffffff;
+            --card-border: #ccd0da;
+            --accent: #8839ef;
+            --subtle-color: #8c8fa1;
+            --stat-cpu: #d20f39;
+            --stat-ram: #40a02b;
+            --stat-disk: #1e66f5;
+            --hover-glow: rgba(136,57,239,0.06);
+        }
+        body.theme-nord {
+            --bg-color: #2e3440;
+            --fg-color: #d8dee9;
+            --card-bg: #3b4252;
+            --card-border: #434c5e;
+            --accent: #88c0d0;
+            --subtle-color: #4c566a;
+            --stat-cpu: #bf616a;
+            --stat-ram: #a3be8c;
+            --stat-disk: #81a1c1;
+            --hover-glow: rgba(136,192,208,0.08);
+        }
+        body.theme-dracula {
+            --bg-color: #282a36;
+            --fg-color: #f8f8f2;
+            --card-bg: #44475a;
+            --card-border: #6272a4;
+            --accent: #bd93f9;
+            --subtle-color: #6272a4;
+            --stat-cpu: #ff5555;
+            --stat-ram: #50fa7b;
+            --stat-disk: #8be9fd;
+            --hover-glow: rgba(189,147,249,0.08);
+        }
+        body.theme-gruvbox {
+            --bg-color: #282828;
+            --fg-color: #ebdbb2;
+            --card-bg: #3c3836;
+            --card-border: #504945;
+            --accent: #d79921;
+            --subtle-color: #a89984;
+            --stat-cpu: #fb4934;
+            --stat-ram: #b8bb26;
+            --stat-disk: #83a598;
+            --hover-glow: rgba(215,153,33,0.08);
+        }
+
+        /* ===== Smooth theme transitions ===== */
+        body, header, footer {
+            transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease;
+        }
+
+        /* Scrollbar theming */
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: var(--subtle-color); border-radius: 3px; }
+
+        /* ===== Card hover effect ===== */
+        .link-card {
+            transition: all 0.2s ease;
+            border-left-width: 3px;
+            border-left-style: solid;
+        }
+        .link-card:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 16px var(--hover-glow);
+            border-left-width: 4px;
+            border-left-color: var(--accent) !important;
+        }
+
+        /* ===== Stat card ===== */
+        .stat-card {
+            transition: all 0.25s ease;
+        }
+        .stat-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px var(--hover-glow);
+        }
+
+        /* ===== Progress bar animation ===== */
+        .stat-bar {
+            transition: width 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        /* ===== Icon fade-in ===== */
+        .icon-fade-in {
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+        .icon-fade-in.loaded {
+            opacity: 1;
+        }
+
+        /* ===== Page fade-in ===== */
+        .page-fade {
+            opacity: 0;
+            transition: opacity 0.4s ease;
+        }
+        .page-fade.visible {
+            opacity: 1;
+        }
+
+        /* ===== Skeleton loader ===== */
+        @keyframes shimmer {
+            0% { background-position: -200% 0; }
+            100% { background-position: 200% 0; }
+        }
+        .skeleton-icon {
+            background: linear-gradient(90deg, var(--card-border) 25%, var(--card-bg) 50%, var(--card-border) 75%);
+            background-size: 200% 100%;
+            animation: shimmer 1.5s ease-in-out infinite;
+        }
+    </style>
+</head>
+<body x-data="homeApp()" x-init="init()"
+      style="background-color: var(--bg-color); color: var(--fg-color); font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-size: 17px;"
+      x-bind:style="'background-color: var(--bg-color); color: var(--fg-color); font-family: ' + (data?.settings?.fontFamily || 'Inter, system-ui, -apple-system, BlinkMacSystemFont, \'Segoe UI\', Roboto, sans-serif') + '; font-size: ' + (data?.settings?.fontSize || '17px') + ';'">
+
+    <div id="app" x-cloak
+         class="flex flex-col h-screen overflow-hidden page-fade"
+         :class="pageVisible && 'visible'">
+
+        <!-- Header -->
+        <header class="shrink-0 px-4 py-2 border-b flex items-center"
+                style="border-color: var(--card-border); background-color: var(--card-bg);">
+            <h1 class="text-xl font-bold truncate flex-1"
+                x-text="data?.settings?.title || 'Dashboard'"></h1>
+        </header>
+
+        <!-- Main Content -->
+        <main class="flex-1 flex flex-col md:flex-row overflow-hidden">
+
+            <!-- Bookmarks Column (~25-30%) -->
+            <section class="w-full md:w-1/3 lg:w-1/4 overflow-y-auto p-2 md:p-3 border-r"
+                     style="border-color: var(--card-border);"
+                     x-show="data && data.bookmarks && data.bookmarks.length > 0">
+                <template x-for="group in data.bookmarks" :key="group.group">
+                    <div class="mb-4">
+                        <h2 class="text-xs font-bold uppercase tracking-wider mb-2 px-1"
+                            style="color: var(--accent);"
+                            x-text="group.group"></h2>
+                        <div class="space-y-1">
+                            <template x-for="bm in group.items" :key="bm.url">
+                                <a :href="bm.url" target="_blank" rel="noopener"
+                                   class="link-card flex items-center justify-between border rounded p-1.5 text-sm no-underline"
+                                   style="background-color: var(--card-bg); border-color: var(--card-border); border-left-color: var(--accent); color: var(--fg-color);">
+                                    <span class="flex items-center gap-2 truncate">
+                                        <span class="font-mono text-xs font-bold shrink-0"
+                                              style="color: var(--accent);"
+                                              x-text="bm.abbr || bm.name.substring(0,2).toUpperCase()"></span>
+                                        <span class="text-xs" style="color: var(--subtle-color);">|</span>
+                                        <span class="truncate" x-text="bm.name"></span>
+                                    </span>
+                                    <span class="text-xs truncate ml-2 shrink-0"
+                                          style="color: var(--subtle-color); max-width: 8rem;"
+                                          x-text="(new URL(bm.url, window.location.origin)).hostname.replace(/^www\./, '')"></span>
+                                </a>
+                            </template>
+                        </div>
+                    </div>
+                </template>
+            </section>
+
+            <!-- Services Columns (~70-75%) -->
+            <section class="w-full md:w-2/3 lg:w-3/4 overflow-y-auto p-2 md:p-3"
+                     x-show="data && data.services && data.services.length > 0">
+                <div class="flex flex-col lg:flex-row gap-4">
+                    <template x-for="group in data.services" :key="group.group">
+                        <div class="flex-1 min-w-0">
+                            <h2 class="text-xs font-bold uppercase tracking-wider mb-2 px-1"
+                                style="color: var(--accent);"
+                                x-text="group.group"></h2>
+                            <div class="space-y-1.5">
+                                <template x-for="svc in group.items" :key="svc.name">
+                                    <a :href="svc.url" target="_blank" rel="noopener"
+                                       class="link-card flex items-center gap-2 border rounded p-2 text-sm no-underline"
+                                       style="background-color: var(--card-bg); border-color: var(--card-border); border-left-color: var(--stat-disk); color: var(--fg-color);">
+                                        <!-- Service icon with skeleton loader, fade-in and reactive fallback -->
+                                            <!-- Skeleton placeholder (shown while icon is loading) -->
+                                            <div x-show="svc.icon && !svc._iconFailed && !svc._iconLoaded"
+                                                 class="skeleton-icon w-6 h-6 rounded shrink-0"></div>
+                                            <!-- The actual icon (hidden until loaded) -->
+                                            <img x-show="svc.icon && !svc._iconFailed && svc._iconLoaded"
+                                                 :src="svc.icon" :alt="svc.name"
+                                                 class="icon-fade-in w-6 h-6 rounded shrink-0 object-contain"
+                                                 style="background-color: var(--card-bg);"
+                                                 @load="$el.classList.add('loaded'); svc._iconLoaded = true"
+                                                 @error="svc._iconFailed = true; svc._iconLoaded = true">
+                                            <!-- Fallback monogram (no icon or load failed) -->
+                                            <span x-show="!svc.icon || svc._iconFailed"
+                                                  class="w-6 h-6 flex items-center justify-center rounded text-xs font-bold shrink-0"
+                                                  style="background-color: var(--accent); color: var(--bg-color);"
+                                                  x-text="svc.name.substring(0,2).toUpperCase()"></span>
+                                        <div class="min-w-0 flex-1">
+                                            <div class="font-semibold truncate" x-text="svc.name"></div>
+                                            <div class="text-xs truncate"
+                                                 style="color: var(--subtle-color);"
+                                                 x-text="svc.description || ''"></div>
+                                        </div>
+                                    </a>
+                                </template>
+                            </div>
+                        </div>
+                    </template>
+                </div>
+            </section>
+
+            <!-- Empty State -->
+            <section class="w-full flex items-center justify-center p-8"
+                     x-show="!data || ((!data.bookmarks || data.bookmarks.length === 0) && (!data.services || data.services.length === 0))">
+                <div class="text-center" style="color: var(--subtle-color);">
+                    <p class="text-lg font-medium">No data loaded</p>
+                    <p class="text-sm">Configure your homepage via the API.</p>
+                </div>
+            </section>
+        </main>
+
+        <!-- Bottom Stats Bar -->
+        <footer class="shrink-0 px-3 py-2 border-t flex flex-wrap items-center gap-2 text-xs"
+                style="border-color: var(--card-border); background-color: var(--card-bg); color: var(--fg-color);">
+
+            <!-- Stats Cards (Left) -->
+            <div class="flex items-center gap-2 flex-1 ml-2">
+
+                <!-- CPU Card -->
+                <div class="stat-card flex items-center gap-1.5 border rounded px-2.5 py-1.5 min-w-[90px]"
+                     style="border-color: var(--card-border); background-color: var(--bg-color);">
+                    <svg class="w-3.5 h-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color: var(--stat-cpu);">
+                        <rect x="4" y="4" width="16" height="16" rx="2"/>
+                        <rect x="9" y="9" width="6" height="6"/>
+                        <line x1="9" y1="1" x2="9" y2="4"/>
+                        <line x1="15" y1="1" x2="15" y2="4"/>
+                        <line x1="9" y1="20" x2="9" y2="23"/>
+                        <line x1="15" y1="20" x2="15" y2="23"/>
+                        <line x1="20" y1="9" x2="23" y2="9"/>
+                        <line x1="20" y1="14" x2="23" y2="14"/>
+                        <line x1="1" y1="9" x2="4" y2="9"/>
+                        <line x1="1" y1="14" x2="4" y2="14"/>
+                    </svg>
+                    <div class="flex flex-col leading-tight">
+                        <span class="font-mono font-bold text-xs" style="color: var(--stat-cpu);" x-text="stats?.cpu + '%'"></span>
+                        <!-- Mini progress bar -->
+                        <div class="w-full h-0.5 rounded-full mt-0.5" style="background-color: var(--card-border);">
+                            <div class="stat-bar h-full rounded-full"
+                                 :style="(() => { const pct = stats?.cpu ?? 0; const color = pct >= 80 ? '#ef4444' : pct >= 50 ? '#eab308' : '#22c55e'; return 'width: ' + Math.min(pct, 100) + '%; background-color: ' + color; })()"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- RAM Card -->
+                <div class="stat-card flex items-center gap-1.5 border rounded px-2.5 py-1.5 min-w-[110px]"
+                     style="border-color: var(--card-border); background-color: var(--bg-color);">
+                    <svg class="w-3.5 h-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color: var(--stat-ram);">
+                        <rect x="4" y="6" width="16" height="12" rx="2"/>
+                        <line x1="9" y1="10" x2="15" y2="10"/>
+                        <line x1="9" y1="14" x2="15" y2="14"/>
+                    </svg>
+                    <div class="flex flex-col leading-tight">
+                        <span class="font-mono font-bold text-xs" style="color: var(--stat-ram);"
+                              x-text="stats?.memory ? stats.memory.used.toFixed(1) + ' / ' + stats.memory.total.toFixed(0) + ' GB' : '-- / -- GB'"></span>
+                        <!-- Mini progress bar -->
+                        <div class="w-full h-0.5 rounded-full mt-0.5" style="background-color: var(--card-border);">
+                            <div class="stat-bar h-full rounded-full"
+                                 :style="(() => { const pct = stats?.memory && stats.memory.total > 0 ? Math.min(stats.memory.used / stats.memory.total * 100, 100) : 0; const color = pct >= 80 ? '#ef4444' : pct >= 50 ? '#eab308' : '#22c55e'; return 'width: ' + pct + '%; background-color: ' + color; })()"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Disk Card -->
+                <div class="stat-card flex items-center gap-1.5 border rounded px-2.5 py-1.5 min-w-[110px]"
+                     style="border-color: var(--card-border); background-color: var(--bg-color);">
+                    <svg class="w-3.5 h-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color: var(--stat-disk);">
+                        <ellipse cx="12" cy="6" rx="8" ry="3"/>
+                        <path d="M4 6v6c0 1.7 3.6 3 8 3s8-1.3 8-3V6"/>
+                        <path d="M4 12v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6"/>
+                    </svg>
+                    <div class="flex flex-col leading-tight">
+                        <span class="font-mono font-bold text-xs" style="color: var(--stat-disk);"
+                              x-text="stats?.disk ? stats.disk.used.toFixed(1) + ' / ' + stats.disk.total.toFixed(0) + ' GB' : '-- / -- GB'"></span>
+                        <!-- Mini progress bar -->
+                        <div class="w-full h-0.5 rounded-full mt-0.5" style="background-color: var(--card-border);">
+                            <div class="stat-bar h-full rounded-full"
+                                 :style="(() => { const pct = stats?.disk && stats.disk.total > 0 ? Math.min(stats.disk.used / stats.disk.total * 100, 100) : 0; const color = pct >= 80 ? '#ef4444' : pct >= 50 ? '#eab308' : '#22c55e'; return 'width: ' + pct + '%; background-color: ' + color; })()"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Theme Selector (Right, before version) -->
+            <div class="flex items-center gap-2">
+                <label for="theme" class="hidden sm:inline text-xs" style="color: var(--subtle-color);">Theme:</label>
+                <select id="theme"
+                        x-effect="$el.value = theme"
+                        @change="persistTheme($el.value)"
+                        class="text-xs border rounded px-2 py-1 cursor-pointer"
+                        style="background-color: var(--bg-color); border-color: var(--card-border); color: var(--fg-color);">
+                    <template x-for="t in themes" :key="t">
+                        <option :value="t" :selected="t === theme" x-text="t.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase())"></option>
+                    </template>
+                </select>
+            </div>
+
+            <!-- Version (Rightmost) -->
+            <div class="font-mono text-xs" style="color: var(--subtle-color);"
+                 x-text="data?.settings?.version || ''"></div>
+        </footer>
+    </div>
+
+</body>
+</html>

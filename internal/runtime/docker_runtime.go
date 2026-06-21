@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"sort"
 	"strings"
 
@@ -154,7 +155,8 @@ func calculateCPUPercent(stats *container.StatsResponse) float64 {
 
 	if systemDelta > 0 && cpuDelta > 0 {
 		cpuPercent := (cpuDelta / systemDelta) * float64(stats.CPUStats.OnlineCPUs) * 100.0
-		return cpuPercent
+		// Cap CPU percentage at 100% to avoid values > 100% on multi-core systems
+		return math.Min(cpuPercent, 100.0)
 	}
 	return 0.0
 }

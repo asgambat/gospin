@@ -30,6 +30,7 @@ func SetupRoutes(appCtx *app.App, logger *logrus.Logger) *gin.Engine {
 	NewScheduleRouter(appCtx, publicRouter)
 	NewRuntimeRouter(appCtx, publicRouter)
 	NewConfigurationRouter(appCtx, publicRouter)
+	NewHomepageRouter(appCtx, publicRouter)
 
 	// UI static files
 	NewUIRouter(r)

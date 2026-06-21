@@ -3,11 +3,11 @@ package runtime
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"math"
 	"os"
-	"runtime"
+	"strconv"
+	"sync"
 	"syscall"
 	"time"
 )
@@ -39,9 +39,28 @@ type SystemStatsCollector interface {
 	GetStats(ctx context.Context) (SystemStats, error)
 }
 
+// cpuStats holds CPU statistics for delta calculation
+type cpuStats struct {
+	total     uint64
+	idle      uint64
+	timestamp time.Time
+}
+
+// Byte size constants for human-readable conversions
+const (
+	KB = 1024
+	MB = KB * 1024
+	GB = MB * 1024
+)
+
+// maxCPUDeltaAge is the maximum age of a previous CPU reading for delta calculation
+const maxCPUDeltaAge = 5 * time.Second
+
 // LinuxSystemStats implements SystemStatsCollector for Linux systems
 type LinuxSystemStats struct {
 	mountPoint string
+	prevStats  *cpuStats
+	mutex      sync.RWMutex
 }
 
 // NewSystemStatsCollector returns a new system stats collector based on the OS
@@ -53,6 +72,10 @@ func NewSystemStatsCollector(mountPoint string) SystemStatsCollector {
 
 // GetStats collects CPU, memory, and disk statistics
 func (l *LinuxSystemStats) GetStats(ctx context.Context) (SystemStats, error) {
+	if err := ctx.Err(); err != nil {
+		return SystemStats{}, err
+	}
+
 	stats := SystemStats{
 		Updated: time.Now(),
 	}
@@ -81,8 +104,12 @@ func (l *LinuxSystemStats) GetStats(ctx context.Context) (SystemStats, error) {
 	return stats, nil
 }
 
-// getCPUUsage calculates CPU usage percentage
+// getCPUUsage calculates CPU usage percentage using delta measurement with /proc/stat
 func (l *LinuxSystemStats) getCPUUsage(ctx context.Context) (int, error) {
+	if err := ctx.Err(); err != nil {
+		return 0, err
+	}
+
 	// Read /proc/stat for CPU stats
 	cpuData, err := os.ReadFile("/proc/stat")
 	if err != nil {
@@ -100,59 +127,75 @@ func (l *LinuxSystemStats) getCPUUsage(ctx context.Context) (int, error) {
 		return 0, fmt.Errorf("unexpected /proc/stat format")
 	}
 
-	// Calculate total and idle time
-	var total uint64
-	for i := 1; i < len(fields); i++ {
-		val := 0
-		fmt.Sscanf(string(fields[i]), "%d", &val)
-		total += uint64(val)
+	// Parse CPU fields
+	total, idle := parseCPUFields(fields)
+
+	// Lock for thread-safe access to prevStats
+	l.mutex.RLock()
+	prev := l.prevStats
+	l.mutex.RUnlock()
+
+	// Calculate delta if we have previous stats
+	if prev != nil && time.Since(prev.timestamp) < maxCPUDeltaAge {
+		totalDelta := total - prev.total
+		idleDelta := idle - prev.idle
+
+		if totalDelta > 0 {
+			// CPU% = (total_delta - idle_delta) / total_delta * 100
+			idlePercent := float64(idleDelta) / float64(totalDelta) * 100.0
+			cpuPercent := 100.0 - idlePercent
+
+			// Cap at 100% and round up
+			result := int(math.Ceil(math.Min(cpuPercent, 100.0)))
+
+			// Update prevStats for next calculation
+			l.mutex.Lock()
+			l.prevStats = &cpuStats{total: total, idle: idle, timestamp: time.Now()}
+			l.mutex.Unlock()
+
+			return result, nil
+		}
 	}
 
-	// We need to measure delta over time for accurate CPU usage
-	// For simplicity, we'll use a heuristic based on scheduler info
-	return l.calculateCPUFromRuntime(), nil
+	// Save current stats for next calculation
+	l.mutex.Lock()
+	l.prevStats = &cpuStats{total: total, idle: idle, timestamp: time.Now()}
+	l.mutex.Unlock()
+
+	// Return 0 on first measurement (need two readings for delta)
+	return 0, nil
 }
 
-// calculateCPUFromRuntime uses Go's runtime package to estimate CPU usage
-func (l *LinuxSystemStats) calculateCPUFromRuntime() int {
-	var stats runtime.MemStats
-	runtime.ReadMemStats(&stats)
+// parseCPUFields parses the CPU fields from /proc/stat and returns total and idle time.
+// Idle includes the idle and iowait fields (fields 4 and 5 in /proc/stat after "cpu").
+func parseCPUFields(fields [][]byte) (uint64, uint64) {
+	var total uint64
+	var idle uint64
 
-	// Get number of CPUs
-	numCPU := float64(runtime.NumCPU())
+	// Skip the "cpu" prefix and parse all numeric fields:
+	// index 1=user, 2=nice, 3=system, 4=idle, 5=iowait, 6=irq, 7=softirq, 8=steal, 9=guest, 10=guest_nice
+	for i := 1; i < len(fields); i++ {
+		val, err := strconv.ParseUint(string(fields[i]), 10, 64)
+		if err != nil {
+			continue
+		}
+		total += val
 
-	// Use a simple heuristic: get current goroutine count and estimate
-	// This is a rough approximation since we can't get true CPU without delta measurement
-	// For better accuracy, we would need to measure over time
-
-	// Read /proc/loadavg as an alternative
-	loadavg, err := os.ReadFile("/proc/loadavg")
-	if err != nil {
-		// Fallback: return a nominal value
-		return 0
+		// Idle = idle (field 4) + iowait (field 5)
+		if i == 4 || i == 5 {
+			idle += val
+		}
 	}
 
-	// Parse first value (1-minute load average)
-	var load1, load5, load15 float64
-	var runnable, total int
-	fmt.Sscanf(string(loadavg), "%f %f %f %d %d", &load1, &load5, &load15, &runnable, &total)
-
-	// Convert load average to percentage (load / num_cpus * 100)
-	cpuPercent := (load1 / numCPU) * 100
-
-	// Round up to the nearest integer
-	roundedCPU := int(math.Ceil(cpuPercent))
-
-	// Cap at 100% for display
-	if roundedCPU > 100 {
-		roundedCPU = 100
-	}
-
-	return roundedCPU
+	return total, idle
 }
 
 // getMemoryStats reads memory information from /proc/meminfo
 func (l *LinuxSystemStats) getMemoryStats(ctx context.Context) (MemoryStats, error) {
+	if err := ctx.Err(); err != nil {
+		return MemoryStats{}, err
+	}
+
 	memData, err := os.ReadFile("/proc/meminfo")
 	if err != nil {
 		return MemoryStats{}, err
@@ -168,17 +211,19 @@ func (l *LinuxSystemStats) getMemoryStats(ctx context.Context) (MemoryStats, err
 		}
 
 		key := string(fields[0])
-		var value uint64
-		fmt.Sscanf(string(fields[1]), "%d", &value)
+		val, err := strconv.ParseUint(string(fields[1]), 10, 64)
+		if err != nil {
+			continue
+		}
 		// values in /proc/meminfo are in KB
 
 		switch key {
 		case "MemTotal:":
-			memTotal = value
+			memTotal = val
 		case "MemFree:":
-			memFree = value
+			memFree = val
 		case "MemAvailable:":
-			memAvailable = value
+			memAvailable = val
 		}
 	}
 
@@ -192,8 +237,8 @@ func (l *LinuxSystemStats) getMemoryStats(ctx context.Context) (MemoryStats, err
 		available = memFree
 	}
 
-	totalGB := float64(memTotal) / 1024 / 1024
-	freeGB := float64(available) / 1024 / 1024
+	totalGB := float64(memTotal) / MB
+	freeGB := float64(available) / MB
 	usedGB := totalGB - freeGB
 
 	return MemoryStats{
@@ -203,9 +248,12 @@ func (l *LinuxSystemStats) getMemoryStats(ctx context.Context) (MemoryStats, err
 	}, nil
 }
 
-// getDiskStats reads disk usage from /proc/mounts and df command
+// getDiskStats reads disk usage using syscall.Statfs
 func (l *LinuxSystemStats) getDiskStats(ctx context.Context) (DiskStats, error) {
-	// Actually use syscall to get disk usage
+	if err := ctx.Err(); err != nil {
+		return DiskStats{}, err
+	}
+
 	var stat syscall.Statfs_t
 	if err := syscall.Statfs(l.mountPoint, &stat); err != nil {
 		return DiskStats{}, err
@@ -215,8 +263,8 @@ func (l *LinuxSystemStats) getDiskStats(ctx context.Context) (DiskStats, error) 
 	totalBlocks := stat.Blocks
 	freeBlocks := stat.Bfree
 
-	totalGB := float64(blockSize*totalBlocks) / 1024 / 1024 / 1024
-	freeGB := float64(blockSize*freeBlocks) / 1024 / 1024 / 1024
+	totalGB := float64(blockSize*totalBlocks) / GB
+	freeGB := float64(blockSize*freeBlocks) / GB
 	usedGB := totalGB - freeGB
 
 	return DiskStats{
@@ -228,21 +276,5 @@ func (l *LinuxSystemStats) getDiskStats(ctx context.Context) (DiskStats, error) 
 
 // roundToTwoDecimals rounds a float to two decimal places
 func roundToTwoDecimals(v float64) float64 {
-	return float64(int(v*100+0.5)) / 100
-}
-
-// GetSystemStatsJSON returns system stats as JSON string (for API responses)
-func GetSystemStatsJSON(ctx context.Context, mountPoint string) (string, error) {
-	collector := NewSystemStatsCollector(mountPoint)
-	stats, err := collector.GetStats(ctx)
-	if err != nil {
-		return "", err
-	}
-
-	jsonData, err := json.Marshal(stats)
-	if err != nil {
-		return "", fmt.Errorf("failed to marshal stats: %w", err)
-	}
-
-	return string(jsonData), nil
+	return math.Round(v*100) / 100
 }
