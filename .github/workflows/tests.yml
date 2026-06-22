@@ -6,6 +6,12 @@ on:
   pull_request:
     branches: [ main ]
 
+# Explicit minimal permissions: both jobs only checkout source and run
+# go vet / lint / tests. No write access to the repository or other
+# GitHub resources is required.
+permissions:
+  contents: read
+
 jobs:
   lint:
     runs-on: ubuntu-latest
@@ -17,7 +23,9 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.23'
+          # Use the version pinned in go.mod so the toolchain matches the
+          # minimum required by module dependencies.
+          go-version-file: 'go.mod'
 
       - name: Download dependencies
         run: go mod download
@@ -27,9 +35,13 @@ jobs:
 
       - name: Cache staticcheck
         uses: actions/cache@v4
+        # Including go.mod in the cache key ensures the cached binary is
+        # invalidated when the Go toolchain version (declared in go.mod)
+        # changes — preventing reuse of staticcheck binaries built with
+        # an older Go version that fail on newer module code.
         with:
           path: ~/go/bin/staticcheck
-          key: staticcheck-2025.1.1-${{ runner.os }}-${{ hashFiles('go.sum') }}
+          key: staticcheck-2025.1.1-${{ runner.os }}-${{ hashFiles('go.mod', 'go.sum') }}
           restore-keys: |
             staticcheck-2025.1.1-${{ runner.os }}-
 
@@ -43,7 +55,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/go/bin/golangci-lint
-          key: golangci-lint-1.64.8-${{ runner.os }}-${{ hashFiles('go.sum') }}
+          key: golangci-lint-1.64.8-${{ runner.os }}-${{ hashFiles('go.mod', 'go.sum') }}
           restore-keys: |
             golangci-lint-1.64.8-${{ runner.os }}-
 
@@ -63,7 +75,9 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.23'
+          # Use the version pinned in go.mod so the toolchain matches the
+          # minimum required by module dependencies.
+          go-version-file: 'go.mod'
 
       - name: Download dependencies
         run: go mod download
