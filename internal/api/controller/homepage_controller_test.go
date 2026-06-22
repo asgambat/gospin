@@ -74,11 +74,21 @@ settings:
 	if resp.Settings.Title != "Test Title" {
 		t.Errorf("expected title 'Test Title', got %s", resp.Settings.Title)
 	}
-	// Version is now a top-level field sourced from internal/version.Version
+	// Version and the four build-metadata fields are top-level, sourced from
+	// internal/version.* package vars populated at build time via -ldflags
 	// (not from homepage.yaml). Even if a user sneaks "version: foo" into the
 	// YAML, it must be ignored — the server value wins.
 	if resp.Version != version.Version {
 		t.Errorf("expected top-level version %q (from internal/version), got %q", version.Version, resp.Version)
+	}
+	if resp.BuildTime != version.BuildTime {
+		t.Errorf("expected top-level buildTime %q (from internal/version), got %q", version.BuildTime, resp.BuildTime)
+	}
+	if resp.GitCommit != version.GitCommit {
+		t.Errorf("expected top-level gitCommit %q (from internal/version), got %q", version.GitCommit, resp.GitCommit)
+	}
+	if resp.GoVersion != version.GoVersion {
+		t.Errorf("expected top-level goVersion %q (from internal/version), got %q", version.GoVersion, resp.GoVersion)
 	}
 	if resp.Hash == "" {
 		t.Error("expected non-empty hash in response")

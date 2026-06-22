@@ -32,7 +32,12 @@ jobs:
 
     steps:
       - name: Checkout repository
+        # fetch-depth: 0 is required so `git describe --tags` below can find
+        # the nearest tag. The default shallow clone (depth=1) would always
+        # miss tags and force `--always` fallback to the short SHA.
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3
@@ -48,6 +53,69 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
+      # Pin a Go toolchain on the runner so `go version` below is reproducible
+      # across runner images. `go-version-file: go.mod` reads the `go` directive
+      # from go.mod (currently `go 1.25.6`), so the runner Go follows any
+      # future bump in the project's required toolchain instead of drifting
+      # silently from the Dockerfile's `FROM golang:1.25.6-alpine` builder.
+      # MUST run before "Compute build metadata" — that step shells out to `go version`.
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: 'go.mod'
+
+      # Compute the four values that the Dockerfile ARGs (VERSION /
+      # BUILD_TIME / GIT_COMMIT / GO_VERSION) expect via `-X -ldflags` so the
+      # resulting binary — and therefore the homepage footer — reports the
+      # exact build identity. Semantics match the Makefile so a `make build`
+      # locally and a CI publish on the same commit yield the same string.
+      # `set -euo pipefail` ensures any failure (missing `go`, broken pipe in
+      # `awk`, etc.) aborts the job rather than silently producing empty
+      # metadata that would flow downstream into the binary.
+      # MUST run before "Extract metadata" — that step reads
+      # `steps.meta-build.outputs.*` from GITHUB_OUTPUT to populate the OCI
+      # `labels:` block below.
+      - name: Compute build metadata
+        id: meta-build
+        run: |
+          set -euo pipefail
+          VERSION=$(git describe --tags --always --dirty 2>/dev/null || echo "0.0.9")
+          # BUILD_TIME (underscore format, e.g. 2026-06-22_14:30:00) is the
+          # human-facing display format consumed by the Dockerfile's
+          # `-X -ldflags` injection — surfaced at the homepage footer and in
+          # container logs. Kept stable so existing log consumers / UI
+          # footers don't change.
+          BUILD_TIME=$(date -u '+%Y-%m-%d_%H:%M:%S')
+          # BUILD_TIME_RFC3339 (T separator + Z suffix, e.g. 2026-06-22T14:30:00Z)
+          # is the OCI-spec strict format used exclusively for the
+          # `org.opencontainers.image.created` label so `docker manifest
+          # validate --strict` accepts the published manifest.
+          BUILD_TIME_RFC3339=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          # Short SHA — kept for `-X -ldflags` injection so the homepage
+          # footer stays compact ("v1.2.3 · abc1234").
+          GIT_COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+          # Full SHA — used for `org.opencontainers.image.revision` per the
+          # OCI spec recommendation: most consumers (GitHub Container
+          # Registry UI, Sigstore cosign, `crane manifest`) prefer full SHA.
+          GIT_COMMIT_FULL=$(git rev-parse HEAD 2>/dev/null || echo "unknown")
+          GO_VERSION=$(go version | awk '{print $3}')
+          {
+            echo "VERSION=${VERSION}"
+            echo "BUILD_TIME=${BUILD_TIME}"
+            echo "BUILD_TIME_RFC3339=${BUILD_TIME_RFC3339}"
+            echo "GIT_COMMIT=${GIT_COMMIT}"
+            echo "GIT_COMMIT_FULL=${GIT_COMMIT_FULL}"
+            echo "GO_VERSION=${GO_VERSION}"
+          } >> "$GITHUB_OUTPUT"
+          echo "Computed build metadata: VERSION=${VERSION}, BUILD_TIME=${BUILD_TIME}, BUILD_TIME_RFC3339=${BUILD_TIME_RFC3339}, GIT_COMMIT=${GIT_COMMIT}, GIT_COMMIT_FULL=${GIT_COMMIT_FULL}, GO_VERSION=${GO_VERSION}"
+
+      # Extracts the immutable Docker image tag list (semver, branch, latest)
+      # AND the OCI-standard labels. The `labels:` block forwards the same
+      # four values the Dockerfile receives via `--build-arg`, so the OCI
+      # image manifest carries them — inspectable with `docker inspect`,
+      # `crane manifest`, or any OCI-aware client without ever running the
+      # image. Reference:
+      # https://github.com/opencontainers/image-spec/blob/main/annotations.md
       - name: Extract metadata (tags and labels) for Docker
         id: meta
         uses: docker/metadata-action@v5
@@ -66,6 +134,20 @@ jobs:
             # Creates version tags when a git tag is pushed (e.g., v1.2.3 -> 1.2.3 and 1.2).
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
+          labels: |
+            # OCI-standard build-metadata labels. The four values mirror what
+            # `internal/version.BuildInfo()` prints at the homepage footer (and
+            # what the Dockerfile received as `--build-arg`) — so anyone
+            # inspecting the manifest with `docker inspect`, `crane manifest`,
+            # or `oras manifest fetch` sees the same identity the running
+            # binary reports. `org.opencontainers.image.source` hyperlinks
+            # back to the canonical repo so manifest consumers can navigate.
+            org.opencontainers.image.version=${{ steps.meta-build.outputs.VERSION }}
+            # RFC 3339 (T separator, Z suffix) — strict OCI spec compliance.
+            org.opencontainers.image.created=${{ steps.meta-build.outputs.BUILD_TIME_RFC3339 }}
+            # Full SHA — OCI spec recommends full over short for `.revision`.
+            org.opencontainers.image.revision=${{ steps.meta-build.outputs.GIT_COMMIT_FULL }}
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
@@ -79,5 +161,20 @@ jobs:
           context: .
           push: ${{ github.event_name != 'pull_request' }} # Don't push on pull requests
           tags: ${{ steps.meta.outputs.tags }}
+          # `meta.outputs.labels` now includes the four OCI build-metadata
+          # labels defined above in addition to anything docker/metadata-action
+          # would emit by default. Buildx forwards them as `--label` flags.
           labels: ${{ steps.meta.outputs.labels }}
           platforms: linux/amd64,linux/arm64
+          # Forward the four build metadata values computed above to the
+          # Dockerfile as `--build-arg`. The Dockerfile re-exports them as
+          # ENV and feeds them into the `-X` ldflags for the embedded binary,
+          # so the published image's homepage footer reports the same
+          # VERSION / BUILD_TIME / GIT_COMMIT / GO_VERSION the workflow ran.
+          # Each value is double-quoted so a tag with spaces or other unusual
+          # characters cannot split into multiple `--build-arg` tokens.
+          args: |
+            --build-arg "VERSION=${{ steps.meta-build.outputs.VERSION }}"
+            --build-arg "BUILD_TIME=${{ steps.meta-build.outputs.BUILD_TIME }}"
+            --build-arg "GIT_COMMIT=${{ steps.meta-build.outputs.GIT_COMMIT }}"
+            --build-arg "GO_VERSION=${{ steps.meta-build.outputs.GO_VERSION }}"

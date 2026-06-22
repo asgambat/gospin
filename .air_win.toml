@@ -6,6 +6,10 @@ tmp_dir = ".build"
 [build]
   args_bin = []
   bin = "./.build/main1.exe"
+  # Note: cmd.exe has no `$(...)` / `` ` `` shell substitution, so the
+  # -X ldflags from the Makefile's LDFLAGS variable cannot be inlined here
+  # without brittle nested quoting. Run `make run` from a Git-Bash shell on
+  # Windows instead — it uses the same LDFLAGS via Makefile evaluation.
   cmd = "cmd /c \"templ generate && go build -o ./.build/main1.exe ./cmd/server/main.go\""
   delay = 1000
   exclude_dir = ["assets", ".build", "vendor", "testdata", "docs"]

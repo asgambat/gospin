@@ -18,6 +18,78 @@
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any maskable"
+    },
+    {
+      "src": "ui/assets/themes/nord-bg.jpg",
+      "sizes": "2560x1707",
+      "type": "image/jpeg",
+      "purpose": "any"
+    },
+    {
+      "src": "ui/assets/themes/nord-bg-1280.jpg",
+      "sizes": "1280x854",
+      "type": "image/jpeg",
+      "purpose": "any"
+    },
+    {
+      "src": "ui/assets/themes/nord-bg.webp",
+      "sizes": "2560x1707",
+      "type": "image/webp",
+      "purpose": "any"
+    },
+    {
+      "src": "ui/assets/themes/nord-bg-1280.webp",
+      "sizes": "1280x854",
+      "type": "image/webp",
+      "purpose": "any"
+    },
+    {
+      "src": "ui/assets/themes/catppuccin-latte-bg.jpg",
+      "sizes": "2560x1945",
+      "type": "image/jpeg",
+      "purpose": "any"
+    },
+    {
+      "src": "ui/assets/themes/catppuccin-latte-bg-1280.jpg",
+      "sizes": "1280x973",
+      "type": "image/jpeg",
+      "purpose": "any"
+    },
+    {
+      "src": "ui/assets/themes/catppuccin-latte-bg.webp",
+      "sizes": "2560x1945",
+      "type": "image/webp",
+      "purpose": "any"
+    },
+    {
+      "src": "ui/assets/themes/catppuccin-latte-bg-1280.webp",
+      "sizes": "1280x973",
+      "type": "image/webp",
+      "purpose": "any"
+    },
+    {
+      "src": "ui/assets/themes/night-stars-bg.jpg",
+      "sizes": "2560x1628",
+      "type": "image/jpeg",
+      "purpose": "any"
+    },
+    {
+      "src": "ui/assets/themes/night-stars-bg-1280.jpg",
+      "sizes": "1280x814",
+      "type": "image/jpeg",
+      "purpose": "any"
+    },
+    {
+      "src": "ui/assets/themes/night-stars-bg.webp",
+      "sizes": "2560x1628",
+      "type": "image/webp",
+      "purpose": "any"
+    },
+    {
+      "src": "ui/assets/themes/night-stars-bg-1280.webp",
+      "sizes": "1280x814",
+      "type": "image/webp",
+      "purpose": "any"
     }
   ]
 }

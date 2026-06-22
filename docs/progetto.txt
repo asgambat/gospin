@@ -134,6 +134,51 @@ DataDocument
 - Tabs: Containers, Groups, Schedules
 - Stack: Alpine.js (reattività) + TailwindCSS (styling CDN) + fetch API JSON
 
+### Homepage dashboard (ui/home.html + ui/home.js)
+- Pagina dashboard personale servita su `/ui/home` (e come fallback SPA per ogni `/ui/*` non gestito)
+- Contenuto e aspetto configurabili via `config/homepage.yaml` con tre sezioni top-level: `services`, `bookmarks`, `settings`
+
+### Build metadata (internal/version + -ldflags)
+- Le quattro variabili `Version`, `BuildTime`, `GitCommit`, `GoVersion` definite in `internal/version/version.go` (tutte mutabili a link-time) vengono popolate al build tramite `-ldflags "-X ..."`:
+  - `Version` ← `git describe --tags --always --dirty` (fallback `0.0.9`)
+  - `BuildTime` ← `date -u '+%Y-%m-%d_%H:%M:%S'`
+  - `GitCommit` ← `git rev-parse --short HEAD` (fallback `unknown`)
+  - `GoVersion` ← `go version | awk '{print $3}'`
+- Il `Makefile` espone le stesse variabili (`VERSION`, `BUILD_TIME`, `GIT_COMMIT`, `GO_VERSION`) e le inietta automaticamente nel target `make build`; il `Dockerfile` le riceve come `ARG` per le immagini multi-arch
+- L'endpoint `/homepage` espone i quattro valori come **campi top-level** (`version`, `buildTime`, `gitCommit`, `goVersion`), mai annidati dentro `settings`, così l'utente non può sovrascriverli via YAML (test pin di difesa: `homepage_controller_test.go` blocca un tentativo di `version: hax0r...")
+- La UI renderizza in footer un'etichetta compatta `v<version> · <short-sha>` con tooltip completo (`build time`, `go version`) al hover
+- Temi supportati (in `settings.theme` o via selettore in pagina): `auto`, `tokyo-night`, `catppuccin-latte`, `nord`, `dracula`, `gruvbox`, `night-stars`
+- Tre dei temi (`catppuccin-latte`, `nord`, `night-stars`) hanno un trattamento visivo "glassmorphism":
+  - **Card translucide**: `--card-bg` e `--card-border` sono `rgba(...)` con alpha, così lo sfondo del tema si intravede attraverso le card
+  - **Immagine di sfondo**: renderizzata da uno pseudo-elemento fisso `body.<theme>::before` con `filter` e `opacity` per-tema
+- Le immagini di sfondo sono ospitate **localmente** in `ui/assets/themes/<theme>-bg.jpg` (servite dal router statico `r.Static("/ui/assets", "./ui/assets")`) — nessuna richiesta esterna a runtime, la dashboard funziona anche offline / in ambienti air-gapped
+- Il valore di `settings.theme` da YAML è trattato come **default**: viene applicato solo finché l'utente non fa una scelta esplicita tramite il selettore (la scelta utente è salvata in `localStorage` sotto `homepage-theme`)
+- Lo stato dei gruppi accordion è persistito in `localStorage` sotto `homepage-collapsed-groups`
+
+### Asset locali dei temi (ui/assets/themes/)
+- I tre temi "glassmorphism" (`nord`, `catppuccin-latte`, `night-stars`) includono ciascuno la propria immagine di sfondo, **impacchettata nel repository** invece di essere recuperata da una CDN esterna
+- Directory: `ui/assets/themes/` contiene `nord-bg.jpg` (≈ 723 KB, 2560×1707), `catppuccin-latte-bg.jpg` (≈ 308 KB, 2560×1945), `night-stars-bg.jpg` (≈ 738 KB, 2560×1628) — JPEG progressivi a qualità ~80
+- Routing: la rotta statica `r.Static("/ui/assets", "./ui/assets")` definita in `internal/api/route/ui_route.go` espone tutti i file di `ui/assets/` sotto il prefisso `/ui/assets/...`. Il CSS in `ui/home.html` punta quindi a URL assoluti come `url('/ui/assets/themes/nord-bg.jpg')`; Gin serve i byte direttamente dal disco senza middleware aggiuntivo
+- **Totale**: ≈ 3.29 MB su 12 file (3 temi × 4 varianti: JPEG 2560px, JPEG 1280px, WebP 2560px, WebP 1280px). Il browser scarica solo la variante necessaria per ogni cambio tema (via `image-set()`); il service worker pre-cacha tutte le varianti per l'uso offline
+- **Nessuna richiesta esterna**: durante il rendering della dashboard **non viene effettuato alcun fetch di immagini verso host terzi**, quindi funziona in ambienti offline / air-gapped. Verificabile con `grep -rn unsplash ui/` (deve restituire zero risultati)
+- **Sostituire un'immagine**: basta sovrascrivere il file in `ui/assets/themes/` con lo stesso filename e riavviare il server; nessuna modifica al CSS necessaria
+
+### Ricerca globale (modalità prompt)
+- La dashboard espone anche una modalità di ricerca in stile Spotlight/VS Code per saltare direttamente a un servizio o bookmark senza scorrere la pagina
+- **Apertura della modale** (solo se il focus non è in un `INPUT`/`TEXTAREA`/`SELECT`/`contenteditable` e nessun modificatore `Ctrl`/`Cmd`/`Alt` è premuto):
+  - Tasto `Enter` → apre la modale con query vuota; i risultati appaiono man mano che si digita
+  - Qualsiasi carattere alfanumerico (`a`-`z`, `A`-`Z`, `0`-`9`) → apre la modale e **pre-popola** la query con quel carattere; i tasti successivi filtrano i risultati in tempo reale
+- **Lista dei risultati**: fino a **6 elementi** per trade-off di usabilità, filtrati live su `data.services` + `data.bookmarks` con ranking per rilevanza (nome esatto > prefisso > sottostringa > abbreviazione > descrizione), tie-break alfabetico
+- **Ogni riga** mostra l'icona del servizio/bookmark (con fallback monogramma da abbreviazione o primi due caratteri), il nome, la descrizione e l'etichetta del gruppo
+- **Scorciatoie da tastiera** (riportate anche nel footer della modale):
+  - `↑` / `↓` — sposta la selezione su/giù
+  - `↵` (Invio) — apre il risultato evidenziato in una nuova tab e chiude la modale
+  - `Esc` — chiude la modale senza navigare, ripristinando il focus sulla pagina
+  - `Tab` — segue l'ordine di focus nativo del browser (cicla input → risultati)
+- **Mouse** — cliccare su una riga la attiva come `Invio`; l'hover aggiorna la selezione da tastiera così il prossimo `Invio` apre la riga sotto il cursore
+- L'indice di ricerca è ricostruito ad ogni `_loadData` (quindi riflette le modifiche di `config/homepage.yaml` via hot-reload senza refresh manuale)
+- Accessibilità: `role="dialog"` + `aria-modal="true"` + `aria-label="Search services and bookmarks"` sulla modale; ogni risultato `role="option"` con `aria-selected` che riflette la posizione della tastiera
+
 ## CORS
 - Configurabile in `internal/api/middleware/cors.go`
 - Default: `*` (tutte le origini)

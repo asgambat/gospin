@@ -22,6 +22,7 @@ import (
 	"github.com/bassista/go_spin/internal/logger"
 	"github.com/bassista/go_spin/internal/repository"
 	"github.com/bassista/go_spin/internal/runtime"
+	"github.com/bassista/go_spin/internal/version"
 
 	"github.com/enrichman/httpgrace"
 )
@@ -40,6 +41,10 @@ func main() {
 	}
 	logger.Logger.SetLevel(logLevel)
 	logger.WithComponent("main").Debugf("log level set to: %s", logLevel.String())
+	// Emit build identity eagerly so it shows up in container logs /
+	// `docker logs` output from the first line — complement to the
+	// homepage footer summary rendered via the /homepage JSON response.
+	logger.WithComponent("main").Infof("starting gospin %s", version.BuildInfo())
 	logger.WithComponent("main").Infof("Waiting server will run on port: %d", cfg.Server.WaitingServerPort)
 	logger.WithComponent("main").Infof("App will run on port: %d", cfg.Server.Port)
 
