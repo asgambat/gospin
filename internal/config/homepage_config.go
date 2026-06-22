@@ -37,10 +37,7 @@ type ServiceGroup struct {
 	Items []ServiceItem `yaml:"items" json:"items"`
 }
 
-// HomepageSettings holds the user-configurable settings section. Note:
-// the software version is intentionally NOT a field here — it is injected
-// server-side from internal/version.Version and exposed as a top-level
-// JSON field on HomepageResponse, so users cannot override it via this YAML.
+// HomepageSettings holds the user-configurable settings section.
 type HomepageSettings struct {
 	Theme                       string `yaml:"theme" json:"theme"`
 	Title                       string `yaml:"title" json:"title"`
@@ -119,6 +116,7 @@ func LoadHomepageConfig(path string) (*HomepageConfig, string, error) {
 			cfg.Settings.FontFamily = DefaultFontFamily
 			cfg.Settings.FontSize = DefaultFontSize
 			cfg.Settings.TitleFontSize = DefaultTitleFontSize
+
 			return cfg, "", nil
 		}
 		return nil, "", fmt.Errorf("failed to read homepage config file: %w", err)
@@ -145,6 +143,7 @@ func LoadHomepageConfig(path string) (*HomepageConfig, string, error) {
 	if cfg.Settings.FontSize == "" {
 		cfg.Settings.FontSize = DefaultFontSize
 	}
+
 	if cfg.Settings.TitleFontSize == "" {
 		cfg.Settings.TitleFontSize = DefaultTitleFontSize
 	}

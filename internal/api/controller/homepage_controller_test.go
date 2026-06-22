@@ -148,7 +148,6 @@ settings:
 }
 
 func TestHomepageController_GetHomepageData_MissingFile(t *testing.T) {
-
 	hc := NewHomepageController("/nonexistent/path/homepage.yaml")
 
 	r := gin.New()
