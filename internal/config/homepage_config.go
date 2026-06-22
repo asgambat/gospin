@@ -37,11 +37,11 @@ type ServiceGroup struct {
 	Items []ServiceItem `yaml:"items" json:"items"`
 }
 
-// HomepageSettings holds the settings section
+// HomepageSettings holds the user-configurable settings section.
 type HomepageSettings struct {
 	Theme                       string `yaml:"theme" json:"theme"`
 	Title                       string `yaml:"title" json:"title"`
-	Version                     string `yaml:"version" json:"version"`
+	TitleFontSize               string `yaml:"title_font_size" json:"titleFontSize"`
 	FontFamily                  string `yaml:"font_family" json:"fontFamily"`
 	FontSize                    string `yaml:"font_size" json:"fontSize"`
 	PollingIntervalSeconds      int    `yaml:"polling_interval_seconds" json:"pollingIntervalSeconds"`
@@ -59,6 +59,10 @@ const DefaultFontFamily = "Inter, system-ui, -apple-system, BlinkMacSystemFont, 
 
 // DefaultFontSize is the default base font size (slightly larger than browser default)
 const DefaultFontSize = "17px"
+
+// DefaultTitleFontSize matches Tailwind's text-xl scale (1.25rem) so the
+// homepage title looks identical to before configurability was added.
+const DefaultTitleFontSize = "1.25rem"
 
 // dashboardIconsBase is the CDN base URL for homarr-labs dashboard-icons
 const dashboardIconsBase = "https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons"
@@ -111,6 +115,8 @@ func LoadHomepageConfig(path string) (*HomepageConfig, string, error) {
 			cfg.Settings.StatsPollingIntervalSeconds = DefaultStatsPollingIntervalSeconds
 			cfg.Settings.FontFamily = DefaultFontFamily
 			cfg.Settings.FontSize = DefaultFontSize
+			cfg.Settings.TitleFontSize = DefaultTitleFontSize
+
 			return cfg, "", nil
 		}
 		return nil, "", fmt.Errorf("failed to read homepage config file: %w", err)
@@ -136,6 +142,10 @@ func LoadHomepageConfig(path string) (*HomepageConfig, string, error) {
 	}
 	if cfg.Settings.FontSize == "" {
 		cfg.Settings.FontSize = DefaultFontSize
+	}
+
+	if cfg.Settings.TitleFontSize == "" {
+		cfg.Settings.TitleFontSize = DefaultTitleFontSize
 	}
 
 	// Resolve icon URLs

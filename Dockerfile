@@ -1,23 +1,36 @@
 FROM golang:1.25.6-alpine AS build
-#RUN apk add --no-cache curl libstdc++ libgcc alpine-sdk
-RUN apk add --no-cache ca-certificates
-
-ARG GOARCH=arm64
+RUN apk add --no-cache ca-certificates upx
 
 WORKDIR /app
-
-#RUN curl -sL https://github.com/tailwindlabs/tailwindcss/releases/latest/download/tailwindcss-linux-x64-musl -o tailwindcss
-#RUN chmod +x tailwindcss
-#RUN go install github.com/a-h/templ/cmd/templ@latest
 
 COPY go.mod go.sum ./
 RUN go mod download
 
 COPY . .
 
-#RUN templ generate
-#RUN ./tailwindcss -i cmd/web/styles/input.css -o cmd/web/assets/css/output.css
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=${GOARCH} GOMAXPROCS=2 go build -trimpath -ldflags="-s -w" -gcflags="all=-N -l" -o /app/main ./cmd/server/main.go
+# Build-time metadata injected into internal/version via -ldflags.
+# Defaults are safe fallbacks; CI / docker buildx should pass these as
+# `--build-arg` to embed the real git tag, commit SHA, and Go version
+# into the binary so they surface on the homepage footer.
+ARG VERSION="0.0.9"
+ARG BUILD_TIME="unknown"
+ARG GIT_COMMIT="unknown"
+ARG GO_VERSION="unknown"
+ENV VERSION=${VERSION} \
+    BUILD_TIME=${BUILD_TIME} \
+    GIT_COMMIT=${GIT_COMMIT} \
+    GO_VERSION=${GO_VERSION}
+
+RUN go mod tidy \
+    && CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH} go build -trimpath \
+         -ldflags="-s -w \
+                   -X github.com/bassista/go_spin/internal/version.Version=${VERSION} \
+                   -X github.com/bassista/go_spin/internal/version.BuildTime=${BUILD_TIME} \
+                   -X github.com/bassista/go_spin/internal/version.GitCommit=${GIT_COMMIT} \
+                   -X github.com/bassista/go_spin/internal/version.GoVersion=${GO_VERSION} \
+                   -extldflags '-static'" \
+         -o /app/main ./cmd/server/main.go \
+    && upx --best --lzma /app/main
 
 #FROM gcr.io/distroless/static-debian11 AS prod
 FROM alpine:3.20.1 AS prod
@@ -28,6 +41,9 @@ WORKDIR /app
 COPY --from=build /app/main /app/main
 COPY --from=build /app/ui /app/ui
 COPY --from=build /app/config /app/config
+
+# Remove unnecessary files from final image
+RUN find /app -type f \( -name "*.md" -o -name "*.txt" -o -name "LICENSE" -o -name ".git*" \) -delete 2>/dev/null || true
 
 ARG PORT=8084
 ENV PORT=${PORT}

@@ -3,6 +3,7 @@ package route
 import (
 	"net/http"
 
+	"github.com/gin-contrib/gzip"
 	"github.com/gin-gonic/gin"
 	"github.com/sirupsen/logrus"
 
@@ -14,6 +15,7 @@ func SetupRoutes(appCtx *app.App, logger *logrus.Logger) *gin.Engine {
 	r := gin.New()
 	r.Use(middleware.HoneybadgerMiddleware(logger))
 	r.Use(gin.Recovery())
+	r.Use(gzip.Gzip(gzip.DefaultCompression))
 	r.Use(middleware.HoneybadgerMiddleware(logger))
 	r.Use(middleware.CORSMiddleware(appCtx.Config.Server.CORSAllowedOrigins))
 

@@ -5,7 +5,13 @@ tmp_dir = ".build"
 [build]
   args_bin = []
   bin = "./.build/main"
-  cmd = "templ generate && go build -o ./.build/main ./cmd/server/main.go"
+  # The -X -ldflags below MUST stay in sync with the `LDFLAGS` variable in
+  # the Makefile and the `-X -ldflags` block in the Dockerfile: same
+  # Version/BuildTime/GitCommit/GoVersion semantics so a local `make build`
+  # and `make watch` produce matching metadata for the same commit, and so
+  # the dev server's homepage footer reports the same string the published
+  # image reports. If you add/remove a var to LDFLAGS, mirror the change here.
+  cmd = "templ generate && go build -ldflags \"-s -w -X github.com/bassista/go_spin/internal/version.Version=$(git describe --tags --always --dirty 2>/dev/null || echo '0.0.9') -X github.com/bassista/go_spin/internal/version.BuildTime=$(date -u '+%Y-%m-%d_%H:%M:%S') -X github.com/bassista/go_spin/internal/version.GitCommit=$(git rev-parse --short HEAD 2>/dev/null || echo 'unknown') -X github.com/bassista/go_spin/internal/version.GoVersion=$(go version | awk '{print $3}')\" -o ./.build/main ./cmd/server/main.go"
   delay = 1000
   exclude_dir = ["assets", ".build", "vendor", "testdata", "docs"]
   exclude_file = []

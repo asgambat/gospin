@@ -41,12 +41,38 @@ I have decided to rewrite the project in Go to leverage its performance, concurr
 git clone https://github.com/asgambat/gospin.git
 cd gospin
 
-# Build
-go build -o .build/main ./cmd/server/main.go
+# Build (recommended — injects git tag/commit/build time into the binary)
+make build            # → ./.build/main
+
+# Or, manually with raw ldflags:
+VERSION=$(git describe --tags --always --dirty 2>/dev/null || echo "0.0.9")
+BUILD_TIME=$(date -u '+%Y-%m-%d_%H:%M:%S')
+GIT_COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+GO_VERSION=$(go version | awk '{print $3}')
+go build -ldflags "\
+  -s -w \
+  -X github.com/bassista/go_spin/internal/version.Version=$VERSION \
+  -X github.com/bassista/go_spin/internal/version.BuildTime=$BUILD_TIME \
+  -X github.com/bassista/go_spin/internal/version.GitCommit=$GIT_COMMIT \
+  -X github.com/bassista/go_spin/internal/version.GoVersion=$GO_VERSION" \
+  -o .build/main ./cmd/server/main.go
 
 # Run
 ./.build/main
 ```
+
+### Build-time version metadata
+
+The version string rendered in the bottom-right of the dashboard is **not** read from `config/homepage.yaml`. It is injected into the binary at link time via `-ldflags "-X …/internal/version.<Var>=…"` and survives every release. Four `internal/version` package variables are populated this way:
+
+| Variable | Source (Makefile default) | Example value |
+|----------|---------------------------|---------------|
+| `Version` | `git describe --tags --always --dirty` (fallback `0.0.9`) | `v1.2.3`, `v1.2.3-4-gabc1234`, `v1.2.3-dirty` |
+| `BuildTime` | `date -u '+%Y-%m-%d_%H:%M:%S'` | `2026-06-22 14:30:00` |
+| `GitCommit` | `git rev-parse --short HEAD` (fallback `unknown`) | `abc1234` |
+| `GoVersion` | `go version \| awk '{print $3}'` | `go1.25.6` |
+
+The same four `-X` flags are baked into `Dockerfile` via `--build-arg VERSION=… BUILD_TIME=… GIT_COMMIT=… GO_VERSION=…`, so multi-arch CI builds (`.github/workflows/docker_build_push.yml`) embed the same metadata into the published image. There is no environment variable that can override these at runtime — they are part of the compiled binary.
 
 ### Access
 
@@ -177,6 +203,102 @@ Access the UI at `http://localhost:8084/ui`
 - **URL Generation**: Auto-generates container URLs based on `base_url` configuration
 - **Responsive Design**: Works on desktop and mobile devices
 - **Error Handling**: User-friendly error messages for failed operations
+
+## 🏠 Homepage Configuration
+
+GoSpin ships with a personal dashboard page rendered by `ui/home.html`. Its content and appearance are driven by a separate YAML file, **`config/homepage.yaml`**, which defines three top-level sections:
+
+- **`services`** — visual cards (name, URL, description, icon) grouped under headings
+- **`bookmarks`** — short links with an optional 2-character abbreviation, grouped under headings
+- **`settings`** — page-wide customization (theme, title, fonts, polling intervals)
+
+A complete example with all three sections lives at `config/homepage.yaml` in the repository.
+
+### `settings` reference
+
+All `settings` fields are **optional**. If a field is omitted or left empty, the application falls back to the documented default. String-valued size fields accept any valid CSS length (e.g. `1.25rem`, `20px`, `1.1em`).
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `theme` | string | `auto` | One of `auto`, `tokyo-night`, `catppuccin-latte`, `nord`, `dracula`, `gruvbox`, `night-stars`. With `auto`, the page follows the OS `prefers-color-scheme`. The on-page theme selector overrides this and persists the choice in `localStorage`. |
+| `title` | string | `Dashboard` | Plain-text title rendered as the page `<h1>`. |
+| `title_font_size` | CSS size | `1.25rem` | Font-size of the title (e.g. `1.5rem`, `20px`, `1.1em`). Exposed at runtime as the CSS custom property `--title-font-size`. |
+| `font_family` | CSS font stack | `Inter, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif` | Page-wide font family. |
+| `font_size` | CSS size | `17px` | Document-wide base font size; drives Tailwind rem-derived scaling. |
+| `polling_interval_seconds` | int | `10` | How often the page polls `/homepage` to detect external config-file changes (in seconds). |
+| `stats_polling_interval_seconds` | int | `3` | How often the page polls `/runtime/system-stats` to refresh CPU/RAM/Disk in the footer. |
+
+### Example
+
+```yaml
+settings:
+  theme: catppuccin-latte
+  title: My Dashboard
+  title_font_size: "1.5rem"
+  font_family: "Inter, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
+  font_size: "19px"
+  polling_interval_seconds: 10
+  stats_polling_interval_seconds: 3
+```
+
+### Available themes
+
+Six named themes are available, plus `auto` which delegates to one of the dark/light themes based on the OS `prefers-color-scheme`:
+
+| Theme           | Description                                                                  | Background image    | Translucent cards |
+|-----------------|------------------------------------------------------------------------------|---------------------|-------------------|
+| `tokyo-night`   | Dark blue Tokyo Night palette.                                               | —                   | No                |
+| `catppuccin-latte` | Light Catppuccin Latte palette.                                            | Yes (locally hosted) | Yes               |
+| `nord`          | Cool Nord palette (arctic, muted).                                           | Yes (locally hosted) | Yes               |
+| `dracula`       | Classic Dracula palette (purple accents).                                    | —                   | No                |
+| `gruvbox`       | Warm Gruvbox retro palette.                                                  | —                   | No                |
+| `night-stars`   | Dark Dracula-inspired palette with a starry-night background image and translucent cards. | Yes (locally hosted) | Yes               |
+
+Themes with a background image render it through a themed `body.<theme>::before` pseudo-element (with a per-theme `filter` and `opacity`) layered between the page background and the content. Background images are stored locally under `ui/assets/themes/<theme>-bg.jpg` (where `<theme>` is one of `nord`, `catppuccin-latte`, or `night-stars`) and served by the static asset router at `/ui/assets/themes/...`; **no third-party requests are made at runtime**, so the dashboard works offline and in air-gapped environments.
+
+### Local theme assets
+
+The three "glassmorphism" themes (`nord`, `catppuccin-latte`, `night-stars`) each ship with their own background image. To avoid leaking visitor activity to a third-party CDN and to keep the dashboard working in air-gapped / privacy-strict environments, these images are bundled with the repository and served by the Go server itself — **no third-party image fetches happen on the homepage at runtime**.
+
+- **Directory**: [`ui/assets/themes/`](ui/assets/themes/) holds the source JPEGs (progressive, 2560px wide, ≈ 80% quality):
+  - `nord-bg.jpg` — 2560×1707, ≈ 723 KB
+  - `catppuccin-latte-bg.jpg` — 2560×1945, ≈ 308 KB
+  - `night-stars-bg.jpg` — 2560×1628, ≈ 738 KB
+- **Routing**: the static route `r.Static("/ui/assets", "./ui/assets")` defined in [`internal/api/route/ui_route.go`](internal/api/route/ui_route.go) registers every file in `ui/assets/` at the URL prefix `/ui/assets/...`. The CSS in [`ui/home.html`](ui/home.html) therefore references absolute paths like `url('/ui/assets/themes/nord-bg.jpg')`; the Gin router serves the bytes directly off disk with no extra middleware.
+- **Total payload**: ≈ 3.29 MB (3,286,933 B) across all 12 files (3 themes × 4 variants: 2560 px JPEG, 1280 px JPEG, 2560 px WebP, 1280 px WebP). The browser fetches only the variant it needs per theme switch (via `image-set()`); the service worker pre-caches all variants for offline use.
+- **Replacing an image**: drop a new JPEG with the same filename into `ui/assets/themes/` and restart the server (or hot-reload if your deployment supports it). No CSS change required.
+
+### Search modal
+
+The dashboard also exposes a keyboard-driven search palette — a Spotlight/VS Code-style overlay that jumps directly to any service or bookmark without scrolling.
+
+**Trigger keys** (only when focus is not in an `INPUT`, `TEXTAREA`, `SELECT`, or contenteditable element, and no `Ctrl` / `Cmd` / `Alt` modifier is held):
+
+- **Press `Enter`** — opens the modal with an empty query; results appear as you type.
+- **Press any single alphanumeric key** (`a`–`z`, `A`–`Z`, `0`–`9`) — opens the modal **and** seeds the query with that character; subsequent typing refines the filter.
+
+**Inside the modal**:
+
+- **Result list** shows up to **6 matches**, real-time filtered across every service and bookmark currently rendered. Matches are weighted by relevance (exact name > name prefix > name substring > abbreviation match > description match) and ties are broken alphabetically by name.
+- **Each result** displays the service/bookmark icon (`<img>` with an abbr/first-two-letter monogram fallback), the name, the description, and the source group label.
+- **Keyboard shortcuts** (also rendered in the modal's hint footer):
+  - `↑` / `↓` — move the selection up/down
+  - `↵` (Enter) — open the highlighted result in a new tab and close the modal
+  - `Esc` — close the modal without navigating; focus returns to the page so the next `Enter` re-opens it
+  - `Tab` — native browser focus order (cycles input → results)
+- **Mouse** — clicking a result activates it the same way `Enter` does; hovering a row updates the keyboard selection so the next `Enter` opens that row.
+
+The modal's source of truth is the same `data.services` + `data.bookmarks` already loaded on the page; an in-memory index is rebuilt every time the homepage config is hot-reloaded, so newly added services show up in search without a manual refresh.
+
+Accessibility: the modal uses `role="dialog"` + `aria-modal="true"` + `aria-label="Search services and bookmarks"`, and each result carries `role="option"` with `aria-selected` reflecting the keyboard position.
+
+### Notes
+
+- The file is **hot-reloaded**: when the content-hash on the `/homepage` response changes, the page re-fetches and re-applies all visuals (theme, fonts, layout) without a full reload.
+- The **build metadata** rendered in the bottom-right of the page (e.g. `v1.2.3 · abc1234`) is **not** a YAML field. It is sourced from four `internal/version.*` package vars at build time and exposed as top-level JSON fields on the `/homepage` response (`version`, `buildTime`, `gitCommit`, `goVersion`).
+  - `make build` injects them via `-ldflags` from `git describe`, `date`, `git rev-parse`, and `go version`.
+  - The Dockerfile injects the same four flags via `--build-arg` so the published image carries the metadata.
+  - Users cannot override them via `homepage.yaml` — the server value always wins (a test pins this invariant: even a YAML `version: …` key is silently ignored).
 
 ## 📡 API Endpoints
 

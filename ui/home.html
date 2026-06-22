@@ -4,144 +4,18 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Homepage</title>
-    <link rel="manifest" href="ui/assets/pwa/manifest.json">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🏠</text></svg>">
+    <link rel="manifest" href="ui/assets/pwa/manifest-home.json">
     <meta name="theme-color" content="#1e1e2e">
     <script defer src="/ui/home.js"></script>
+    <!-- Alpine collapse plugin (registers x-collapse directive) must load BEFORE Alpine core -->
+    <script defer src="https://cdn.jsdelivr.net/npm/@alpinejs/collapse@3.x.x/dist/cdn.min.js"></script>
     <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
     <script src="https://unpkg.com/htmx.org@1.9.10"></script>
     <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
     <style>
-        [x-cloak] { display: none !important; }
-
-        /* ===== Theme Variables ===== */
-        :root,
-        body.theme-tokyo-night {
-            --bg-color: #1a1b26;
-            --fg-color: #a9b1d6;
-            --card-bg: #24283b;
-            --card-border: #414868;
-            --accent: #7aa2f7;
-            --subtle-color: #565f89;
-            --stat-cpu: #f7768e;
-            --stat-ram: #9ece6a;
-            --stat-disk: #7aa2f7;
-            --hover-glow: rgba(122,162,247,0.08);
-        }
-        body.theme-catppuccin-latte {
-            --bg-color: #eff1f5;
-            --fg-color: #4c4f69;
-            --card-bg: #ffffff;
-            --card-border: #ccd0da;
-            --accent: #8839ef;
-            --subtle-color: #8c8fa1;
-            --stat-cpu: #d20f39;
-            --stat-ram: #40a02b;
-            --stat-disk: #1e66f5;
-            --hover-glow: rgba(136,57,239,0.06);
-        }
-        body.theme-nord {
-            --bg-color: #2e3440;
-            --fg-color: #d8dee9;
-            --card-bg: #3b4252;
-            --card-border: #434c5e;
-            --accent: #88c0d0;
-            --subtle-color: #4c566a;
-            --stat-cpu: #bf616a;
-            --stat-ram: #a3be8c;
-            --stat-disk: #81a1c1;
-            --hover-glow: rgba(136,192,208,0.08);
-        }
-        body.theme-dracula {
-            --bg-color: #282a36;
-            --fg-color: #f8f8f2;
-            --card-bg: #44475a;
-            --card-border: #6272a4;
-            --accent: #bd93f9;
-            --subtle-color: #6272a4;
-            --stat-cpu: #ff5555;
-            --stat-ram: #50fa7b;
-            --stat-disk: #8be9fd;
-            --hover-glow: rgba(189,147,249,0.08);
-        }
-        body.theme-gruvbox {
-            --bg-color: #282828;
-            --fg-color: #ebdbb2;
-            --card-bg: #3c3836;
-            --card-border: #504945;
-            --accent: #d79921;
-            --subtle-color: #a89984;
-            --stat-cpu: #fb4934;
-            --stat-ram: #b8bb26;
-            --stat-disk: #83a598;
-            --hover-glow: rgba(215,153,33,0.08);
-        }
-
-        /* ===== Smooth theme transitions ===== */
-        body, header, footer {
-            transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease;
-        }
-
-        /* Scrollbar theming */
-        ::-webkit-scrollbar { width: 6px; height: 6px; }
-        ::-webkit-scrollbar-track { background: transparent; }
-        ::-webkit-scrollbar-thumb { background: var(--subtle-color); border-radius: 3px; }
-
-        /* ===== Card hover effect ===== */
-        .link-card {
-            transition: all 0.2s ease;
-            border-left-width: 3px;
-            border-left-style: solid;
-        }
-        .link-card:hover {
-            transform: translateY(-1px);
-            box-shadow: 0 4px 16px var(--hover-glow);
-            border-left-width: 4px;
-            border-left-color: var(--accent) !important;
-        }
-
-        /* ===== Stat card ===== */
-        .stat-card {
-            transition: all 0.25s ease;
-        }
-        .stat-card:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 4px 12px var(--hover-glow);
-        }
-
-        /* ===== Progress bar animation ===== */
-        .stat-bar {
-            transition: width 0.6s cubic-bezier(0.4, 0, 0.2, 1);
-        }
-
-        /* ===== Icon fade-in ===== */
-        .icon-fade-in {
-            opacity: 0;
-            transition: opacity 0.3s ease;
-        }
-        .icon-fade-in.loaded {
-            opacity: 1;
-        }
-
-        /* ===== Page fade-in ===== */
-        .page-fade {
-            opacity: 0;
-            transition: opacity 0.4s ease;
-        }
-        .page-fade.visible {
-            opacity: 1;
-        }
-
-        /* ===== Skeleton loader ===== */
-        @keyframes shimmer {
-            0% { background-position: -200% 0; }
-            100% { background-position: 200% 0; }
-        }
-        .skeleton-icon {
-            background: linear-gradient(90deg, var(--card-border) 25%, var(--card-bg) 50%, var(--card-border) 75%);
-            background-size: 200% 100%;
-            animation: shimmer 1.5s ease-in-out infinite;
-        }
-    </style>
+        [x-cloak]{display:none!important}.tab-active{border-bottom:2px solid #3b82f6;color:#3b82f6}.modal-backdrop{background-color:rgba(0,0,0,.5)}@keyframes spin{0%{transform:rotate(0deg)}to{transform:rotate(360deg)}}.animate-spin{animation:spin 1s linear infinite}@media (max-width:400px){.delete-btn{display:none!important}}.swipe-delete{background-color:#fee2e2!important;transition:background-color .2s}.swipe-delete-anim{transform:translateX(60px) scale(.98);opacity:.7;transition:transform .2s,opacity .2s}.swipe-delete-anim-left{transform:translateX(-60px) scale(.98);opacity:.7;transition:transform .2s,opacity .2s}.swipe-track{touch-action:pan-y}body.theme-nord::before{content:"";position:fixed;top:0;left:0;width:100%;height:100%;background-image:var(--theme-background);background-image:image-set(url(/ui/assets/themes/nord-bg-1280.webp)type("image/webp") 1x,url(/ui/assets/themes/nord-bg.webp)type("image/webp") 2x,url(/ui/assets/themes/nord-bg-1280.jpg)1x,url(/ui/assets/themes/nord-bg.jpg)2x);background-size:cover;background-position:center;background-repeat:no-repeat;filter:blur(1px) saturate(70%) brightness(80%);opacity:.5;z-index:-1}body.theme-dracula{--bg-color:#282a36;--fg-color:#f8f8f2;--card-bg:#44475a;--card-border:#6272a4;--accent:#bd93f9;--subtle-color:#6272a4;--stat-cpu:#ff5555;--stat-ram:#50fa7b;--stat-disk:#8be9fd;--hover-glow:rgba(189,147,249,0.08)}body.theme-gruvbox{--bg-color:#282828;--fg-color:#ebdbb2;--card-bg:#3c3836;--card-border:#504945;--accent:#d79921;--subtle-color:#a89984;--stat-cpu:#fb4934;--stat-ram:#b8bb26;--stat-disk:#83a598;--hover-glow:rgba(215,153,33,0.08)}body.theme-night-stars{--bg-color:#282a36;--fg-color:#f8f8f2;--card-bg:rgba(68, 71, 90, 0.3);--card-border:rgba(98, 114, 164, 0.3);--accent:#bd93f9;--subtle-color:rgba(248, 248, 242, 0.7);--stat-cpu:#ff5555;--stat-ram:#50fa7b;--stat-disk:#8be9fd;--hover-glow:rgba(189,147,249,0.08);--theme-background:url('/ui/assets/themes/night-stars-bg-1280.jpg')}body.theme-night-stars::before{content:"";position:fixed;top:0;left:0;width:100%;height:100%;background-image:var(--theme-background);background-image:image-set(url(/ui/assets/themes/night-stars-bg-1280.webp)type("image/webp") 1x,url(/ui/assets/themes/night-stars-bg.webp)type("image/webp") 2x,url(/ui/assets/themes/night-stars-bg-1280.jpg)1x,url(/ui/assets/themes/night-stars-bg.jpg)2x);background-size:cover;background-position:center;background-repeat:no-repeat;filter:blur(0) saturate(110%) brightness(70%);opacity:.4;z-index:-1}body.theme-tokyo-night{--bg-color:#1a1b26;--fg-color:#c0caf5;--card-bg:#24283b;--card-border:#414868;--accent:#7aa2f7;--subtle-color:#565f89;--stat-cpu:#f7768e;--stat-ram:#9ece6a;--stat-disk:#7dcfff;--hover-glow:rgba(122,162,247,0.08)}body.theme-catppuccin-latte{--bg-color:#eff1f5;--fg-color:#4c4f69;--card-bg:rgba(230,233,239,0.45);--card-border:rgba(76,111,179,0.25);--accent:#1e66f5;--subtle-color:#6c6f85;--stat-cpu:#d20f39;--stat-ram:#40a02b;--stat-disk:#04a5e5;--hover-glow:rgba(30,102,245,0.08);--theme-background:url('/ui/assets/themes/catppuccin-latte-bg-1280.jpg')}body.theme-catppuccin-latte::before{content:"";position:fixed;top:0;left:0;width:100%;height:100%;background-image:var(--theme-background);background-image:image-set(url(/ui/assets/themes/catppuccin-latte-bg-1280.webp)type("image/webp") 1x,url(/ui/assets/themes/catppuccin-latte-bg.webp)type("image/webp") 2x,url(/ui/assets/themes/catppuccin-latte-bg-1280.jpg)1x,url(/ui/assets/themes/catppuccin-latte-bg.jpg)2x);background-size:cover;background-position:center;background-repeat:no-repeat;filter:blur(0) saturate(100%) brightness(98%);opacity:.35;z-index:-1}body.theme-nord{--bg-color:#2e3440;--fg-color:#eceff4;--card-bg:rgba(67,76,94,0.4);--card-border:rgba(136,192,208,0.25);--accent:#88c0d0;--subtle-color:#4c566a;--stat-cpu:#bf616b;--stat-ram:#a3be8c;--stat-disk:#88c0d0;--hover-glow:rgba(136,192,208,0.08);--theme-background:url('/ui/assets/themes/nord-bg-1280.jpg')}body,header,footer{transition:background-color .3s ease,color .3s ease,border-color .3s ease}::-webkit-scrollbar{width:6px;height:6px}::-webkit-scrollbar-track{background:0 0}::-webkit-scrollbar-thumb{background:var(--subtle-color);border-radius:3px}.link-card{transition:all .2s ease;border-left-width:3px;border-left-style:solid}.link-card:hover{transform:translateY(-1px);box-shadow:0 4px 16px var(--hover-glow);border-left-width:4px;border-left-color:var(--accent)!important}.stat-card{transition:all .25s ease}.stat-card:hover{transform:translateY(-2px);box-shadow:0 4px 12px var(--hover-glow)}.stat-bar{transition:width .6s cubic-bezier(.4,0,.2,1)}.icon-fade-in{opacity:0;transition:opacity .3s ease}.icon-fade-in.loaded{opacity:1}.page-fade{opacity:0;transition:opacity .4s ease}.page-fade.visible{opacity:1}@keyframes shimmer{0%{background-position:-200%0}to{background-position:200%0}}.skeleton-icon{background:linear-gradient(90deg,var(--card-border) 25%,var(--card-bg) 50%,var(--card-border) 75%);background-size:200% 100%;animation:shimmer 1.5s ease-in-out infinite}.search-modal-backdrop{position:fixed;inset:0;background-color:rgba(0,0,0,.5);backdrop-filter:blur(2px);display:flex;align-items:flex-start;justify-content:center;padding-top:10vh;z-index:9999}.search-modal{width:100%;max-width:36rem;border-radius:.5rem;border:1px solid var(--card-border);background-color:var(--bg-color);color:var(--fg-color);box-shadow:0 25px 50px -12px rgba(0,0,0,.5);overflow:hidden}.search-input{width:100%;padding:.875rem 1rem;font-size:1rem;background:0 0;border:0;border-bottom:1px solid var(--card-border);color:var(--fg-color);outline:0}.search-input::placeholder{color:var(--subtle-color)}.search-results-list{list-style:none;margin:0;padding:0;max-height:60vh;overflow-y:auto}.search-result{display:flex;align-items:center;gap:.75rem;padding:.625rem 1rem;cursor:pointer;color:var(--fg-color);border-left:3px solid transparent}.search-result:hover,.search-result.selected{background-color:var(--card-bg);border-left-color:var(--accent)}.search-result-meta{font-size:.75rem;color:var(--subtle-color);margin-left:auto;flex-shrink:0}.search-empty{padding:2rem 1rem;text-align:center;color:var(--subtle-color);font-size:.875rem}.search-hint{padding:.5rem 1rem;font-size:.7rem;color:var(--subtle-color);border-top:1px solid var(--card-border);display:flex;justify-content:space-between;gap:1rem}.search-hint kbd{background-color:var(--card-bg);border:1px solid var(--card-border);border-radius:3px;padding:0 4px;font-family:ui-monospace,SFMono-Regular,monospace}
+        </style>
 </head>
 <body x-data="homeApp()" x-init="init()"
       style="background-color: var(--bg-color); color: var(--fg-color); font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-size: 17px;"
@@ -154,7 +28,15 @@
         <!-- Header -->
         <header class="shrink-0 px-4 py-2 border-b flex items-center"
                 style="border-color: var(--card-border); background-color: var(--card-bg);">
+            <!-- Title font-size is sourced from the runtime CSS variable
+                 `--title-font-size`, which _syncRootFont (ui/home.js) sets from
+                 data.settings.titleFontSize (falling back to a default that
+                 mirrors Go's DefaultTitleFontSize). The `text-xl` Tailwind
+                 class is retained as a fallback for the brief moment BEFORE
+                 _syncRootFont runs, providing both font-size: 1.25rem and
+                 line-height: 1.75rem so the title never flashes unstyled. -->
             <h1 class="text-xl font-bold truncate flex-1"
+                style="font-size: var(--title-font-size)"
                 x-text="data?.settings?.title || 'Dashboard'"></h1>
         </header>
 
@@ -167,10 +49,27 @@
                      x-show="data && data.bookmarks && data.bookmarks.length > 0">
                 <template x-for="group in data.bookmarks" :key="group.group">
                     <div class="mb-4">
-                        <h2 class="text-xs font-bold uppercase tracking-wider mb-2 px-1"
-                            style="color: var(--accent);"
-                            x-text="group.group"></h2>
-                        <div class="space-y-1">
+                        <h2 class="mb-2 px-1">
+                            <button type="button"
+                                    @click="toggleGroup(group.group)"
+                                    :aria-expanded="isGroupOpen(group.group) ? 'true' : 'false'"
+                                    :aria-controls="'bm-' + $id(group.group)"
+                                    class="w-full text-xs font-bold uppercase tracking-wider flex items-center justify-between gap-2 focus:outline-none focus:ring-1 rounded-sm hover:opacity-80 transition-opacity duration-200 ease-out"
+                                    style="color: var(--accent);">
+                                <span x-text="group.group" class="truncate flex-1 text-left"></span>
+                                <svg class="w-3 h-3 shrink-0 transition-transform duration-200 ease-out"
+                                     :class="isGroupOpen(group.group) ? 'rotate-180' : 'rotate-0'"
+                                     viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                     stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"
+                                     aria-hidden="true">
+                                    <path d="M19 9l-7 7-7-7"/>
+                                </svg>
+                            </button>
+                        </h2>
+                        <div :id="'bm-' + $id(group.group)"
+                             x-show="isGroupOpen(group.group)"
+                             x-collapse
+                             class="space-y-1">
                             <template x-for="bm in group.items" :key="bm.url">
                                 <a :href="bm.url" target="_blank" rel="noopener"
                                    class="link-card flex items-center justify-between border rounded p-1.5 text-sm no-underline"
@@ -198,10 +97,27 @@
                 <div class="flex flex-col lg:flex-row gap-4">
                     <template x-for="group in data.services" :key="group.group">
                         <div class="flex-1 min-w-0">
-                            <h2 class="text-xs font-bold uppercase tracking-wider mb-2 px-1"
-                                style="color: var(--accent);"
-                                x-text="group.group"></h2>
-                            <div class="space-y-1.5">
+                            <h2 class="mb-2 px-1">
+                                <button type="button"
+                                        @click="toggleGroup(group.group)"
+                                        :aria-expanded="isGroupOpen(group.group) ? 'true' : 'false'"
+                                        :aria-controls="'svc-' + $id(group.group)"
+                                        class="w-full text-xs font-bold uppercase tracking-wider flex items-center justify-between gap-2 focus:outline-none focus:ring-1 rounded-sm hover:opacity-80 transition-opacity duration-200 ease-out"
+                                        style="color: var(--accent);">
+                                    <span x-text="group.group" class="truncate flex-1 text-left"></span>
+                                    <svg class="w-3 h-3 shrink-0 transition-transform duration-200 ease-out"
+                                         :class="isGroupOpen(group.group) ? 'rotate-180' : 'rotate-0'"
+                                         viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                         stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"
+                                         aria-hidden="true">
+                                        <path d="M19 9l-7 7-7-7"/>
+                                    </svg>
+                                </button>
+                            </h2>
+                            <div :id="'svc-' + $id(group.group)"
+                                 x-show="isGroupOpen(group.group)"
+                                 x-collapse
+                                 class="space-y-1.5">
                                 <template x-for="svc in group.items" :key="svc.name">
                                     <a :href="svc.url" target="_blank" rel="noopener"
                                        class="link-card flex items-center gap-2 border rounded p-2 text-sm no-underline"
@@ -267,9 +183,8 @@
                         <line x1="20" y1="14" x2="23" y2="14"/>
                         <line x1="1" y1="9" x2="4" y2="9"/>
                         <line x1="1" y1="14" x2="4" y2="14"/>
-                    </svg>
-                    <div class="flex flex-col leading-tight">
-                        <span class="font-mono font-bold text-xs" style="color: var(--stat-cpu);" x-text="stats?.cpu + '%'"></span>
+                    </svg>                            <div class="flex flex-col leading-tight">
+                        <span class="font-mono font-bold text-xs inline-block text-right" style="color: var(--stat-cpu); min-width: 4ch;" x-text="(stats?.cpu ?? 0) + '%'"></span>
                         <!-- Mini progress bar -->
                         <div class="w-full h-0.5 rounded-full mt-0.5" style="background-color: var(--card-border);">
                             <div class="stat-bar h-full rounded-full"
@@ -331,11 +246,88 @@
                 </select>
             </div>
 
-            <!-- Version (Rightmost) -->
-            <div class="font-mono text-xs" style="color: var(--subtle-color);"
-                 x-text="data?.settings?.version || ''"></div>
+            <!-- Build metadata (Rightmost) — sourced from server-injected
+                 internal/version.* vars populated by -ldflags at build time
+                 via `make build`. Users cannot override it via homepage.yaml.
+                 Compact footer label is `v<version> · <short-sha>`; hover
+                 reveals full metadata (build time + Go version). -->
+            <div class="font-mono text-xs cursor-help"
+                 style="color: var(--subtle-color);"
+                 :title="(data?.version ? 'v' + data.version : '') + (data?.gitCommit ? ' (' + data.gitCommit + ')' : '') + (data?.buildTime && data.buildTime !== 'unknown' ? ' • built ' + data.buildTime + ' UTC' : '') + (data?.goVersion && data.goVersion !== 'unknown' ? ' • ' + data.goVersion : '')"
+                 x-text="(data?.version ? 'v' + data.version.replace(/^v/, '') : '') + (data?.gitCommit && data.gitCommit !== 'unknown' ? ' · ' + data.gitCommit : '')"></div>
         </footer>
     </div>
 
+    <script>
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', function() {
+                navigator.serviceWorker.register('ui/assets/pwa/service-worker.js');
+            });
+        }
+    </script>
+
+    <!-- ===== Search Modal (global keyboard trigger: any alphanumeric key or Enter) ===== -->
+    <div x-show="searchOpen" x-cloak
+         @click.self="closeSearch()"
+         class="search-modal-backdrop"
+         role="dialog"
+         aria-modal="true"
+         aria-label="Search services and bookmarks">
+        <div class="search-modal" @click.stop>
+            <input id="search-input"
+                   type="text"
+                   class="search-input"
+                   placeholder="Search services and bookmarks…"
+                   x-model="searchQuery"
+                   @input="_runSearch(searchQuery)"
+                   @keydown.escape.prevent="closeSearch()"
+                   @keydown.enter.prevent="_searchActivate()"
+                   @keydown.down.prevent="_searchNext()"
+                   @keydown.up.prevent="_searchPrev()"
+                   x-init="$nextTick(() => { $el.focus(); })"
+                   autocomplete="off"
+                   spellcheck="false"
+                   aria-label="Search query" />
+            <ul class="search-results-list">
+                <template x-for="(r, idx) in searchResults" :key="r.kind + ':' + (r.url || '') + ':' + r.name">
+                    <li class="search-result"
+                        :class="idx === searchSelectedIdx ? 'selected' : ''"
+                        role="option"
+                        :aria-selected="idx === searchSelectedIdx ? 'true' : 'false'"
+                        @click="_searchSelect(idx); _searchActivate()"
+                        @mouseenter="_searchSelect(idx)">
+                        <img x-show="r.icon"
+                             :src="r.icon"
+                             :alt="''"
+                             class="w-5 h-5 rounded shrink-0 object-contain"
+                             style="background-color: var(--card-bg);"
+                             @load="$el.classList.add('loaded')" />
+                        <span x-show="!r.icon"
+                              class="w-5 h-5 flex items-center justify-center rounded text-xs font-bold shrink-0"
+                              style="background-color: var(--accent); color: var(--bg-color);"
+                              x-text="(r.abbr || r.name.substring(0,2)).toUpperCase()"></span>
+                        <div class="min-w-0 flex-1">
+                            <div class="font-semibold truncate text-sm" x-text="r.name"></div>
+                            <div class="text-xs truncate"
+                                 style="color: var(--subtle-color);"
+                                 x-text="r.description || ''"></div>
+                        </div>
+                        <span class="search-result-meta" x-text="r.group || r.kind"></span>
+                    </li>
+                </template>
+                <li x-show="searchQuery.trim() && searchResults.length === 0" class="search-empty">
+                    No results for "<span x-text="searchQuery"></span>"
+                </li>
+                <li x-show="!searchQuery.trim()" class="search-empty">
+                    Type to search across services and bookmarks
+                </li>
+            </ul>
+            <div class="search-hint">
+                <span><kbd>↑</kbd> <kbd>↓</kbd> navigate</span>
+                <span><kbd>↵</kbd> open</span>
+                <span><kbd>Esc</kbd> close</span>
+            </div>
+        </div>
+    </div>
 </body>
 </html>
