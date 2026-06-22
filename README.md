@@ -178,6 +178,48 @@ Access the UI at `http://localhost:8084/ui`
 - **Responsive Design**: Works on desktop and mobile devices
 - **Error Handling**: User-friendly error messages for failed operations
 
+## 🏠 Homepage Configuration
+
+GoSpin ships with a personal dashboard page rendered by `ui/home.html`. Its content and appearance are driven by a separate YAML file, **`config/homepage.yaml`**, which defines three top-level sections:
+
+- **`services`** — visual cards (name, URL, description, icon) grouped under headings
+- **`bookmarks`** — short links with an optional 2-character abbreviation, grouped under headings
+- **`settings`** — page-wide customization (theme, title, fonts, polling intervals)
+
+A complete example with all three sections lives at `config/homepage.yaml` in the repository.
+
+### `settings` reference
+
+All `settings` fields are **optional**. If a field is omitted or left empty, the application falls back to the documented default. String-valued size fields accept any valid CSS length (e.g. `1.25rem`, `20px`, `1.1em`).
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `theme` | string | `auto` | One of `auto`, `tokyo-night`, `catppuccin-latte`, `nord`, `dracula`, `gruvbox`. With `auto`, the page follows the OS `prefers-color-scheme`. The on-page theme selector overrides this and persists the choice in `localStorage`. |
+| `title` | string | `Dashboard` | Plain-text title rendered as the page `<h1>`. |
+| `title_font_size` | CSS size | `1.25rem` | Font-size of the title (e.g. `1.5rem`, `20px`, `1.1em`). Exposed at runtime as the CSS custom property `--title-font-size`. |
+| `font_family` | CSS font stack | `Inter, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif` | Page-wide font family. |
+| `font_size` | CSS size | `17px` | Document-wide base font size; drives Tailwind rem-derived scaling. |
+| `polling_interval_seconds` | int | `10` | How often the page polls `/homepage` to detect external config-file changes (in seconds). |
+| `stats_polling_interval_seconds` | int | `3` | How often the page polls `/runtime/system-stats` to refresh CPU/RAM/Disk in the footer. |
+
+### Example
+
+```yaml
+settings:
+  theme: catppuccin-latte
+  title: My Dashboard
+  title_font_size: "1.5rem"
+  font_family: "Inter, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
+  font_size: "19px"
+  polling_interval_seconds: 10
+  stats_polling_interval_seconds: 3
+```
+
+### Notes
+
+- The file is **hot-reloaded**: when the content-hash on the `/homepage` response changes, the page re-fetches and re-applies all visuals (theme, fonts, layout) without a full reload.
+- The **version** string rendered in the bottom-right of the page is **not** a YAML field. It is sourced from `internal/version.Version` at build time (overridable via `-ldflags "-X …/internal/version.Version=…"`) and is therefore not user-configurable.
+
 ## 📡 API Endpoints
 
 ### Health

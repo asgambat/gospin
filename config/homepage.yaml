@@ -265,7 +265,9 @@ bookmarks:
 settings:
   theme: catppuccin-latte
   title: SGAMBATO HOME
-  version: "1.0.0"
+  title_font_size: "1.5rem"
+  # NOTE: software version is NOT user-configurable. It is injected server-side
+  # from internal/version.Version (overridable at build time via -ldflags).
   font_family: "Inter, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
   font_size: "19px"
   polling_interval_seconds: 10

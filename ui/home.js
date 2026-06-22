@@ -8,15 +8,37 @@ function homeApp() {
         _lastHash: null,
         _pollTimer: null,
         _statsPollTimer: null,
-        _themeSaveTimer: null,
         _darkModeQuery: null,
+        // True when the user has made an explicit theme choice (from localStorage
+        // or via the selector). Server-driven reloads must NOT override the theme
+        // when this flag is set.
+        _userThemeExplicit: false,
         pageVisible: false,
+        // Tracks which bookmark/service groups the user has collapsed.
+        // Stored as `{ groupName: true }`; absence of a key means the group is open.
+        // Newly-added groups default to open (matches the "Tutti aperti" choice).
+        // Persisted to localStorage under the key 'homepage-collapsed-groups'.
+        collapsedGroups: {},
 
         init() {
-            // Load saved theme from localStorage
+            // Load saved theme from localStorage so the user's explicit choice
+            // survives across reloads. A valid saved value must NOT be overridden
+            // by server-side settings when data is subsequently (re)loaded.
             const saved = localStorage.getItem('homepage-theme');
             if (saved && this.themes.includes(saved)) {
                 this.theme = saved;
+                this._userThemeExplicit = true;
+            }
+            // Restore collapsed groups from localStorage so the user's
+            // accordion state survives page reloads and tab closures.
+            const savedGroups = localStorage.getItem('homepage-collapsed-groups');
+            if (savedGroups) {
+                try {
+                    this.collapsedGroups = JSON.parse(savedGroups);
+                } catch (e) {
+                    console.warn('Failed to parse saved collapsed groups, resetting:', e);
+                    this.collapsedGroups = {};
+                }
             }
             this.applyTheme(this.theme);
             // Listen for system color scheme changes (only relevant when theme === 'auto')
@@ -55,19 +77,34 @@ function homeApp() {
 
         persistTheme(themeName) {
             this.applyTheme(themeName);
-            // Debounce localStorage write — only persist the last theme after rapid changes
-            if (this._themeSaveTimer) {
-                clearTimeout(this._themeSaveTimer);
-            }
-            this._themeSaveTimer = setTimeout(() => {
-                this._themeSaveTimer = null;
-                localStorage.setItem('homepage-theme', themeName);
-            }, 300);
+            // Mark the theme as user-explicit so subsequent _loadData calls
+            // do not override it with the server-side default.
+            this._userThemeExplicit = true;
+            // localStorage.setItem is synchronous and cheap for a small key,
+            // so we write eagerly (no debounce). This guarantees the choice is
+            // persisted even if the user closes the tab immediately after.
+            localStorage.setItem('homepage-theme', themeName);
         },
 
         normalizeTheme(name) {
             // Convert any format to lowercase kebab-case (e.g. "Catppuccin Latte" -> "catppuccin-latte")
             return name.toLowerCase().replace(/[\s_]+/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
+        },
+
+        // ===== Accordion state for bookmark & services groups =====
+        isGroupOpen(name) {
+            return !this.collapsedGroups[name];
+        },
+
+        toggleGroup(name) {
+            if (this.collapsedGroups[name]) {
+                delete this.collapsedGroups[name];
+            } else {
+                this.collapsedGroups[name] = true;
+            }
+            // Persist accordion state eagerly so it survives tab closures
+            // and page reloads (mirrors the theme persistence pattern).
+            localStorage.setItem('homepage-collapsed-groups', JSON.stringify(this.collapsedGroups));
         },
 
         async fetchData() {
@@ -125,7 +162,10 @@ function homeApp() {
             this.data = resp;
             // Sync font settings to <html> so Tailwind's rem-based classes scale correctly
             this._syncRootFont();
-            if (this.data?.settings?.theme) {
+            // The server's `settings.theme` is treated as a DEFAULT: only apply it
+            // when the user has not made an explicit choice (no localStorage value
+            // and the selector has not been used yet).
+            if (!this._userThemeExplicit && this.data?.settings?.theme) {
                 this.applyTheme(this.data.settings.theme);
             }
             this._startPolling();
@@ -137,8 +177,15 @@ function homeApp() {
             const fontSize = this.data?.settings?.fontSize || '17px';
             const fontFamily = this.data?.settings?.fontFamily
                 || 'Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+            // Title font-size is exposed as a CSS variable so the <h1> can
+            // reference it via `style="font-size: var(--title-font-size)"`.
+            // The backend (LoadHomepageConfig) always applies DefaultTitleFontSize
+            // when the YAML field is empty, so the frontend trusts the server
+            // value and does not hardcode a fallback here.
+            const titleFontSize = this.data?.settings?.titleFontSize;
             root.fontSize = fontSize;
             root.fontFamily = fontFamily;
+            root.setProperty('--title-font-size', titleFontSize);
         },
 
         _startPolling() {

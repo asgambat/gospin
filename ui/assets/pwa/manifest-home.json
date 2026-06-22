@@ -1,0 +1,23 @@
+{
+  "name": "GoSpin Homepage",
+  "short_name": "Home",
+  "start_url": "/ui/home",
+  "display": "standalone",
+  "background_color": "#1a1b26",
+  "theme_color": "#1e1e2e",
+  "description": "GoSpin homepage with bookmarks and services",
+  "scope": "/ui/home",
+  "icons": [
+    {
+      "src": "ui/assets/pwa/app-icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "ui/assets/pwa/icon.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

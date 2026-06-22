@@ -7,6 +7,7 @@ import (
 
 	"github.com/bassista/go_spin/internal/config"
 	"github.com/bassista/go_spin/internal/logger"
+	"github.com/bassista/go_spin/internal/version"
 )
 
 // HomepageController handles homepage-related API endpoints.
@@ -19,13 +20,18 @@ func NewHomepageController(configPath string) *HomepageController {
 	return &HomepageController{configPath: configPath}
 }
 
-// HomepageResponse wraps the homepage config with a content hash for change detection.
+// HomepageResponse wraps the homepage config with a content hash and the
+// internal software version. The Version is intentionally a top-level field
+// (not under "settings") because it is sourced from internal/version.Version
+// at build time, never from the user-editable homepage.yaml.
 type HomepageResponse struct {
-	Hash string `json:"hash"`
+	Hash    string `json:"hash"`
+	Version string `json:"version"`
 	config.HomepageConfig
 }
 
-// GetHomepageData reloads the homepage config from file and returns it as JSON with a content hash.
+// GetHomepageData reloads the homepage config from file and returns it as JSON
+// with a content hash and the internal software version.
 func (hc *HomepageController) GetHomepageData(c *gin.Context) {
 	cfg, hash, err := config.LoadHomepageConfig(hc.configPath)
 	if err != nil {
@@ -34,5 +40,9 @@ func (hc *HomepageController) GetHomepageData(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, HomepageResponse{HomepageConfig: *cfg, Hash: hash})
+	c.JSON(http.StatusOK, HomepageResponse{
+		HomepageConfig: *cfg,
+		Hash:           hash,
+		Version:        version.Version,
+	})
 }
