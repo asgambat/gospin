@@ -124,11 +124,12 @@ func TestCPUUsage_DeltaMeasurement(t *testing.T) {
 
 	t.Logf("CPU delta measurement: %d%%", cpuPercent2)
 
-	if cpuPercent2 == 0 {
-		t.Errorf("Expected non-zero CPU percentage, got 0%%")
-	}
-	if cpuPercent2 > 100 {
-		t.Errorf("CPU percentage should be capped at 100%%, got %d%%", cpuPercent2)
+	// The delta is computed against real /proc/stat activity since the
+	// prevStats snapshot was taken 2s ago. On a fully idle host the
+	// delta can legitimately be 0, so we only assert the valid range
+	// and that the cap at 100% holds.
+	if cpuPercent2 < 0 || cpuPercent2 > 100 {
+		t.Errorf("CPU delta percentage out of range [0,100], got %d%%", cpuPercent2)
 	}
 }
 
