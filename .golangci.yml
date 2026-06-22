@@ -26,7 +26,13 @@ linters:
 
 linters-settings:
   govet:
+    # enable-all pulls in every analyzer from the standard govet suite,
+    # including 'shadow', which flags variable shadowing in tests with
+    # short, hard-to-rename names. We keep it explicit to disable just
+    # 'shadow' while leaving the rest of the govet analyzers enabled.
     enable-all: true
+    disable:
+      - shadow
   goimports:
     local-prefixes: github.com/bassista/go_spin
   errcheck:
