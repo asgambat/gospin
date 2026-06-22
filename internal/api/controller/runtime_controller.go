@@ -8,24 +8,26 @@ import (
 	"strings"
 	"time"
 
+	"github.com/gin-gonic/gin"
+
 	"github.com/bassista/go_spin/internal/app"
 	"github.com/bassista/go_spin/internal/cache"
 	"github.com/bassista/go_spin/internal/config"
 	"github.com/bassista/go_spin/internal/logger"
 	"github.com/bassista/go_spin/internal/repository"
 	"github.com/bassista/go_spin/internal/runtime"
-	"github.com/gin-gonic/gin"
 )
 
 // DefaultWaitingTemplatePath is the default path for the waiting page template.
 const DefaultWaitingTemplatePath = "./ui/templates/waiting.html"
 
 type RuntimeController struct {
-	runtime         runtime.ContainerRuntime
-	containerStore  cache.ContainerStore
-	config          *config.Config
-	baseCtx         context.Context
-	waitingTemplate string
+	runtime              runtime.ContainerRuntime
+	containerStore       cache.ContainerStore
+	baseCtx              context.Context
+	systemStatsCollector runtime.SystemStatsCollector
+	config               *config.Config
+	waitingTemplate      string
 }
 
 // NewRuntimeController creates a new RuntimeController with the waiting template loaded from file.
@@ -39,11 +41,12 @@ func NewRuntimeController(appCtx *app.App) *RuntimeController {
 	}
 
 	return &RuntimeController{
-		runtime:         appCtx.Runtime,
-		containerStore:  appCtx.Cache,
-		baseCtx:         appCtx.BaseCtx,
-		config:          appCtx.Config,
-		waitingTemplate: string(templateContent),
+		runtime:              appCtx.Runtime,
+		containerStore:       appCtx.Cache,
+		baseCtx:              appCtx.BaseCtx,
+		config:               appCtx.Config,
+		waitingTemplate:      string(templateContent),
+		systemStatsCollector: runtime.NewSystemStatsCollector(appCtx.Config.Data.SystemMonitorMountPoint),
 	}
 }
 
@@ -402,9 +405,9 @@ func (rc *RuntimeController) ListContainers(c *gin.Context) {
 // ContainerStatsResponse represents the stats for a single container.
 type ContainerStatsResponse struct {
 	Name       string  `json:"name"`
+	Error      string  `json:"error,omitempty"`
 	CPUPercent float64 `json:"cpu_percent"`
 	MemoryMB   float64 `json:"memory_mb"`
-	Error      string  `json:"error,omitempty"`
 }
 
 // AllStats returns CPU and memory statistics for all containers defined in the store.
@@ -419,8 +422,8 @@ func (rc *RuntimeController) AllStats(c *gin.Context) {
 
 	// Fetch stats for all containers in parallel
 	type statsResult struct {
-		index int
 		resp  ContainerStatsResponse
+		index int
 	}
 
 	resultChan := make(chan statsResult, len(doc.Containers))
@@ -472,6 +475,7 @@ func (rc *RuntimeController) AllStats(c *gin.Context) {
 func (rc *RuntimeController) SystemStats(c *gin.Context) {
 	collector := runtime.NewSystemStatsCollector(rc.config.Data.SystemMonitorMountPoint)
 	stats, err := collector.GetStats(c.Request.Context())
+
 	if err != nil {
 		logger.WithComponent("runtime_controller").Errorf("failed to get system stats: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("failed to get system stats: %v", err)})

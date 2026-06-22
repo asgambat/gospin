@@ -12,20 +12,20 @@ import (
 )
 
 type RouteResponse struct {
-	Data   []RouteItem `json:"data"`
 	Status string      `json:"status"`
+	Data   []RouteItem `json:"data"`
 }
 
 type RouteItem struct {
-	Disabled      bool   `json:"Disabled"`
 	Mode          string `json:"Mode"`
 	Name          string `json:"Name"`
 	Target        string `json:"Target"`
 	Description   string `json:"Description"`
-	UseHost       bool   `json:"UseHost"`
 	Host          string `json:"Host"`
-	UsePathPrefix bool   `json:"UsePathPrefix"`
 	PathPrefix    string `json:"PathPrefix"`
+	Disabled      bool   `json:"Disabled"`
+	UseHost       bool   `json:"UseHost"`
+	UsePathPrefix bool   `json:"UsePathPrefix"`
 }
 
 type Client struct {
@@ -57,11 +57,16 @@ func (c *Client) FetchRoutes(ctx context.Context, baseUrl, token string) ([]Rout
 		return nil, fmt.Errorf("failed to fetch routes: %w", err)
 	}
 	defer func() {
-		_ = resp.Body.Close()
+		if cerr := resp.Body.Close(); cerr != nil {
+			logger.WithComponent("cosmos-client").Debugf("failed to close response body: %v", cerr)
+		}
 	}()
 
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
+		body, readErr := io.ReadAll(resp.Body)
+		if readErr != nil {
+			return nil, fmt.Errorf("API returned status %d (and body read failed: %w)", resp.StatusCode, readErr)
+		}
 		return nil, fmt.Errorf("API returned status %d: %s", resp.StatusCode, string(body))
 	}
 

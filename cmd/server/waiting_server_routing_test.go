@@ -8,13 +8,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gin-gonic/gin"
+
 	"github.com/bassista/go_spin/internal/api/controller"
 	"github.com/bassista/go_spin/internal/app"
 	"github.com/bassista/go_spin/internal/cache"
 	"github.com/bassista/go_spin/internal/config"
 	"github.com/bassista/go_spin/internal/repository"
 	"github.com/bassista/go_spin/internal/runtime"
-	"github.com/gin-gonic/gin"
 )
 
 func init() {
@@ -256,8 +257,8 @@ func TestWaitingServerRouting_BothRoutesWork(t *testing.T) {
 	tests := []struct {
 		name           string
 		path           string
-		expectedJSON   bool
 		expectedFields []string
+		expectedJSON   bool
 	}{
 		{
 			name:           "Ready endpoint returns JSON",

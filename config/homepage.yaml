@@ -1,0 +1,272 @@
+services:
+  - group: UTILITY
+    items:
+      - name: Ghost board
+        url: https://gb.lan.asga.uk/
+        description: Appunti al volo
+        icon: note-mark.png
+
+      - name: Secure board
+        url: https://np.lan.asga.uk/
+        description: Appunti segreti
+        icon: standard-notes.png
+
+      - name: Zero note
+        url: https://zeronote.lan.asga.uk/
+        description: Vault local encrypt
+        icon: benotes.png
+
+      - name: Jotty notes
+        url: https://jotty.lan.asga.uk/
+        description: Note checklist e segreti
+        icon: jotty.png
+
+      - name: Poz notes
+        url: https://up.lan.asga.uk/pnote
+        description: Poz Notes
+        icon: note-mark.png
+
+      - name: Anchor notes
+        url: https://up.lan.asga.uk/anchor
+        description: Anchor Notes
+        icon: nextcloud-notes.png
+
+      - name: Image compress
+        url: https://up.lan.asga.uk/img
+        description: Image compress
+        icon: zipline-diced.png
+
+      - name: Pdf local
+        url: https://bento.lan.asga.uk/
+        description: bento pdf locally
+        icon: bentopdf.png
+
+      - name: Omni Tools
+        url: https://tools.lan.asga.uk/
+        description: Omni tools
+        icon: omni-tools-full.png
+
+      - name: IT-tools
+        url: https://itools.lan.asga.uk/
+        description: IT tools
+        icon: it-tools.png
+
+  - group: Media
+    items:
+      - name: Cosmos
+        url: https://lan.asga.uk/
+        description: Cosmos Docker Hub
+        icon: cosmos-cloud.png
+
+      - name: Emby
+        url: https://video.lan.asga.uk/
+        description: Media Hub
+        icon: emby.png
+
+      - name: Nodecast
+        url: https://up.lan.asga.uk/tv
+        description: TV cast
+        icon: channels-dvr.png
+
+      - name: Navidrome
+        url: https://navidrome.lan.asga.uk/app/#/login
+        description: Music Listening
+        icon: navidrome.png
+
+      - name: BookLore
+        url: https://up.lan.asga.uk/booklore
+        description: Ebook reading
+        icon: book-lore.png
+
+      - name: PI Gallery
+        url: https://up.lan.asga.uk/pigallery
+        description: Album Foto
+        icon: pigallery2.png
+
+      - name: Local Pics
+        url: https://up.lan.asga.uk/pics
+        description: Album Foto
+        icon: synology-photo-station.png
+
+      - name: Photofield
+        url: https://photofield.lan.asga.uk/
+        description: Raccolta Foto
+        icon: google-photos.png
+
+      - name: Telegram
+        url: https://up.lan.asga.uk/tg
+        description: telegram
+        icon: telegram.png
+
+      - name: YPlayer
+        url: https://up.lan.asga.uk/yplayer
+        description: Youtube player
+        icon: alltube.png
+
+  - group: Download
+    items:
+      - name: XDCC
+        url: https://xs.lan.asga.uk/
+        description: Xdcc Download
+        icon: irc.png
+
+      - name: MeTube
+        url: https://up.lan.asga.uk/metube
+        description: Youtube download
+        icon: youtube.png
+
+      - name: Deluge
+        url: https://up.lan.asga.uk/deluge
+        description: Torrent download
+        icon: deluge.png
+
+      - name: Amule
+        url: https://amule.lan.asga.uk/
+        description: Emule download
+        icon: a-mule.png
+
+      - name: Shelfmark
+        url: https://up.lan.asga.uk/bookdown
+        description: Book download
+        icon: calibre-web-automated-book-downloader.png
+
+      - name: Next Explorer
+        url: https://up.lan.asga.uk/next
+        description: Browser web
+        icon: synology-file-station.png
+
+      - name: Tiny FM
+        url: https://filemanager.lan.asga.uk/index.php?p=
+        description: File manager
+        icon: files-community.png
+
+      - name: Share local
+        url: https://share.lan.asga.uk/
+        description: Share files or text on LAN
+        icon: quickshare.png
+
+      - name: Scatola Magica
+        url: https://sm.lan.asga.uk/
+        description: Upload/Dowload
+        icon: wd-mycloud.png
+
+      - name: File encrypt
+        url: https://vault.lan.asga.uk/
+        description: Vault local encrypt
+        icon: vault.png
+
+
+  - group: Altro
+    items:
+      - name: Go Spin
+        url: https://gospin.lan.asga.uk/
+        description: Spin Up and down containers
+        icon: dockwatch.png
+
+      - name: Own Cloud
+        url: https://cloud.lan.asga.uk/
+        description: Own Cloud
+        icon: owncloud.png
+
+      - name: BackRest backup
+        url: https://backrest.lan.asga.uk/
+        description: Backup folders
+        icon: backrest.png
+
+      - name: AdGuard
+        url: https://adguard.lan.asga.uk
+        description: Dns server
+        icon: adguard-home.png
+
+      - name: Keepass web
+        url: https://kp.lan.asga.uk/
+        description: Password on the web
+        icon: keepassxc.png
+
+      - name: PocketBase
+        url: https://up.lan.asga.uk/pocketbase
+        description: Pocket Base
+        icon: pocketbase.png
+
+      - name: Pdf Tool
+        url: https://up.lan.asga.uk/stirling
+        description: Strirling pdf
+        icon: stirling-pdf.png
+
+      - name: Home Hub
+        url: https://homehub.lan.asga.uk/
+        description: Home Hub
+        icon: homebridge.png
+
+      - name: Bitmagnet
+        url: https://up.lan.asga.uk/bitmagnet
+        description: bitmagnet
+        icon: bitmagnet.png
+
+      - name: Midori
+        url: https://up.lan.asga.uk/midori
+        description: midori browser
+        icon: safari-ios.png
+
+      - name: LLMAPI
+        url: https://freellmapi.lan.asga.uk/analytics
+        description: Free LLM Api
+
+
+bookmarks:
+  - group: Developer
+    items:
+      - name: GitHub
+        url: https://github.com/asgambat/gospin/
+        abbr: GH
+      - name: NutritionWise
+        url: https://nutritionwise.vercel.app/
+        abbr: NW
+      - name: Vercel
+        url: https://vercel.com/aniellos-projects-43f47ced/nutritionwise/deployments
+        abbr: VL
+      - name: Supabase
+        url: https://supabase.com/dashboard/project/wdxzpurbsdwrjojdjjlv/api?page=auth
+        abbr: SB
+      - name: Icons
+        url: https://dashboardicons.com/icons
+        abbr: IC
+      - name: RailWay
+        url: https://railway.com/
+        abbr: RW
+      - name: Render
+        url: https://dashboard.render.com/
+        abbr: RD
+      - name: Raspberry Connect
+        url:  https://connect.raspberrypi.com/devices
+        abbr: PiC
+      - name: Markdown editor
+        url:  https://readme.so/editor
+        abbr: ME
+      - name: ZelliJ
+        url:  https://tm.lan.asga.uk/web
+        abbr: ZJ
+      - name: OpenCode
+        url:  https://oc.lan.asga.uk/web
+        abbr: OC
+
+  - group: Docker
+    items:
+      - name: Gospin start
+        url: https://dcontroller.lan.asga.uk/container?action=start&name=gospin
+        abbr: GU
+      - name: Firefox start
+        url: https://up.lan.asga.uk/firefox
+        abbr: FU
+      - name: Firefox stop
+        url: https://dcontroller.lan.asga.uk/container?action=stop&name=jlesage-firefox
+        abbr: FD
+
+settings:
+  theme: catppuccin-latte
+  title: SGAMBATO HOME
+  version: "1.0.0"
+  font_family: "Inter, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
+  font_size: "19px"
+  polling_interval_seconds: 10
+  stats_polling_interval_seconds: 3

@@ -4,13 +4,15 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"sort"
 	"strings"
 
-	"github.com/bassista/go_spin/internal/logger"
 	"github.com/containerd/errdefs"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/client"
+
+	"github.com/bassista/go_spin/internal/logger"
 )
 
 // DockerClient defines the interface for Docker client operations used by DockerRuntime.
@@ -154,7 +156,8 @@ func calculateCPUPercent(stats *container.StatsResponse) float64 {
 
 	if systemDelta > 0 && cpuDelta > 0 {
 		cpuPercent := (cpuDelta / systemDelta) * float64(stats.CPUStats.OnlineCPUs) * 100.0
-		return cpuPercent
+		// Cap CPU percentage at 100% to avoid values > 100% on multi-core systems
+		return math.Min(cpuPercent, 100.0)
 	}
 	return 0.0
 }

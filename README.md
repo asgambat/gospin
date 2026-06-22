@@ -1,5 +1,7 @@
 # 🐳 GoSpin
 
+[![Go Tests & Lint](https://github.com/asgambat/gospin/actions/workflows/tests.yml/badge.svg)](https://github.com/asgambat/gospin/actions/workflows/tests.yml) [![Coverage](https://asgambat.github.io/gospin/coverage.png)](https://asgambat.github.io/gospin/)
+
 **Scheduled Docker Container Management**
 
 GoSpin is a Go application for scheduled management of Docker containers. Define containers, groups, and schedules with timers to automatically start/stop containers based on configured times and days.

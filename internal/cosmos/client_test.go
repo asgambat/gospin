@@ -20,10 +20,10 @@ func TestNewClient(t *testing.T) {
 func TestFetchRoutes(t *testing.T) {
 	tests := []struct {
 		name           string
-		responseStatus int
 		responseBody   string
-		expectError    bool
+		responseStatus int
 		expectedCount  int
+		expectError    bool
 	}{
 		{
 			name:           "successful fetch with valid routes",
@@ -113,8 +113,8 @@ func TestFilterValidRoutes(t *testing.T) {
 	tests := []struct {
 		name          string
 		input         []RouteItem
-		expectedCount int
 		expectedNames []string
+		expectedCount int
 	}{
 		{
 			name: "all valid routes",

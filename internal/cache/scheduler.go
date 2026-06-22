@@ -28,8 +28,11 @@ func StartPersistenceScheduler(
 			select {
 			case <-ctx.Done():
 				logger.WithComponent("persist").Debugf("persistence scheduler received context cancellation, performing final flush")
-				// Final flush on shutdown - use background context to ensure it completes
-				flushCache(context.Background(), store, repo)
+				// Final flush on shutdown: preserve any context values (trace IDs, deadlines) from ctx
+				// but detach its cancellation so the flush can complete even though the parent is cancelled.
+				shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+				flushCache(shutdownCtx, store, repo)
+				cancel()
 				logger.WithComponent("persist").Info("persistence scheduler stopped after final flush")
 				return
 			case <-ticker.C:

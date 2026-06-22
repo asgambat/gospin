@@ -352,3 +352,71 @@ func TestDockerRuntime_Stats_Error(t *testing.T) {
 	assert.Equal(t, ContainerStats{}, stats)
 	mockClient.AssertExpectations(t)
 }
+
+func TestCalculateCPUPercent_CapAt100Percent(t *testing.T) {
+	// Test case: 4 cores, 50% CPU usage -> should return 50%, not 200%
+	stats := &container.StatsResponse{
+		CPUStats: container.CPUStats{
+			CPUUsage: container.CPUUsage{
+				TotalUsage: 1000000000, // 1 second in nanoseconds
+			},
+			SystemUsage: 10000000000, // 10 seconds
+			OnlineCPUs:  4,
+		},
+		PreCPUStats: container.CPUStats{
+			CPUUsage: container.CPUUsage{
+				TotalUsage: 500000000, // 0.5 seconds in nanoseconds
+			},
+			SystemUsage: 9000000000, // 9 seconds
+		},
+	}
+
+	cpuPercent := calculateCPUPercent(stats)
+	// Expected: ((1s - 0.5s) / (10s - 9s)) * 4 * 100 = 200%, but capped at 100%
+	assert.Equal(t, 100.0, cpuPercent, "CPU percentage should be capped at 100%")
+}
+
+func TestCalculateCPUPercent_NormalCase(t *testing.T) {
+	// Test case: 4 cores, 25% CPU usage -> should return 25%
+	stats := &container.StatsResponse{
+		CPUStats: container.CPUStats{
+			CPUUsage: container.CPUUsage{
+				TotalUsage: 750000000, // 0.75 seconds in nanoseconds
+			},
+			SystemUsage: 10000000000, // 10 seconds
+			OnlineCPUs:  4,
+		},
+		PreCPUStats: container.CPUStats{
+			CPUUsage: container.CPUUsage{
+				TotalUsage: 500000000, // 0.5 seconds in nanoseconds
+			},
+			SystemUsage: 9000000000, // 9 seconds
+		},
+	}
+
+	cpuPercent := calculateCPUPercent(stats)
+	// Expected: ((0.75s - 0.5s) / (10s - 9s)) * 4 * 100 = 100%
+	assert.Equal(t, 100.0, cpuPercent, "CPU percentage should be 100%")
+}
+
+func TestCalculateCPUPercent_ZeroCase(t *testing.T) {
+	// Test case: no CPU usage -> should return 0%
+	stats := &container.StatsResponse{
+		CPUStats: container.CPUStats{
+			CPUUsage: container.CPUUsage{
+				TotalUsage: 500000000, // No change from previous
+			},
+			SystemUsage: 10000000000, // 10 seconds
+			OnlineCPUs:  4,
+		},
+		PreCPUStats: container.CPUStats{
+			CPUUsage: container.CPUUsage{
+				TotalUsage: 500000000, // Same as current
+			},
+			SystemUsage: 9000000000, // 9 seconds
+		},
+	}
+
+	cpuPercent := calculateCPUPercent(stats)
+	assert.Equal(t, 0.0, cpuPercent, "CPU percentage should be 0% when no usage")
+}

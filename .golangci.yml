@@ -1,0 +1,64 @@
+run:
+  timeout: 5m
+  go: "1.25"
+  skip-dirs-use-default: true
+  tests: true
+
+linters:
+  disable-all: true
+  enable:
+    # Correctness & bugs
+    - copyloopvar    # detect loop variable capture bugs (Go 1.22+)
+    - errcheck       # check for unchecked errors
+    - govet          # official Go vet suite
+    - staticcheck    # comprehensive static analysis
+    - bodyclose      # ensure HTTP response bodies are closed
+
+    # Code quality & simplicity
+    - ineffassign    # detect ineffectual assignments
+    - unused         # find unused constants, variables, functions
+
+    # Imports & formatting
+    - goimports      # organize and format imports
+
+    # Context hygiene
+    - contextcheck   # ensure context is passed properly through functions
+
+linters-settings:
+  govet:
+    # enable-all pulls in every analyzer from the standard govet suite,
+    # including 'shadow', which flags variable shadowing in tests with
+    # short, hard-to-rename names. We keep it explicit to disable just
+    # 'shadow' while leaving the rest of the govet analyzers enabled.
+    enable-all: true
+    disable:
+      - shadow
+  goimports:
+    local-prefixes: github.com/bassista/go_spin
+  errcheck:
+    check-type-assertions: true
+    check-blank: true
+  unused:
+    field-writes-are-uses: true
+    exported-is-used: false
+
+issues:
+  exclude-use-default: false
+  max-issues-per-linter: 0
+  max-same-issues: 0
+
+  exclude-rules:
+    # Allow unchecked errors and unclosed bodies in tests
+    - path: _test\.go
+      linters:
+        - errcheck
+        - bodyclose
+
+  # Severity: these linters will cause CI to fail hard
+  severity:
+    rules:
+      - linters:
+          - errcheck
+          - govet
+          - staticcheck
+        severity: error

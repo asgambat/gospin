@@ -3,8 +3,9 @@ package controller
 import (
 	"net/http"
 
-	"github.com/bassista/go_spin/internal/config"
 	"github.com/gin-gonic/gin"
+
+	"github.com/bassista/go_spin/internal/config"
 )
 
 // ConfigurationResponse represents the configuration response structure for the API.

@@ -428,9 +428,9 @@ func TestStore_Concurrency(t *testing.T) {
 
 // mockSaver implements repository.Saver for testing
 type mockSaver struct {
-	mu        sync.Mutex
-	savedDocs []*repository.DataDocument
 	saveErr   error
+	savedDocs []*repository.DataDocument
+	mu        sync.Mutex
 }
 
 func (m *mockSaver) Save(ctx context.Context, doc *repository.DataDocument) error {

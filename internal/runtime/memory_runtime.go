@@ -11,8 +11,8 @@ import (
 // MemoryRuntime is a temporary ContainerRuntime implementation that keeps state in memory.
 // It is useful while the Docker-socket implementation is not available to execute tests or other development tasks.
 type MemoryRuntime struct {
-	mu      sync.RWMutex
 	running map[string]bool
+	mu      sync.RWMutex
 }
 
 func NewMemoryRuntime() *MemoryRuntime {

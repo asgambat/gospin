@@ -12,46 +12,46 @@ type Metadata struct {
 
 // DataDocument represents the persisted JSON structure.
 type DataDocument struct {
-	Metadata   Metadata    `json:"metadata"`
 	Containers []Container `json:"containers" validate:"dive"`
 	Order      []string    `json:"order"`
 	Groups     []Group     `json:"groups" validate:"dive"`
 	GroupOrder []string    `json:"groupOrder"`
 	Schedules  []Schedule  `json:"schedules" validate:"dive"`
+	Metadata   Metadata    `json:"metadata"`
 }
 
 // Container models a single container entry.
 type Container struct {
-	Name         string `json:"name" validate:"required"`
-	FriendlyName string `json:"friendly_name" validate:"required"`
-	URL          string `json:"url" validate:"required,url"`
 	Running      *bool  `json:"running"`
 	Active       *bool  `json:"active" validate:"required"`
 	ActivatedAt  *int64 `json:"activatedAt"`
 	Favorite     *bool  `json:"favorite"`
+	Name         string `json:"name" validate:"required"`
+	FriendlyName string `json:"friendly_name" validate:"required"`
+	URL          string `json:"url" validate:"required,url"`
 }
 
 // Group groups containers by name.
 type Group struct {
-	Container []string `json:"container"`
-	Name      string   `json:"name" validate:"required"`
 	Active    *bool    `json:"active" validate:"required"`
+	Name      string   `json:"name" validate:"required"`
+	Container []string `json:"container"`
 }
 
 // Schedule defines timers for a container or group.
 type Schedule struct {
 	Target     string  `json:"target" validate:"required"`
 	TargetType string  `json:"targetType" validate:"required,oneof=container group"`
-	Timers     []Timer `json:"timers"`
 	ID         string  `json:"id" validate:"required"`
+	Timers     []Timer `json:"timers"`
 }
 
 // Timer represents a scheduled start/stop window.
 type Timer struct {
+	Active    *bool  `json:"active" validate:"required"`
 	StartTime string `json:"startTime" validate:"required"`
 	StopTime  string `json:"stopTime" validate:"required"`
 	Days      []int  `json:"days" validate:"dive,min=0,max=6"`
-	Active    *bool  `json:"active" validate:"required"`
 }
 
 // ApplyDefaults sets fallback values after decode.

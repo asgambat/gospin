@@ -16,8 +16,8 @@ func boolPtr(b bool) *bool {
 
 // MockStore implements cache.ReadOnlyStore for testing
 type MockStore struct {
-	doc repository.DataDocument
 	err error
+	doc repository.DataDocument
 }
 
 func (m *MockStore) Snapshot() (repository.DataDocument, error) {
@@ -26,12 +26,12 @@ func (m *MockStore) Snapshot() (repository.DataDocument, error) {
 
 // MockRuntime implements runtime.ContainerRuntime for testing
 type MockRuntime struct {
-	mu       sync.Mutex
+	startErr error
+	stopErr  error
 	running  map[string]bool
 	started  []string
 	stopped  []string
-	startErr error
-	stopErr  error
+	mu       sync.Mutex
 }
 
 func NewMockRuntime() *MockRuntime {

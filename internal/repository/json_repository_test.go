@@ -348,10 +348,10 @@ func TestJSONRepository_SaveUnlocked_NilDocument(t *testing.T) {
 
 // MockCacheStore implements CacheStore for testing
 type MockCacheStore struct {
-	mu         sync.RWMutex
-	lastUpdate int64
-	dirty      bool
 	doc        DataDocument
+	lastUpdate int64
+	mu         sync.RWMutex
+	dirty      bool
 	replaced   bool
 }
 
@@ -408,7 +408,7 @@ func TestJSONRepository_MakeWatcherCallback_ReloadsWhenDiskNewer(t *testing.T) {
 		doc:        DataDocument{},
 	}
 
-	callback := jsonRepo.MakeWatcherCallback(cache)
+	callback := jsonRepo.MakeWatcherCallback(context.Background(), cache)
 	callback()
 
 	if !cache.IsReplaced() {
@@ -436,7 +436,7 @@ func TestJSONRepository_MakeWatcherCallback_SkipsWhenDiskOlder(t *testing.T) {
 		doc:        DataDocument{},
 	}
 
-	callback := jsonRepo.MakeWatcherCallback(cache)
+	callback := jsonRepo.MakeWatcherCallback(context.Background(), cache)
 	callback()
 
 	if cache.IsReplaced() {
@@ -464,7 +464,7 @@ func TestJSONRepository_MakeWatcherCallback_SkipsWhenDirty(t *testing.T) {
 		doc:        DataDocument{},
 	}
 
-	callback := jsonRepo.MakeWatcherCallback(cache)
+	callback := jsonRepo.MakeWatcherCallback(context.Background(), cache)
 	callback()
 
 	if cache.IsReplaced() {
@@ -496,7 +496,7 @@ func TestJSONRepository_MakeWatcherCallback_SkipsWhenSameContent(t *testing.T) {
 		doc:        cacheDoc, // Same content after ApplyDefaults
 	}
 
-	callback := jsonRepo.MakeWatcherCallback(cache)
+	callback := jsonRepo.MakeWatcherCallback(context.Background(), cache)
 	callback()
 
 	if cache.IsReplaced() {
@@ -533,10 +533,10 @@ func TestJSONRepository_ConcurrentLoadSave(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			_, err := repo.Load(ctx)
-			if err != nil {
+			_, loadErr := repo.Load(ctx)
+			if loadErr != nil {
 				// Load errors are acceptable in concurrent scenario
-				t.Logf("concurrent load error (may be expected): %v", err)
+				t.Logf("concurrent load error (may be expected): %v", loadErr)
 			}
 		}()
 	}
@@ -548,10 +548,10 @@ func TestJSONRepository_ConcurrentLoadSave(t *testing.T) {
 			defer wg.Done()
 			saveDoc := createTestDataDocument()
 			saveDoc.Metadata.LastUpdate = int64(2000 + idx)
-			err := repo.Save(ctx, &saveDoc)
-			if err != nil {
+			saveErr := repo.Save(ctx, &saveDoc)
+			if saveErr != nil {
 				// Save errors are acceptable in concurrent scenario
-				t.Logf("concurrent save error (may be expected): %v", err)
+				t.Logf("concurrent save error (may be expected): %v", saveErr)
 			}
 		}(i)
 	}
@@ -901,7 +901,7 @@ func TestJSONRepository_MakeWatcherCallback_LoadError(t *testing.T) {
 		doc:        DataDocument{},
 	}
 
-	callback := jsonRepo.MakeWatcherCallback(cache)
+	callback := jsonRepo.MakeWatcherCallback(context.Background(), cache)
 	// Should not panic, just log error
 	callback()
 
@@ -937,7 +937,7 @@ func TestJSONRepository_MakeWatcherCallback_DifferentContentSameTimestamp(t *tes
 		doc:        cacheDoc, // Different content
 	}
 
-	callback := jsonRepo.MakeWatcherCallback(cache)
+	callback := jsonRepo.MakeWatcherCallback(context.Background(), cache)
 	callback()
 
 	if !cache.IsReplaced() {
@@ -987,16 +987,16 @@ func TestJSONRepository_MakeWatcherCallback_SnapshotError(t *testing.T) {
 		dirty:      false,
 	}
 
-	callback := jsonRepo.MakeWatcherCallback(cache)
+	callback := jsonRepo.MakeWatcherCallback(context.Background(), cache)
 	// Should not panic, just log error
 	callback()
 }
 
 // MockCacheStoreWithReplaceError is a mock that returns error on Replace
 type MockCacheStoreWithReplaceError struct {
+	doc        DataDocument
 	lastUpdate int64
 	dirty      bool
-	doc        DataDocument
 }
 
 func (m *MockCacheStoreWithReplaceError) GetLastUpdate() int64 {
@@ -1036,7 +1036,7 @@ func TestJSONRepository_MakeWatcherCallback_ReplaceError(t *testing.T) {
 		doc:        DataDocument{},
 	}
 
-	callback := jsonRepo.MakeWatcherCallback(cache)
+	callback := jsonRepo.MakeWatcherCallback(context.Background(), cache)
 	// Should not panic, just log error
 	callback()
 }
@@ -1287,11 +1287,11 @@ func TestJSONRepository_StartWatcher_DebounceMultipleEvents(t *testing.T) {
 
 // MockCacheStoreCountingReplaces counts how many times Replace is called
 type MockCacheStoreCountingReplaces struct {
-	mu           sync.RWMutex
-	lastUpdate   int64
-	dirty        bool
-	doc          DataDocument
 	replaceCount *int
+	doc          DataDocument
+	lastUpdate   int64
+	mu           sync.RWMutex
+	dirty        bool
 }
 
 func (m *MockCacheStoreCountingReplaces) GetLastUpdate() int64 {

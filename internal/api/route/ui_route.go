@@ -29,6 +29,14 @@ func NewUIRouter(r *gin.Engine) {
 		c.File("./ui/index.html")
 	})
 
+	// Serve home.html for the dedicated homepage route
+	r.GET("/ui/home", func(c *gin.Context) {
+		c.File("./ui/home.html")
+	})
+	r.GET("/ui/home.js", func(c *gin.Context) {
+		c.File("./ui/home.js")
+	})
+
 	// Serve index.html for any sub-path under /ui (SPA client-side routing)
 	r.NoRoute(func(c *gin.Context) {
 		p := c.Request.URL.Path

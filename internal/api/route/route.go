@@ -3,10 +3,11 @@ package route
 import (
 	"net/http"
 
-	"github.com/bassista/go_spin/internal/api/middleware"
-	"github.com/bassista/go_spin/internal/app"
 	"github.com/gin-gonic/gin"
 	"github.com/sirupsen/logrus"
+
+	"github.com/bassista/go_spin/internal/api/middleware"
+	"github.com/bassista/go_spin/internal/app"
 )
 
 func SetupRoutes(appCtx *app.App, logger *logrus.Logger) *gin.Engine {
@@ -30,6 +31,7 @@ func SetupRoutes(appCtx *app.App, logger *logrus.Logger) *gin.Engine {
 	NewScheduleRouter(appCtx, publicRouter)
 	NewRuntimeRouter(appCtx, publicRouter)
 	NewConfigurationRouter(appCtx, publicRouter)
+	NewHomepageRouter(appCtx, publicRouter)
 
 	// UI static files
 	NewUIRouter(r)

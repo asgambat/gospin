@@ -10,19 +10,20 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gin-gonic/gin"
+
 	"github.com/bassista/go_spin/internal/app"
 	"github.com/bassista/go_spin/internal/cache"
 	"github.com/bassista/go_spin/internal/config"
 	"github.com/bassista/go_spin/internal/repository"
 	"github.com/bassista/go_spin/internal/runtime"
-	"github.com/gin-gonic/gin"
 )
 
 // mockAppStore implements cache.AppStore for testing
 type mockAppStore struct {
-	doc       repository.DataDocument
 	addErr    error
 	removeErr error
+	doc       repository.DataDocument
 }
 
 func (m *mockAppStore) Snapshot() (repository.DataDocument, error) { return m.doc, nil }
@@ -89,16 +90,16 @@ func newTestAppCtx(rt runtime.ContainerRuntime, store cache.AppStore) *app.App {
 
 // mockContainerRuntime implements runtime.ContainerRuntime for testing
 type mockContainerRuntime struct {
-	mu                sync.RWMutex
-	runningContainers map[string]bool
 	startErr          error
 	stopErr           error
 	isRunningErr      error
 	listErr           error
 	statsErr          error
+	runningContainers map[string]bool
 	statsMap          map[string]runtime.ContainerStats
-	startCh           chan string // usato per sincronizzazione nei test
-	stopCh            chan string // usato per sincronizzazione stop nei test
+	startCh           chan string
+	stopCh            chan string
+	mu                sync.RWMutex
 }
 
 func newMockRuntime() *mockContainerRuntime {
@@ -918,8 +919,8 @@ func TestRuntimeController_WaitingPage_GroupWithNonexistentContainers(t *testing
 
 // mockAppStoreWithError simulates a store that fails on Snapshot
 type mockAppStoreWithError struct {
-	mockAppStore
 	snapshotErr error
+	mockAppStore
 }
 
 func (m *mockAppStoreWithError) Snapshot() (repository.DataDocument, error) {
