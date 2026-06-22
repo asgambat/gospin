@@ -3,6 +3,7 @@ package runtime
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"math"
 	"os"
@@ -14,10 +15,10 @@ import (
 
 // SystemStats represents system-wide resource usage
 type SystemStats struct {
-	CPU     int         `json:"cpu"`
+	Updated time.Time   `json:"updated"`
 	Memory  MemoryStats `json:"memory"`
 	Disk    DiskStats   `json:"disk"`
-	Updated time.Time   `json:"updated"`
+	CPU     int         `json:"cpu"`
 }
 
 // MemoryStats represents memory usage
@@ -41,9 +42,9 @@ type SystemStatsCollector interface {
 
 // cpuStats holds CPU statistics for delta calculation
 type cpuStats struct {
+	timestamp time.Time
 	total     uint64
 	idle      uint64
-	timestamp time.Time
 }
 
 // Byte size constants for human-readable conversions
@@ -58,8 +59,8 @@ const maxCPUDeltaAge = 5 * time.Second
 
 // LinuxSystemStats implements SystemStatsCollector for Linux systems
 type LinuxSystemStats struct {
-	mountPoint string
 	prevStats  *cpuStats
+	mountPoint string
 	mutex      sync.RWMutex
 }
 
@@ -130,13 +131,29 @@ func (l *LinuxSystemStats) getCPUUsage(ctx context.Context) (int, error) {
 	// Parse CPU fields
 	total, idle := parseCPUFields(fields)
 
-	// Lock for thread-safe access to prevStats
-	l.mutex.RLock()
-	prev := l.prevStats
-	l.mutex.RUnlock()
+	// Initialize prevStats on the very first measurement so the next call can compute a delta.
+	l.mutex.Lock()
+	if l.prevStats == nil {
+		l.prevStats = &cpuStats{total: total, idle: idle, timestamp: time.Now()}
+		l.mutex.Unlock()
 
-	// Calculate delta if we have previous stats
-	if prev != nil && time.Since(prev.timestamp) < maxCPUDeltaAge {
+		// Sleep briefly to ensure the next /proc/stat sample reflects a non-trivial time slice.
+		select {
+		case <-ctx.Done():
+			return 0, ctx.Err()
+		case <-time.After(100 * time.Millisecond):
+		}
+
+		return l.getCPUUsage(ctx)
+	}
+
+	// Snapshot prev under lock, then release the lock so the math below does not hold it across
+	// further recursive or sleep calls.
+	prev := *l.prevStats
+	l.mutex.Unlock()
+
+	// Calculate delta from the previous reading.
+	if time.Since(prev.timestamp) < maxCPUDeltaAge {
 		totalDelta := total - prev.total
 		idleDelta := idle - prev.idle
 
@@ -237,8 +254,8 @@ func (l *LinuxSystemStats) getMemoryStats(ctx context.Context) (MemoryStats, err
 		available = memFree
 	}
 
-	totalGB := float64(memTotal) / MB
-	freeGB := float64(available) / MB
+	totalGB := float64(memTotal) / 1024 / 1024
+	freeGB := float64(available) / 1024 / 1024
 	usedGB := totalGB - freeGB
 
 	return MemoryStats{
@@ -254,6 +271,7 @@ func (l *LinuxSystemStats) getDiskStats(ctx context.Context) (DiskStats, error) 
 		return DiskStats{}, err
 	}
 
+	// Actually use syscall to get disk usage
 	var stat syscall.Statfs_t
 	if err := syscall.Statfs(l.mountPoint, &stat); err != nil {
 		return DiskStats{}, err
@@ -263,8 +281,8 @@ func (l *LinuxSystemStats) getDiskStats(ctx context.Context) (DiskStats, error) 
 	totalBlocks := stat.Blocks
 	freeBlocks := stat.Bfree
 
-	totalGB := float64(blockSize*totalBlocks) / GB
-	freeGB := float64(blockSize*freeBlocks) / GB
+	totalGB := float64(blockSize*totalBlocks) / 1024 / 1024 / 1024
+	freeGB := float64(blockSize*freeBlocks) / 1024 / 1024 / 1024
 	usedGB := totalGB - freeGB
 
 	return DiskStats{
@@ -276,5 +294,21 @@ func (l *LinuxSystemStats) getDiskStats(ctx context.Context) (DiskStats, error) 
 
 // roundToTwoDecimals rounds a float to two decimal places
 func roundToTwoDecimals(v float64) float64 {
-	return math.Round(v*100) / 100
+	return float64(int(v*100+0.5)) / 100
+}
+
+// GetSystemStatsJSON returns system stats as JSON string (for API responses)
+func GetSystemStatsJSON(ctx context.Context, mountPoint string) (string, error) {
+	collector := NewSystemStatsCollector(mountPoint)
+	stats, err := collector.GetStats(ctx)
+	if err != nil {
+		return "", err
+	}
+
+	jsonData, err := json.Marshal(stats)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal stats: %w", err)
+	}
+
+	return string(jsonData), nil
 }

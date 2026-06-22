@@ -9,10 +9,11 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/gin-gonic/gin"
+
 	"github.com/bassista/go_spin/internal/cache"
 	"github.com/bassista/go_spin/internal/repository"
 	"github.com/bassista/go_spin/internal/runtime"
-	"github.com/gin-gonic/gin"
 )
 
 func init() {
@@ -21,9 +22,9 @@ func init() {
 
 // mockContainerStore implements cache.ContainerStore for testing
 type mockContainerStore struct {
-	doc       repository.DataDocument
 	addErr    error
 	removeErr error
+	doc       repository.DataDocument
 }
 
 func (m *mockContainerStore) Snapshot() (repository.DataDocument, error) {
@@ -284,8 +285,8 @@ func TestContainerController_DeleteContainer_MissingName(t *testing.T) {
 
 // mockRuntime allows configuring IsRunning responses for testing Ready()
 type mockRuntime struct {
-	running bool
 	err     error
+	running bool
 }
 
 func (m *mockRuntime) IsRunning(ctx context.Context, containerName string) (bool, error) {

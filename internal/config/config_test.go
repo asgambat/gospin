@@ -556,7 +556,7 @@ func TestLoadConfig_CreatesDataFile(t *testing.T) {
 	}()
 
 	// Verify file doesn't exist
-	if _, err := os.Stat(dataFilePath); !os.IsNotExist(err) {
+	if _, statErr := os.Stat(dataFilePath); !os.IsNotExist(statErr) {
 		t.Fatal("expected data file to not exist initially")
 	}
 

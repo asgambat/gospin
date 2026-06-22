@@ -10,18 +10,18 @@ import (
 // including the iowait field as part of idle time.
 func TestParseCPUFields(t *testing.T) {
 	tests := []struct {
-		name         string
-		fields       [][]byte
-		wantTotal    uint64
-		wantIdle     uint64
+		name      string
+		fields    [][]byte
+		wantTotal uint64
+		wantIdle  uint64
 	}{
 		{
 			name: "normal usage with iowait",
 			fields: [][]byte{
 				[]byte("cpu"),
 				[]byte("100000"), []byte("20000"), []byte("10000"), []byte("60000"),
-				[]byte("5000"),  []byte("3000"),  []byte("2000"),  []byte("1000"),
-				[]byte("500"),   []byte("200"),
+				[]byte("5000"), []byte("3000"), []byte("2000"), []byte("1000"),
+				[]byte("500"), []byte("200"),
 			},
 			// total = 100000+20000+10000+60000+5000+3000+2000+1000+500+200 = 201700
 			// idle  = idle(60k) + iowait(5k) = 65000
@@ -33,12 +33,12 @@ func TestParseCPUFields(t *testing.T) {
 			fields: [][]byte{
 				[]byte("cpu"),
 				[]byte("1000000"), []byte("900000"), []byte("50000"), []byte("30000"),
-				[]byte("10000"),   []byte("20000"),  []byte("10000"), []byte("5000"),
-				[]byte("2000"),    []byte("1000"),
+				[]byte("10000"), []byte("20000"), []byte("10000"), []byte("5000"),
+				[]byte("2000"), []byte("1000"),
 			},
-		// total = 1000000+900000+50000+30000+10000+20000+10000+5000+2000+1000 = 2028000
-		// idle  = idle(30k) + iowait(10k) = 40000
-		wantTotal: 2028000,
+			// total = 1000000+900000+50000+30000+10000+20000+10000+5000+2000+1000 = 2028000
+			// idle  = idle(30k) + iowait(10k) = 40000
+			wantTotal: 2028000,
 			wantIdle:  40000,
 		},
 		{
@@ -56,9 +56,9 @@ func TestParseCPUFields(t *testing.T) {
 			name: "heavy iowait",
 			fields: [][]byte{
 				[]byte("cpu"),
-				[]byte("1000"), []byte("500"),  []byte("800"),  []byte("20000"),
-				[]byte("50000"), []byte("0"),   []byte("0"),    []byte("0"),
-				[]byte("0"),    []byte("0"),
+				[]byte("1000"), []byte("500"), []byte("800"), []byte("20000"),
+				[]byte("50000"), []byte("0"), []byte("0"), []byte("0"),
+				[]byte("0"), []byte("0"),
 			},
 			// idle = 20000 + 50000 = 70000
 			wantIdle: 70000,
@@ -88,21 +88,23 @@ func TestCPUUsage_DeltaMeasurement(t *testing.T) {
 
 	ctx := context.Background()
 
-	// First call should return 0 (need two measurements for delta)
+	// First call: implementation performs an internal 100ms sample so the
+	// returned value is a real (load-dependent) reading, not 0. We only
+	// assert that the value is within the valid percentage range.
 	cpuPercent1, err := statsCollector.getCPUUsage(ctx)
 	if err != nil {
 		t.Fatalf("First CPU measurement failed: %v", err)
 	}
-	if cpuPercent1 != 0 {
-		t.Errorf("Expected first measurement to be 0, got %d", cpuPercent1)
+	if cpuPercent1 < 0 || cpuPercent1 > 100 {
+		t.Errorf("First CPU measurement out of range [0,100], got %d", cpuPercent1)
 	}
 
 	// Simulate a previous reading to enable delta calculation
 	testFields := [][]byte{
 		[]byte("cpu"),
 		[]byte("200000"), []byte("60000"), []byte("20000"), []byte("100000"),
-		[]byte("10000"),  []byte("6000"),  []byte("4000"),  []byte("2000"),
-		[]byte("1000"),   []byte("400"),
+		[]byte("10000"), []byte("6000"), []byte("4000"), []byte("2000"),
+		[]byte("1000"), []byte("400"),
 	}
 	total, idle := parseCPUFields(testFields)
 
@@ -130,8 +132,13 @@ func TestCPUUsage_DeltaMeasurement(t *testing.T) {
 	}
 }
 
-// TestCPUUsage_FirstCallZero tests that first CPU call returns 0
-func TestCPUUsage_FirstCallZero(t *testing.T) {
+// TestCPUUsage_FirstCallReturnsValidRange verifies that the very first CPU
+// measurement returns a value within the valid percentage range [0, 100].
+// The implementation deliberately takes a ~100ms sample on first call
+// (via a recursive internal call) so callers see a real reading rather
+// than 0. The exact value is system-load dependent, so we only assert
+// the bounded range and that no error is returned.
+func TestCPUUsage_FirstCallReturnsValidRange(t *testing.T) {
 	statsCollector := &LinuxSystemStats{
 		mountPoint: "/tmp",
 	}
@@ -142,8 +149,8 @@ func TestCPUUsage_FirstCallZero(t *testing.T) {
 	if err != nil {
 		t.Fatalf("First CPU measurement failed: %v", err)
 	}
-	if cpuPercent != 0 {
-		t.Errorf("Expected first CPU measurement to be 0, got %d", cpuPercent)
+	if cpuPercent < 0 || cpuPercent > 100 {
+		t.Errorf("First CPU measurement out of range [0,100], got %d", cpuPercent)
 	}
 }
 
@@ -160,9 +167,11 @@ func TestGetStats_Integration(t *testing.T) {
 		t.Fatalf("GetStats failed: %v", err)
 	}
 
-	// First CPU measurement should be 0 (no delta)
-	if stats.CPU != 0 {
-		t.Errorf("Expected first CPU measurement to be 0, got %d", stats.CPU)
+	// CPU value is a percentage in [0, 100]. The first call may return a
+	// real measurement (after the internal 100ms sample) rather than 0,
+	// so we only assert the bounded range.
+	if stats.CPU < 0 || stats.CPU > 100 {
+		t.Errorf("CPU percentage out of range [0,100], got %d", stats.CPU)
 	}
 
 	// Check that memory stats are reasonable (using real /proc/meminfo)

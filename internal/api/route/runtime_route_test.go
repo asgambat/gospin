@@ -8,18 +8,19 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gin-gonic/gin"
+
 	"github.com/bassista/go_spin/internal/app"
 	"github.com/bassista/go_spin/internal/config"
 	"github.com/bassista/go_spin/internal/repository"
 	"github.com/bassista/go_spin/internal/runtime"
-	"github.com/gin-gonic/gin"
 )
 
 // mockContainerRuntime implements runtime.ContainerRuntime for testing
 type mockContainerRuntime struct {
-	mu           sync.RWMutex
-	statsDelay   time.Duration
 	statsCtxUsed context.Context
+	statsDelay   time.Duration
+	mu           sync.RWMutex
 }
 
 func (m *mockContainerRuntime) IsRunning(ctx context.Context, name string) (bool, error) {

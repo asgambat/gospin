@@ -7,21 +7,22 @@ import (
 	"strings"
 	"time"
 
+	"github.com/gin-gonic/gin"
+	"github.com/go-playground/validator/v10"
+
 	"github.com/bassista/go_spin/internal/cache"
 	"github.com/bassista/go_spin/internal/cosmos"
 	"github.com/bassista/go_spin/internal/logger"
 	"github.com/bassista/go_spin/internal/repository"
 	"github.com/bassista/go_spin/internal/runtime"
-	"github.com/gin-gonic/gin"
-	"github.com/go-playground/validator/v10"
 )
 
 type ContainerController struct {
 	crud          *CrudController[repository.Container]
 	importService *cosmos.ImportService
-	cosmosEnabled bool
 	cosmosBaseUrl string
 	cosmosToken   string
+	cosmosEnabled bool
 }
 
 func NewContainerController(ctx context.Context, store cache.ContainerStore, runtime runtime.ContainerRuntime, cosmosBaseUrl, cosmosToken string) *ContainerController {
@@ -172,7 +173,9 @@ func (cc *ContainerController) Ready(c *gin.Context) {
 	}
 
 	defer func() {
-		_ = resp.Body.Close()
+		if cerr := resp.Body.Close(); cerr != nil {
+			logger.WithComponent("container-controller").Debugf("failed to close response body for %s: %v", container.Name, cerr)
+		}
 	}()
 
 	isContainerUrlReady := resp.StatusCode == http.StatusOK || resp.StatusCode == http.StatusPermanentRedirect || resp.StatusCode == http.StatusTemporaryRedirect

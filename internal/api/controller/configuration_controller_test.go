@@ -6,8 +6,9 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/bassista/go_spin/internal/config"
 	"github.com/gin-gonic/gin"
+
+	"github.com/bassista/go_spin/internal/config"
 )
 
 func TestConfigurationController_GetConfiguration(t *testing.T) {
@@ -16,10 +17,10 @@ func TestConfigurationController_GetConfiguration(t *testing.T) {
 	tests := []struct {
 		name                 string
 		baseUrl              string
+		expectedBody         ConfigurationResponse
 		refreshInterval      int
 		statsRefreshInterval int
 		expectedStatus       int
-		expectedBody         ConfigurationResponse
 	}{
 		{
 			name:                 "returns configuration with baseUrl",

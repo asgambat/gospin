@@ -3,9 +3,10 @@ package controller
 import (
 	"net/http"
 
+	"github.com/gin-gonic/gin"
+
 	"github.com/bassista/go_spin/internal/config"
 	"github.com/bassista/go_spin/internal/logger"
-	"github.com/gin-gonic/gin"
 )
 
 // HomepageController handles homepage-related API endpoints.
@@ -20,8 +21,8 @@ func NewHomepageController(configPath string) *HomepageController {
 
 // HomepageResponse wraps the homepage config with a content hash for change detection.
 type HomepageResponse struct {
-	config.HomepageConfig
 	Hash string `json:"hash"`
+	config.HomepageConfig
 }
 
 // GetHomepageData reloads the homepage config from file and returns it as JSON with a content hash.

@@ -13,10 +13,10 @@ import (
 
 // mockRepository implements repository.Repository for testing
 type mockRepository struct {
-	watcherStarted bool
 	watcherErr     error
 	saveErr        error
 	doc            repository.DataDocument
+	watcherStarted bool
 }
 
 func (m *mockRepository) Load(ctx context.Context) (*repository.DataDocument, error) {

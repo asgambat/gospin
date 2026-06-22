@@ -16,10 +16,10 @@ var ErrScheduleNotFound = errors.New("schedule not found")
 
 // Store keeps an in-memory copy of the data document.
 type Store struct {
-	mu         sync.RWMutex
 	data       repository.DataDocument
-	dirty      bool  // true if cache changed since last persist
-	lastUpdate int64 // cache's metadata.lastUpdate
+	lastUpdate int64
+	mu         sync.RWMutex
+	dirty      bool
 }
 
 // NewStore creates an empty cache store.

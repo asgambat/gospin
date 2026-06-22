@@ -8,10 +8,11 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/bassista/go_spin/internal/logger"
 	"github.com/containerd/errdefs"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/client"
+
+	"github.com/bassista/go_spin/internal/logger"
 )
 
 // DockerClient defines the interface for Docker client operations used by DockerRuntime.

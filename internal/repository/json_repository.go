@@ -10,9 +10,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/bassista/go_spin/internal/logger"
 	"github.com/fsnotify/fsnotify"
 	"github.com/go-playground/validator/v10"
+
+	"github.com/bassista/go_spin/internal/logger"
 )
 
 // CacheStore defines the interface for cache operations needed by the watcher callback.
@@ -25,10 +26,10 @@ type CacheStore interface {
 
 // JSONRepository handles disk persistence and watching of the data file.
 type JSONRepository struct {
+	validator *validator.Validate
 	path      string
 	dir       string
 	base      string
-	validator *validator.Validate
 	mu        sync.Mutex
 }
 
@@ -84,7 +85,11 @@ func (r *JSONRepository) loadUnlocked() (*DataDocument, error) {
 	if err != nil {
 		return nil, fmt.Errorf("open data file: %w", err)
 	}
-	defer func() { _ = file.Close() }()
+	defer func() {
+		if cerr := file.Close(); cerr != nil {
+			logger.WithComponent("json-repo").Warnf("failed to close data file %s: %v", r.path, cerr)
+		}
+	}()
 
 	var doc DataDocument
 	if err := json.NewDecoder(file).Decode(&doc); err != nil {
@@ -197,8 +202,12 @@ func (r *JSONRepository) saveUnlocked(doc *DataDocument) error {
 		return fmt.Errorf("create temp file: %w", err)
 	}
 	defer func() {
-		_ = tmpFile.Close()
-		_ = os.Remove(tmpFile.Name())
+		if cerr := tmpFile.Close(); cerr != nil && !errors.Is(cerr, os.ErrClosed) {
+			logger.WithComponent("json-repo").Debugf("failed to close temp file %s: %v", tmpFile.Name(), cerr)
+		}
+		if rerr := os.Remove(tmpFile.Name()); rerr != nil && !errors.Is(rerr, os.ErrNotExist) {
+			logger.WithComponent("json-repo").Tracef("failed to remove temp file %s: %v", tmpFile.Name(), rerr)
+		}
 	}()
 
 	if _, err := tmpFile.Write(payload); err != nil {
@@ -227,7 +236,7 @@ func (r *JSONRepository) saveUnlocked(doc *DataDocument) error {
 // provided context: cancel it to stop the goroutine and close the watcher cleanly.
 func (r *JSONRepository) StartWatcher(ctx context.Context, cacheStore CacheStore) error {
 	logger.WithComponent("json-repo").Debugf("starting file watcher for directory: %s", r.dir)
-	onChange := r.MakeWatcherCallback(cacheStore)
+	onChange := r.MakeWatcherCallback(ctx, cacheStore)
 	if onChange == nil {
 		return errors.New("onChange callback is required")
 	}
@@ -239,7 +248,9 @@ func (r *JSONRepository) StartWatcher(ctx context.Context, cacheStore CacheStore
 	}
 
 	if err := watcher.Add(r.dir); err != nil {
-		_ = watcher.Close()
+		if cerr := watcher.Close(); cerr != nil {
+			logger.WithComponent("json-repo").Debugf("failed to close watcher after Add error: %v", cerr)
+		}
 		logger.WithComponent("json-repo").Debugf("failed to watch directory: %v", err)
 		return fmt.Errorf("watch dir: %w", err)
 	}
@@ -248,7 +259,11 @@ func (r *JSONRepository) StartWatcher(ctx context.Context, cacheStore CacheStore
 
 	// Run watcher loop in the background; it exits when ctx is canceled or channels close.
 	go func() {
-		defer func() { _ = watcher.Close() }()
+		defer func() {
+			if cerr := watcher.Close(); cerr != nil {
+				logger.WithComponent("json-repo").Debugf("failed to close watcher: %v", cerr)
+			}
+		}()
 
 		// debounce coalesces bursty fsnotify events (write+chmod/rename) into a single reload.
 		// If the timer is stopped before it fires, the scheduled onChange will not run.
@@ -300,10 +315,11 @@ func (r *JSONRepository) StartWatcher(ctx context.Context, cacheStore CacheStore
 }
 
 // MakeWatcherCallback returns a callback for file watcher that reloads cache from disk if needed.
-// The callback uses context.Background() for the Load operation as it runs asynchronously from a timer.
-func (r *JSONRepository) MakeWatcherCallback(cacheStore CacheStore) func() {
+// The provided ctx is used for the Load operation. Because the callback fires from a debounced
+// timer after file events, it inherits the watcher context so cancellation propagates cleanly.
+func (r *JSONRepository) MakeWatcherCallback(ctx context.Context, cacheStore CacheStore) func() {
 	return func() {
-		diskDoc, loadErr := r.Load(context.Background())
+		diskDoc, loadErr := r.Load(ctx)
 		if loadErr != nil {
 			logger.WithComponent("json-repo").Errorf("watch reload failed: %v", loadErr)
 			return

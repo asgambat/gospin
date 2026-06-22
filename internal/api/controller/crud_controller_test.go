@@ -7,9 +7,10 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/gin-gonic/gin"
+
 	"github.com/bassista/go_spin/internal/cache"
 	"github.com/bassista/go_spin/internal/repository"
-	"github.com/gin-gonic/gin"
 )
 
 // mockCrudService implements CrudService[repository.Container]

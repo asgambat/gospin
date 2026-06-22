@@ -39,11 +39,11 @@ type ServiceGroup struct {
 
 // HomepageSettings holds the settings section
 type HomepageSettings struct {
-	Theme                      string `yaml:"theme" json:"theme"`
-	Title                      string `yaml:"title" json:"title"`
-	Version                    string `yaml:"version" json:"version"`
-	FontFamily                 string `yaml:"font_family" json:"fontFamily"`
-	FontSize                   string `yaml:"font_size" json:"fontSize"`
+	Theme                       string `yaml:"theme" json:"theme"`
+	Title                       string `yaml:"title" json:"title"`
+	Version                     string `yaml:"version" json:"version"`
+	FontFamily                  string `yaml:"font_family" json:"fontFamily"`
+	FontSize                    string `yaml:"font_size" json:"fontSize"`
 	PollingIntervalSeconds      int    `yaml:"polling_interval_seconds" json:"pollingIntervalSeconds"`
 	StatsPollingIntervalSeconds int    `yaml:"stats_polling_interval_seconds" json:"statsPollingIntervalSeconds"`
 }
@@ -108,10 +108,10 @@ func LoadHomepageConfig(path string) (*HomepageConfig, string, error) {
 		if os.IsNotExist(err) {
 			cfg := &HomepageConfig{}
 			cfg.Settings.PollingIntervalSeconds = DefaultPollingIntervalSeconds
-		cfg.Settings.StatsPollingIntervalSeconds = DefaultStatsPollingIntervalSeconds
-		cfg.Settings.FontFamily = DefaultFontFamily
-		cfg.Settings.FontSize = DefaultFontSize
-		return cfg, "", nil
+			cfg.Settings.StatsPollingIntervalSeconds = DefaultStatsPollingIntervalSeconds
+			cfg.Settings.FontFamily = DefaultFontFamily
+			cfg.Settings.FontSize = DefaultFontSize
+			return cfg, "", nil
 		}
 		return nil, "", fmt.Errorf("failed to read homepage config file: %w", err)
 	}

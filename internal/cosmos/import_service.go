@@ -10,13 +10,13 @@ import (
 )
 
 type ImportResult struct {
+	ImportedNames   []string `json:"imported_names"`
+	SkippedNames    []string `json:"skipped_names"`
+	Errors          []string `json:"errors,omitempty"`
 	TotalFetched    int      `json:"total_fetched"`
 	Filtered        int      `json:"filtered"`
 	Imported        int      `json:"imported"`
 	SkippedExisting int      `json:"skipped_existing"`
-	ImportedNames   []string `json:"imported_names"`
-	SkippedNames    []string `json:"skipped_names"`
-	Errors          []string `json:"errors,omitempty"`
 }
 
 type ImportService struct {

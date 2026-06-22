@@ -73,11 +73,11 @@ func TestMemoryRuntime_ListContainers(t *testing.T) {
 	}
 
 	// add some containers
-	if err := mr.Start(ctx, "Alpha"); err != nil {
-		t.Fatalf("start failed: %v", err)
+	if startErr := mr.Start(ctx, "Alpha"); startErr != nil {
+		t.Fatalf("start failed: %v", startErr)
 	}
-	if err := mr.Start(ctx, "beta"); err != nil {
-		t.Fatalf("start failed: %v", err)
+	if startErr := mr.Start(ctx, "beta"); startErr != nil {
+		t.Fatalf("start failed: %v", startErr)
 	}
 
 	list, err = mr.ListContainers(ctx)

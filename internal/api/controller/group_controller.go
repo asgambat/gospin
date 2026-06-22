@@ -5,12 +5,13 @@ import (
 	"errors"
 	"net/http"
 
+	"github.com/gin-gonic/gin"
+	"github.com/go-playground/validator/v10"
+
 	"github.com/bassista/go_spin/internal/cache"
 	"github.com/bassista/go_spin/internal/logger"
 	"github.com/bassista/go_spin/internal/repository"
 	"github.com/bassista/go_spin/internal/runtime"
-	"github.com/gin-gonic/gin"
-	"github.com/go-playground/validator/v10"
 )
 
 // GroupController handles group-related HTTP endpoints using the generic CRUD controller.

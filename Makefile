@@ -63,7 +63,7 @@ staticcheck: ## Run staticcheck
 
 .PHONY: golangci-lint
 golangci-lint: ## Run golangci-lint (comprehensive linter suite)
-	golangci-lint run ./...
+	golangci-lint run --concurrency=1  ./...
 
 .PHONY: lint
 lint: vet staticcheck golangci-lint ## Run all linters (go vet + staticcheck + golangci-lint)

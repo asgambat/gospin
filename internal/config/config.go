@@ -8,21 +8,23 @@ import (
 	"strings"
 	"time"
 
-	"github.com/bassista/go_spin/internal/logger"
 	"github.com/joho/godotenv"
 	"github.com/spf13/viper"
+
+	"github.com/bassista/go_spin/internal/logger"
 )
 
 const ENV_PREFIX = "GO_SPIN"
 
 // Config holds all application configuration (immutable after load)
 type Config struct {
-	Server ServerConfig
-	Data   DataConfig
 	Misc   MiscConfig
+	Data   DataConfig
+	Server ServerConfig
 }
 
 type ServerConfig struct {
+	CORSAllowedOrigins string
 	Port               int
 	WaitingServerPort  int
 	ReadTimeout        time.Duration
@@ -30,19 +32,18 @@ type ServerConfig struct {
 	IdleTimeout        time.Duration
 	ShutDownTimeout    time.Duration
 	RequestTimeout     time.Duration
-	CORSAllowedOrigins string // CORS allowed origins, default "*"
 }
 
 type DataConfig struct {
 	FilePath                 string
-	PersistInterval          time.Duration
-	SchedulingEnabled        bool
-	SchedulingPoll           time.Duration
 	BaseUrl                  string
 	SpinUpUrl                string
+	SystemMonitorMountPoint  string
+	PersistInterval          time.Duration
+	SchedulingPoll           time.Duration
 	RefreshIntervalSecs      int
 	StatsRefreshIntervalSecs int
-	SystemMonitorMountPoint  string
+	SchedulingEnabled        bool
 }
 
 type MiscConfig struct {

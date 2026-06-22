@@ -28,11 +28,10 @@ type DayFlags struct {
 type PollingScheduler struct {
 	store   cache.ReadOnlyStore
 	runtime runtime.ContainerRuntime
-	poll    time.Duration
 	loc     *time.Location
-
-	mu    sync.Mutex
-	flags map[string]DayFlags
+	flags   map[string]DayFlags
+	poll    time.Duration
+	mu      sync.Mutex
 }
 
 func NewPollingScheduler(store cache.ReadOnlyStore, rt runtime.ContainerRuntime, poll time.Duration, loc *time.Location) *PollingScheduler {

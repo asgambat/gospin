@@ -10,6 +10,9 @@ import (
 	"net/http"
 	"syscall"
 
+	"github.com/gin-gonic/gin"
+	"github.com/sirupsen/logrus"
+
 	"github.com/bassista/go_spin/internal/api/controller"
 	"github.com/bassista/go_spin/internal/api/middleware"
 	route "github.com/bassista/go_spin/internal/api/route"
@@ -19,8 +22,6 @@ import (
 	"github.com/bassista/go_spin/internal/logger"
 	"github.com/bassista/go_spin/internal/repository"
 	"github.com/bassista/go_spin/internal/runtime"
-	"github.com/gin-gonic/gin"
-	"github.com/sirupsen/logrus"
 
 	"github.com/enrichman/httpgrace"
 )

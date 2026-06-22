@@ -8,9 +8,10 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/gin-gonic/gin"
+
 	"github.com/bassista/go_spin/internal/cache"
 	"github.com/bassista/go_spin/internal/repository"
-	"github.com/gin-gonic/gin"
 )
 
 // Timer alias for convenience
@@ -18,9 +19,9 @@ type Timer = repository.Timer
 
 // mockScheduleStore implements cache.ScheduleStore for testing
 type mockScheduleStore struct {
-	doc       repository.DataDocument
 	addErr    error
 	removeErr error
+	doc       repository.DataDocument
 }
 
 func (m *mockScheduleStore) Snapshot() (repository.DataDocument, error) {

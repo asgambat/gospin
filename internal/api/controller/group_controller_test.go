@@ -9,17 +9,18 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/gin-gonic/gin"
+
 	"github.com/bassista/go_spin/internal/cache"
 	"github.com/bassista/go_spin/internal/repository"
 	"github.com/bassista/go_spin/internal/runtime"
-	"github.com/gin-gonic/gin"
 )
 
 // mockGroupStore implements cache.GroupStore for testing
 type mockGroupStore struct {
-	doc       repository.DataDocument
 	addErr    error
 	removeErr error
+	doc       repository.DataDocument
 }
 
 func (m *mockGroupStore) Snapshot() (repository.DataDocument, error) {
@@ -508,8 +509,8 @@ func TestGroupController_DeleteGroup_StoreError(t *testing.T) {
 
 // mockGroupStoreWithSnapshotError implements cache.GroupStore for testing snapshot errors
 type mockGroupStoreWithSnapshotError struct {
-	mockGroupStore
 	snapshotErr error
+	mockGroupStore
 }
 
 func (m *mockGroupStoreWithSnapshotError) Snapshot() (repository.DataDocument, error) {

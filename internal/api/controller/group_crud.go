@@ -1,9 +1,10 @@
 package controller
 
 import (
+	"github.com/go-playground/validator/v10"
+
 	"github.com/bassista/go_spin/internal/cache"
 	"github.com/bassista/go_spin/internal/repository"
-	"github.com/go-playground/validator/v10"
 )
 
 // GroupCrudService implements CrudService for groups.

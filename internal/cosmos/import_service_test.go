@@ -12,8 +12,8 @@ import (
 )
 
 type mockStore struct {
-	containers []repository.Container
 	addErr     error
+	containers []repository.Container
 }
 
 func (m *mockStore) Snapshot() (repository.DataDocument, error) {
@@ -52,10 +52,10 @@ func TestNewImportService(t *testing.T) {
 
 func TestImportContainers(t *testing.T) {
 	tests := []struct {
+		addErr             error
 		name               string
 		routes             []RouteItem
 		existingContainers []repository.Container
-		addErr             error
 		expectedImport     int
 		expectedSkipped    int
 		expectError        bool
@@ -162,9 +162,9 @@ func TestImportContainers(t *testing.T) {
 func TestRouteToContainer(t *testing.T) {
 	tests := []struct {
 		name           string
-		route          RouteItem
 		expectedName   string
 		expectedURL    string
+		route          RouteItem
 		expectActive   bool
 		expectFavorite bool
 	}{
