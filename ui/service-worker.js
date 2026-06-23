@@ -2,16 +2,18 @@
 // new install overwrites instead of layering on top of the old cache,
 // and so the activate handler below can deterministically prune stale
 // entries left over from previous versions.
-const CACHE_NAME = 'gosspin-ui-v3';
+const CACHE_NAME = 'gosspin-ui-v4';
 
 self.addEventListener('install', event => {
   event.waitUntil(
     caches.open(CACHE_NAME).then(cache => {
       return cache.addAll([
         '/ui/',
+        '/ui/home',
+        '/ui/home.js',
         '/ui/assets/app.js',
-        '/ui/assets/app-icon-192.png',
-        '/ui/assets/app-icon-512.png',
+        '/ui/assets/pwa/app-icon-192.png',
+        '/ui/assets/pwa/app-icon-512.png',
         // Homepage theme background images (locally bundled, served by
         // the static asset router r.Static("/ui/assets", "./ui/assets")
         // in internal/api/route/ui_route.go). Pre-cached so each theme's
