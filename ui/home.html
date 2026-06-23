@@ -265,7 +265,7 @@
     <script>
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', function() {
-                navigator.serviceWorker.register('/ui/service-worker.js', { scope: '/ui/' });
+                navigator.serviceWorker.register('/ui/service-worker.js', { scope: '/' });
             });
         }
     </script>
