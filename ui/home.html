@@ -5,8 +5,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Homepage</title>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🏠</text></svg>">
-    <link rel="manifest" href="ui/assets/pwa/manifest-home.json">
+    <link rel="apple-touch-icon" href="/ui/assets/pwa/home-icon-192.png">
+    <link rel="manifest" href="/ui/assets/pwa/manifest-home.json">
     <meta name="theme-color" content="#1e1e2e">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Home">
     <script defer src="/ui/home.js"></script>
     <!-- Alpine collapse plugin (registers x-collapse directive) must load BEFORE Alpine core -->
     <script defer src="https://cdn.jsdelivr.net/npm/@alpinejs/collapse@3.x.x/dist/cdn.min.js"></script>
@@ -261,7 +265,7 @@
     <script>
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', function() {
-                navigator.serviceWorker.register('ui/assets/pwa/service-worker.js');
+                navigator.serviceWorker.register('/ui/service-worker.js', { scope: '/ui/' });
             });
         }
     </script>

@@ -1,6 +1,7 @@
 {
   "name": "GoSpin Homepage",
   "short_name": "Home",
+  "id": "/ui/home",
   "start_url": "/ui/home",
   "display": "standalone",
   "background_color": "#1a1b26",
@@ -9,87 +10,44 @@
   "scope": "/ui/home",
   "icons": [
     {
-      "src": "ui/assets/pwa/app-icon-192.png",
+      "src": "/ui/assets/pwa/home-icon-192.png",
       "sizes": "192x192",
-      "type": "image/png"
+      "type": "image/png",
+      "purpose": "any"
     },
     {
-      "src": "ui/assets/pwa/icon.png",
+      "src": "/ui/assets/pwa/home-icon-512.png",
       "sizes": "512x512",
       "type": "image/png",
-      "purpose": "any maskable"
-    },
-    {
-      "src": "ui/assets/themes/nord-bg.jpg",
-      "sizes": "2560x1707",
-      "type": "image/jpeg",
       "purpose": "any"
     },
     {
-      "src": "ui/assets/themes/nord-bg-1280.jpg",
-      "sizes": "1280x854",
-      "type": "image/jpeg",
-      "purpose": "any"
+      "src": "/ui/assets/pwa/home-icon-maskable-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
     },
     {
-      "src": "ui/assets/themes/nord-bg.webp",
-      "sizes": "2560x1707",
-      "type": "image/webp",
-      "purpose": "any"
+      "src": "/ui/assets/pwa/home-icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "screenshots": [
+    {
+      "src": "/ui/assets/pwa/home-screenshot-narrow.png",
+      "sizes": "390x844",
+      "type": "image/png",
+      "form_factor": "narrow",
+      "label": "Homepage Bookmarks & Services - Mobile"
     },
     {
-      "src": "ui/assets/themes/nord-bg-1280.webp",
-      "sizes": "1280x854",
-      "type": "image/webp",
-      "purpose": "any"
-    },
-    {
-      "src": "ui/assets/themes/catppuccin-latte-bg.jpg",
-      "sizes": "2560x1945",
-      "type": "image/jpeg",
-      "purpose": "any"
-    },
-    {
-      "src": "ui/assets/themes/catppuccin-latte-bg-1280.jpg",
-      "sizes": "1280x973",
-      "type": "image/jpeg",
-      "purpose": "any"
-    },
-    {
-      "src": "ui/assets/themes/catppuccin-latte-bg.webp",
-      "sizes": "2560x1945",
-      "type": "image/webp",
-      "purpose": "any"
-    },
-    {
-      "src": "ui/assets/themes/catppuccin-latte-bg-1280.webp",
-      "sizes": "1280x973",
-      "type": "image/webp",
-      "purpose": "any"
-    },
-    {
-      "src": "ui/assets/themes/night-stars-bg.jpg",
-      "sizes": "2560x1628",
-      "type": "image/jpeg",
-      "purpose": "any"
-    },
-    {
-      "src": "ui/assets/themes/night-stars-bg-1280.jpg",
-      "sizes": "1280x814",
-      "type": "image/jpeg",
-      "purpose": "any"
-    },
-    {
-      "src": "ui/assets/themes/night-stars-bg.webp",
-      "sizes": "2560x1628",
-      "type": "image/webp",
-      "purpose": "any"
-    },
-    {
-      "src": "ui/assets/themes/night-stars-bg-1280.webp",
-      "sizes": "1280x814",
-      "type": "image/webp",
-      "purpose": "any"
+      "src": "/ui/assets/pwa/home-screenshot-wide.png",
+      "sizes": "1280x720",
+      "type": "image/png",
+      "form_factor": "wide",
+      "label": "Homepage Bookmarks & Services - Desktop"
     }
   ]
 }
