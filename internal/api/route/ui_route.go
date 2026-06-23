@@ -43,7 +43,7 @@ func NewUIRouter(r *gin.Engine) {
 	// MUST be registered before /ui route to avoid Gin routing conflicts.
 	r.GET("/ui/service-worker.js", func(c *gin.Context) {
 		c.Header("Content-Type", "application/javascript; charset=utf-8")
-		c.Header("Service-Worker-Allowed", "/ui/")
+		c.Header("Service-Worker-Allowed", "/")
 		c.Header("Cache-Control", "public, max-age=3600")
 		c.File("./ui/service-worker.js")
 	})

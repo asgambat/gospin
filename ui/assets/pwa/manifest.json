@@ -1,13 +1,13 @@
 {
   "name": "GoSpin UI",
   "short_name": "GoSpin",
-  "id": "/ui/",
-  "start_url": "/ui/",
+  "id": "/ui",
+  "start_url": "/ui",
   "display": "standalone",
   "background_color": "#ffffff",
   "theme_color": "#1976d2",
   "description": "GoSpin web UI",
-  "scope": "/ui/",
+  "scope": "/ui",
   "icons": [
     {
       "src": "/ui/assets/pwa/app-icon-192.png",

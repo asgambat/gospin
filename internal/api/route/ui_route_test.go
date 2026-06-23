@@ -38,8 +38,8 @@ func TestUIRoute_ServiceWorkerServedWithCorrectHeaders(t *testing.T) {
 
 	// Service-Worker-Allowed
 	swAllowed := w.Header().Get("Service-Worker-Allowed")
-	if swAllowed != "/ui/" {
-		t.Errorf("expected Service-Worker-Allowed '/ui/', got '%s'", swAllowed)
+	if swAllowed != "/" {
+		t.Errorf("expected Service-Worker-Allowed '/', got '%s'", swAllowed)
 	}
 
 	// Cache-Control

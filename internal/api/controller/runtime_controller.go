@@ -2,6 +2,7 @@ package controller
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -473,10 +474,13 @@ func (rc *RuntimeController) AllStats(c *gin.Context) {
 
 // SystemStats returns system-wide resource usage (CPU, RAM, disk).
 func (rc *RuntimeController) SystemStats(c *gin.Context) {
-	collector := runtime.NewSystemStatsCollector(rc.config.Data.SystemMonitorMountPoint)
-	stats, err := collector.GetStats(c.Request.Context())
-
+	stats, err := rc.systemStatsCollector.GetStats(c.Request.Context())
 	if err != nil {
+		// Client disconnected or request timed out — not a server error.
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			logger.WithComponent("runtime_controller").Debugf("system stats request aborted: %v", err)
+			return
+		}
 		logger.WithComponent("runtime_controller").Errorf("failed to get system stats: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("failed to get system stats: %v", err)})
 		return
