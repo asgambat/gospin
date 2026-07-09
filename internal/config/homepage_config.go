@@ -96,10 +96,27 @@ func resolveIconURL(icon string) string {
 	return fmt.Sprintf("%s/%s/%s", dashboardIconsBase, ext, icon)
 }
 
+// ActionItem is a visual reference to a server-side action defined in actions.yml.
+// The browser only sees Name, Action (the lookup key), Description, and Icon —
+// never the HTTP method, target URL, headers, or body.
+type ActionItem struct {
+	Name        string `yaml:"name" json:"name"`
+	Action      string `yaml:"action" json:"action"` // key into actions.yml
+	Description string `yaml:"description" json:"description"`
+	Icon        string `yaml:"icon" json:"icon"`
+}
+
+// ActionGroup represents a group of action references.
+type ActionGroup struct {
+	Group string       `yaml:"group" json:"group"`
+	Items []ActionItem `yaml:"items" json:"items"`
+}
+
 // HomepageConfig is the root struct
 type HomepageConfig struct {
 	Services  []ServiceGroup   `yaml:"services" json:"services"`
 	Bookmarks []BookmarkGroup  `yaml:"bookmarks" json:"bookmarks"`
+	Actions   []ActionGroup    `yaml:"actions" json:"actions"`
 	Settings  HomepageSettings `yaml:"settings" json:"settings"`
 }
 
@@ -152,6 +169,11 @@ func LoadHomepageConfig(path string) (*HomepageConfig, string, error) {
 	for i := range cfg.Services {
 		for j := range cfg.Services[i].Items {
 			cfg.Services[i].Items[j].Icon = resolveIconURL(cfg.Services[i].Items[j].Icon)
+		}
+	}
+	for i := range cfg.Actions {
+		for j := range cfg.Actions[i].Items {
+			cfg.Actions[i].Items[j].Icon = resolveIconURL(cfg.Actions[i].Items[j].Icon)
 		}
 	}
 

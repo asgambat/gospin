@@ -1,0 +1,35 @@
+# Actions configuration file (EXAMPLE — do not put real secrets here)
+#
+# Copy this file to config/actions.yml and fill in your real endpoints/tokens.
+# config/actions.yml is git-ignored because it may contain credentials.
+#
+# Each action is referenced by name from homepage.yaml's actions section.
+# The browser never sees headers or body — all requests are proxied
+# server-side by the Go backend.
+#
+# Fields:
+#   method   - HTTP method (GET, POST, PUT, DELETE, PATCH, etc.)  [required]
+#   url      - Target URL for the HTTP request                     [required]
+#   headers  - Optional map of HTTP headers to include
+#   body     - Optional request body string (sent as-is)
+
+actions:
+  # Example: start a Docker container via a remote API
+  avvia-firefox:
+    method: POST
+    url: "https://dcontroller.example.com/container?action=start&name=jlesage-firefox"
+    headers:
+      Content-Type: "application/json"
+      # Authorization: "Bearer <your-token>"
+
+  # Example: stop a Docker container
+  ferma-firefox:
+    method: POST
+    url: "https://dcontroller.example.com/container?action=stop&name=jlesage-firefox"
+    headers:
+      Content-Type: "application/json"
+
+  # Example: simple health check
+  ping-gospin:
+    method: GET
+    url: "https://gospin.example.com/health"

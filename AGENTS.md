@@ -11,7 +11,7 @@ Do not use magic numbers or other configuration written directly in the code. Al
 # Testing
 After making changes, run all existing tests to ensure that the modifications do not introduce regressions. If new functionality is added, write appropriate unit and integration tests to cover the new code paths. Ensure that tests are clear, concise, and follow the existing testing conventions in the codebase. After test execution, check the coverage level to ensure at least 70% coverage for all packages. If this threshold is missed, please add all needed and relevant unit tests to hit the required score.
 # Concurrency Tests
-When modifying code that involves concurrency (e.g., goroutines, channels), ensure that proper synchronization mechanisms are in place to prevent race conditions. Use Go's race detector during testing to identify potential concurrency issues.
+When modifying code that involves concurrency (e.g., goroutines, channels), ensure that proper synchronization mechanisms are in place to prevent race conditions. Use Go's race detector during testing to identify potential concurrency issues, but before check if running on a raspberry pi4 that do not support the race flag, in this case skip it.
 # Logging and Error Handling Guidelines
 Use the existing logger for logging messages. Use appropriate log levels (Debug, Info, Warn, Error) based on the significance of the events being logged. Use Debug for detailed internal information, Info for general operational messages, Warn for potential issues, and Error for serious problems that need attention.
 # Documentation

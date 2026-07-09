@@ -24,6 +24,7 @@ func TestConfig_Validate_Valid(t *testing.T) {
 			SchedulingPoll:           30 * time.Second,
 			RefreshIntervalSecs:      60,
 			StatsRefreshIntervalSecs: 120,
+			ActionsTimeoutSeconds:    30,
 		},
 		Misc: MiscConfig{
 			GinMode:      "release",
@@ -53,6 +54,7 @@ func TestConfig_Validate_EmptyFilePath(t *testing.T) {
 			SchedulingPoll:           30 * time.Second,
 			RefreshIntervalSecs:      60,
 			StatsRefreshIntervalSecs: 120,
+			ActionsTimeoutSeconds:    30,
 		},
 		Misc: MiscConfig{
 			SchedulingTZ: "Local",
@@ -85,13 +87,13 @@ func TestConfig_Validate_InvalidPort(t *testing.T) {
 					IdleTimeout:     120 * time.Second,
 					ShutDownTimeout: 5 * time.Second,
 					RequestTimeout:  1000 * time.Millisecond,
-				},
-				Data: DataConfig{
+				}, Data: DataConfig{
 					FilePath:                 "/tmp/config.json",
 					PersistInterval:          5 * time.Second,
 					SchedulingPoll:           30 * time.Second,
 					RefreshIntervalSecs:      60,
 					StatsRefreshIntervalSecs: 120,
+					ActionsTimeoutSeconds:    30,
 				},
 				Misc: MiscConfig{
 					SchedulingTZ: "Local",
@@ -122,6 +124,7 @@ func TestConfig_Validate_InvalidPersistInterval(t *testing.T) {
 			SchedulingPoll:           30 * time.Second,
 			RefreshIntervalSecs:      60,
 			StatsRefreshIntervalSecs: 120,
+			ActionsTimeoutSeconds:    30,
 		},
 		Misc: MiscConfig{
 			SchedulingTZ: "Local",
@@ -165,6 +168,7 @@ func TestConfig_Validate_InvalidTimeouts(t *testing.T) {
 					SchedulingPoll:           30 * time.Second,
 					RefreshIntervalSecs:      60,
 					StatsRefreshIntervalSecs: 120,
+					ActionsTimeoutSeconds:    30,
 				},
 				Misc: MiscConfig{
 					SchedulingTZ: "Local",
@@ -195,6 +199,7 @@ func TestConfig_Validate_InvalidSchedulingPoll(t *testing.T) {
 			SchedulingPoll:           0,
 			RefreshIntervalSecs:      60,
 			StatsRefreshIntervalSecs: 120,
+			ActionsTimeoutSeconds:    30,
 		},
 		Misc: MiscConfig{
 			SchedulingTZ: "Local",
@@ -223,6 +228,7 @@ func TestConfig_Validate_InvalidTimezone(t *testing.T) {
 			SchedulingPoll:           30 * time.Second,
 			RefreshIntervalSecs:      60,
 			StatsRefreshIntervalSecs: 120,
+			ActionsTimeoutSeconds:    30,
 		},
 		Misc: MiscConfig{
 			SchedulingTZ: "Invalid/Timezone",
@@ -255,6 +261,7 @@ func TestConfig_Validate_ValidTimezones(t *testing.T) {
 					SchedulingPoll:           30 * time.Second,
 					RefreshIntervalSecs:      60,
 					StatsRefreshIntervalSecs: 120,
+					ActionsTimeoutSeconds:    30,
 				},
 				Misc: MiscConfig{
 					SchedulingTZ: tz,
@@ -324,6 +331,7 @@ func TestConfig_Validate_ZeroRefreshInterval(t *testing.T) {
 			SchedulingPoll:           30 * time.Second,
 			RefreshIntervalSecs:      0,
 			StatsRefreshIntervalSecs: 120,
+			ActionsTimeoutSeconds:    30,
 		},
 		Misc: MiscConfig{
 			SchedulingTZ: "Local",
@@ -352,6 +360,7 @@ func TestConfig_Validate_ZeroStatsRefreshInterval(t *testing.T) {
 			SchedulingPoll:           30 * time.Second,
 			RefreshIntervalSecs:      60,
 			StatsRefreshIntervalSecs: 0,
+			ActionsTimeoutSeconds:    30,
 		},
 		Misc: MiscConfig{
 			SchedulingTZ: "Local",
@@ -380,6 +389,7 @@ func TestConfig_Validate_ZeroRequestTimeout(t *testing.T) {
 			SchedulingPoll:           30 * time.Second,
 			RefreshIntervalSecs:      60,
 			StatsRefreshIntervalSecs: 120,
+			ActionsTimeoutSeconds:    30,
 		},
 		Misc: MiscConfig{
 			SchedulingTZ: "Local",
@@ -389,6 +399,100 @@ func TestConfig_Validate_ZeroRequestTimeout(t *testing.T) {
 	err := cfg.validate()
 	if err == nil {
 		t.Error("expected error for zero request timeout")
+	}
+}
+
+func TestConfig_Validate_InvalidActionsMode(t *testing.T) {
+	cfg := &Config{
+		Server: ServerConfig{
+			Port:            8080,
+			ReadTimeout:     10 * time.Second,
+			WriteTimeout:    10 * time.Second,
+			IdleTimeout:     120 * time.Second,
+			ShutDownTimeout: 5 * time.Second,
+			RequestTimeout:  1000 * time.Millisecond,
+		},
+		Data: DataConfig{
+			FilePath:                 "/tmp/config.json",
+			PersistInterval:          5 * time.Second,
+			SchedulingPoll:           30 * time.Second,
+			RefreshIntervalSecs:      60,
+			StatsRefreshIntervalSecs: 120,
+			ActionsTimeoutSeconds:    30,
+			ActionsMode:              "invalid",
+		},
+		Misc: MiscConfig{
+			SchedulingTZ: "Local",
+		},
+	}
+
+	err := cfg.validate()
+	if err == nil {
+		t.Error("expected error for invalid actions_mode")
+	}
+}
+
+func TestConfig_Validate_ValidActionsModes(t *testing.T) {
+	modes := []string{"", "sync", "async"}
+
+	for _, mode := range modes {
+		t.Run("mode="+mode, func(t *testing.T) {
+			cfg := &Config{
+				Server: ServerConfig{
+					Port:            8080,
+					ReadTimeout:     10 * time.Second,
+					WriteTimeout:    10 * time.Second,
+					IdleTimeout:     120 * time.Second,
+					ShutDownTimeout: 5 * time.Second,
+					RequestTimeout:  1000 * time.Millisecond,
+				},
+				Data: DataConfig{
+					FilePath:                 "/tmp/config.json",
+					PersistInterval:          5 * time.Second,
+					SchedulingPoll:           30 * time.Second,
+					RefreshIntervalSecs:      60,
+					StatsRefreshIntervalSecs: 120,
+					ActionsTimeoutSeconds:    30,
+					ActionsMode:              mode,
+				},
+				Misc: MiscConfig{
+					SchedulingTZ: "Local",
+				},
+			}
+
+			if err := cfg.validate(); err != nil {
+				t.Errorf("expected valid actions_mode %q, got error: %v", mode, err)
+			}
+		})
+	}
+}
+
+func TestConfig_Validate_ZeroActionsTimeout(t *testing.T) {
+	cfg := &Config{
+		Server: ServerConfig{
+			Port:            8080,
+			ReadTimeout:     10 * time.Second,
+			WriteTimeout:    10 * time.Second,
+			IdleTimeout:     120 * time.Second,
+			ShutDownTimeout: 5 * time.Second,
+			RequestTimeout:  1000 * time.Millisecond,
+		},
+		Data: DataConfig{
+			FilePath:                 "/tmp/config.json",
+			PersistInterval:          5 * time.Second,
+			SchedulingPoll:           30 * time.Second,
+			RefreshIntervalSecs:      60,
+			StatsRefreshIntervalSecs: 120,
+			ActionsTimeoutSeconds:    0,
+		},
+		Misc: MiscConfig{
+			SchedulingTZ: "Local",
+		},
+	}
+
+	err := cfg.validate()
+	if err == nil {
+		t.Error("expected error for zero actions_timeout_seconds")
 	}
 }
 
@@ -408,6 +512,7 @@ func TestConfig_Validate_EmptyTimezone(t *testing.T) {
 			SchedulingPoll:           30 * time.Second,
 			RefreshIntervalSecs:      60,
 			StatsRefreshIntervalSecs: 120,
+			ActionsTimeoutSeconds:    30,
 		},
 		Misc: MiscConfig{
 			SchedulingTZ: "",

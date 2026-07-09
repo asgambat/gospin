@@ -1,0 +1,230 @@
+version: '3'
+
+vars:
+  # Go configuration
+  GO_CMD: go
+  GO_TEST_FLAGS: -count=1
+
+  # Binary output
+  BIN_DIR: .build
+  BINARY: gospin
+
+  # Version metadata — shell-evaluated at task runtime (same logic as Makefile)
+  VERSION_PKG: github.com/bassista/go_spin/internal/version
+  VERSION:
+    sh: git describe --tags --always --dirty 2>/dev/null || echo "0.0.9"
+  BUILD_TIME:
+    sh: date -u '+%Y-%m-%d_%H:%M:%S'
+  GIT_COMMIT:
+    sh: git rev-parse --short HEAD 2>/dev/null || echo "unknown"
+  GO_VERSION:
+    sh: go version | awk '{print $3}'
+
+  # Docker configuration
+  DOCKER_IMAGE: bassista/gospin
+  DOCKER_TAG: latest
+
+tasks:
+  # ============================================================
+  # Main tasks
+  # ============================================================
+
+  default:
+    desc: Show available tasks
+    cmds:
+      - task --list-all
+    silent: true
+
+  # ============================================================
+  # Build tasks
+  # ============================================================
+
+  build:
+    desc: Build the gospin binary (runs lint + test first)
+    cmds:
+      - task: lint
+      - task: test
+      - mkdir -p {{.BIN_DIR}}
+      - '{{.GO_CMD}} build -ldflags="-s -w -X {{.VERSION_PKG}}.Version={{.VERSION}} -X {{.VERSION_PKG}}.BuildTime={{.BUILD_TIME}} -X {{.VERSION_PKG}}.GitCommit={{.GIT_COMMIT}} -X {{.VERSION_PKG}}.GoVersion={{.GO_VERSION}}" -trimpath -o {{.BIN_DIR}}/{{.BINARY}}{{exeExt}} ./cmd/server'
+    sources:
+      - cmd/server/**/*.go
+      - internal/**/*.go
+      - ui/**/*
+    generates:
+      - '{{.BIN_DIR}}/{{.BINARY}}{{exeExt}}'
+
+  build:fast:
+    desc: Build quickly without lint/test
+    cmds:
+      - mkdir -p {{.BIN_DIR}}
+      - '{{.GO_CMD}} build -ldflags="-s -w -X {{.VERSION_PKG}}.Version=dev -X {{.VERSION_PKG}}.BuildTime={{.BUILD_TIME}} -X {{.VERSION_PKG}}.GitCommit={{.GIT_COMMIT}} -X {{.VERSION_PKG}}.GoVersion={{.GO_VERSION}}" -trimpath -o {{.BIN_DIR}}/{{.BINARY}}{{exeExt}} ./cmd/server'
+    sources:
+      - cmd/server/**/*.go
+      - internal/**/*.go
+    generates:
+      - '{{.BIN_DIR}}/{{.BINARY}}{{exeExt}}'
+
+  # ============================================================
+  # Run tasks
+  # ============================================================
+
+  run:
+    desc: Run the application (go run with version metadata)
+    cmds:
+      - '{{.GO_CMD}} run -ldflags="-X {{.VERSION_PKG}}.Version={{.VERSION}} -X {{.VERSION_PKG}}.BuildTime={{.BUILD_TIME}} -X {{.VERSION_PKG}}.GitCommit={{.GIT_COMMIT}} -X {{.VERSION_PKG}}.GoVersion={{.GO_VERSION}}" ./cmd/server'
+
+  watch:
+    desc: Run with hot-reload via air (requires `go install github.com/air-verse/air@latest`)
+    cmds:
+      - air
+
+  # ============================================================
+  # Test tasks
+  # ============================================================
+
+  test:
+    desc: Run all tests
+    cmds:
+      - '{{.GO_CMD}} test {{.GO_TEST_FLAGS}} ./...'
+
+  test:verbose:
+    desc: Run all tests with verbose output
+    cmds:
+      - '{{.GO_CMD}} test -v {{.GO_TEST_FLAGS}} ./...'
+
+  test:race:
+    desc: Run tests with race detector
+    cmds:
+      - '{{.GO_CMD}} test -race {{.GO_TEST_FLAGS}} ./...'
+
+  test:cover:
+    desc: Run tests with coverage report
+    cmds:
+      - '{{.GO_CMD}} test -cover -coverprofile=coverage.out {{.GO_TEST_FLAGS}} ./...'
+      - '{{.GO_CMD}} tool cover -html=coverage.out -o coverage.html'
+      - cmd: echo "Coverage report generated at coverage.html"
+        silent: true
+
+  test:package:
+    desc: 'Run tests for a specific package (usage: task test:package -- ./internal/config)'
+    cmds:
+      - '{{.GO_CMD}} test -v {{.GO_TEST_FLAGS}} {{.CLI_ARGS}}'
+
+  # ============================================================
+  # Code quality tasks
+  # ============================================================
+
+  fmt:
+    desc: Format Go code
+    cmds:
+      - '{{.GO_CMD}} fmt ./...'
+
+  vet:
+    desc: Run go vet
+    cmds:
+      - '{{.GO_CMD}} vet ./...'
+
+  lint:
+    desc: Run golangci-lint
+    cmds:
+      - golangci-lint run --concurrency=1 ./...
+    preconditions:
+      - sh: command -v golangci-lint
+        msg: "golangci-lint not found. Install from https://golangci-lint.run/usage/install/"
+
+  check:
+    desc: Run all code quality checks (fmt, vet, lint, test)
+    cmds:
+      - task: fmt
+      - task: vet
+      - task: lint
+      - task: test
+
+  # ============================================================
+  # Dependency tasks
+  # ============================================================
+
+  deps:
+    desc: Download and verify Go dependencies
+    cmds:
+      - '{{.GO_CMD}} mod download'
+      - '{{.GO_CMD}} mod verify'
+
+  deps:tidy:
+    desc: Tidy Go dependencies
+    cmds:
+      - '{{.GO_CMD}} mod tidy'
+
+  deps:update:
+    desc: Check for direct dependency updates
+    cmds:
+      - "{{.GO_CMD}} list -u -m -f '{{`{{if not .Indirect}}{{.}}{{end}}`}}' all | grep '\\['"
+
+  # ============================================================
+  # Clean tasks
+  # ============================================================
+
+  clean:
+    desc: Clean all build and test artifacts
+    cmds:
+      - cmd: rm -rf {{.BIN_DIR}}
+        platforms: [linux, darwin]
+        ignore_error: true
+      - cmd: rmdir /s /q {{.BIN_DIR}}
+        platforms: [windows]
+        ignore_error: true
+      - cmd: rm -f coverage.out coverage.html
+        platforms: [linux, darwin]
+        ignore_error: true
+
+  # ============================================================
+  # Docker tasks
+  # ============================================================
+
+  docker:build:
+    desc: Build Docker image for current platform
+    cmds:
+      - docker buildx build -f Dockerfile --load -t {{.DOCKER_IMAGE}}:{{.DOCKER_TAG}} --progress plain .
+
+  docker:buildx:
+    desc: Build multi-arch image and push (linux/amd64 + linux/arm64)
+    cmds:
+      - docker buildx build -f Dockerfile --platform linux/amd64,linux/arm64 --cache-from type=registry,ref={{.DOCKER_IMAGE}}:cache --cache-to type=registry,ref={{.DOCKER_IMAGE}}:cache,mode=max -t {{.DOCKER_IMAGE}}:{{.DOCKER_TAG}} --progress plain --push .
+
+  docker:push:
+    desc: Push Docker image to registry
+    cmds:
+      - docker push {{.DOCKER_IMAGE}}:{{.DOCKER_TAG}}
+
+  docker:run:
+    desc: Run Docker container locally
+    cmds:
+      - docker run -d --name gospin -p 8084:8084 -p 8085:8085 -v /var/run/docker.sock:/var/run/docker.sock -v ./config:/app/config {{.DOCKER_IMAGE}}:{{.DOCKER_TAG}}
+
+  docker:stop:
+    desc: Stop and remove Docker container
+    cmds:
+      - cmd: docker stop gospin
+        ignore_error: true
+      - cmd: docker rm gospin
+        ignore_error: true
+
+  # ============================================================
+  # CI/CD helper tasks
+  # ============================================================
+
+  ci:
+    desc: Run CI pipeline (deps, lint, test, build)
+    cmds:
+      - task: deps
+      - task: lint
+      - task: test:race
+      - task: build:fast
+
+  release:
+    desc: Build release binary
+    cmds:
+      - task: clean
+      - task: build
+      - cmd: echo "Release binary built at {{.BIN_DIR}}/{{.BINARY}}{{exeExt}}"
+        silent: true

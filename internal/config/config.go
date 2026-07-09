@@ -39,10 +39,12 @@ type DataConfig struct {
 	BaseUrl                  string
 	SpinUpUrl                string
 	SystemMonitorMountPoint  string
+	ActionsMode              string
 	PersistInterval          time.Duration
 	SchedulingPoll           time.Duration
 	RefreshIntervalSecs      int
 	StatsRefreshIntervalSecs int
+	ActionsTimeoutSeconds    int
 	SchedulingEnabled        bool
 }
 
@@ -88,6 +90,8 @@ func LoadConfig() (*Config, error) {
 	viper.SetDefault("data.refresh_interval_secs", 60)
 	viper.SetDefault("data.stats_refresh_interval_secs", 120)
 	viper.SetDefault("data.system_monitor_mount_point", "/")
+	viper.SetDefault("data.actions_mode", "async")
+	viper.SetDefault("data.actions_timeout_seconds", 30)
 	viper.SetDefault("misc.gin_mode", "release")
 	viper.SetDefault("misc.scheduling_timezone", "Local")
 	viper.SetDefault("misc.runtime_type", "docker")
@@ -144,6 +148,8 @@ func LoadConfig() (*Config, error) {
 			RefreshIntervalSecs:      viper.GetInt("data.refresh_interval_secs"),
 			StatsRefreshIntervalSecs: viper.GetInt("data.stats_refresh_interval_secs"),
 			SystemMonitorMountPoint:  viper.GetString("data.system_monitor_mount_point"),
+			ActionsMode:              viper.GetString("data.actions_mode"),
+			ActionsTimeoutSeconds:    viper.GetInt("data.actions_timeout_seconds"),
 		},
 
 		Misc: MiscConfig{
@@ -236,6 +242,12 @@ func (c *Config) validate() error {
 		if _, err := time.LoadLocation(c.Misc.SchedulingTZ); err != nil {
 			return fmt.Errorf("misc.scheduling_timezone is invalid: %w", err)
 		}
+	}
+	if c.Data.ActionsMode != "" && c.Data.ActionsMode != "sync" && c.Data.ActionsMode != "async" {
+		return fmt.Errorf("data.actions_mode must be 'sync' or 'async', got %q", c.Data.ActionsMode)
+	}
+	if c.Data.ActionsTimeoutSeconds <= 0 {
+		return fmt.Errorf("data.actions_timeout_seconds must be positive")
 	}
 
 	return nil

@@ -213,6 +213,24 @@ services:
         description: Free LLM Api
 
 
+actions:
+  - group: Controlli
+    items:
+      - name: Avvia Firefox
+        action: avvia-firefox
+        icon: firefox.png
+        description: Avvia il container Firefox
+
+      - name: Ferma Firefox
+        action: ferma-firefox
+        icon: firefox.png
+        description: Ferma il container Firefox
+
+      - name: Ping GoSpin
+        action: ping-gospin
+        icon: web.png
+        description: Verifica connettività
+
 bookmarks:
   - group: Developer
     items:

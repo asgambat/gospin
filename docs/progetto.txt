@@ -95,6 +95,8 @@ go test ./...
 - `misc.runtime_type` ("docker" or "memory")
 - `misc.cors_allowed_origins`
 - `WAITING_SERVER_PORT`: second server to expose only the route `/runtime/:name/waiting`.
+- `data.actions_mode` ("sync"|"async", default "async"): modalità di esecuzione delle azioni HTTP custom
+- `data.actions_timeout_seconds` (default 30): timeout globale per le richieste HTTP delle actions
 
 ## Main Data Structure
 ```
@@ -116,6 +118,8 @@ DataDocument
 | POST | `/runtime/:name/{start\|stop}` | Runtime commands |
 | GET | `/runtime/:name/waiting` | HTML waiting/redirect page for container or group |
 | GET | `/ui` | Web UI SPA |
+| GET | `/homepage` | Configurazione homepage (services, bookmarks, actions, settings) |
+| POST | `/homepage/action` | Esecuzione azione HTTP via proxy server-side |
 
 ### Details for /runtime/:name/waiting endpoint
 - Returns an HTML page (spinner + JS redirect)
@@ -178,6 +182,20 @@ DataDocument
 - **Mouse** — cliccare su una riga la attiva come `Invio`; l'hover aggiorna la selezione da tastiera così il prossimo `Invio` apre la riga sotto il cursore
 - L'indice di ricerca è ricostruito ad ogni `_loadData` (quindi riflette le modifiche di `config/homepage.yaml` via hot-reload senza refresh manuale)
 - Accessibilità: `role="dialog"` + `aria-modal="true"` + `aria-label="Search services and bookmarks"` sulla modale; ogni risultato `role="option"` con `aria-selected` che riflette la posizione della tastiera
+
+### Azioni HTTP custom (Actions)
+- La dashboard supporta pulsanti di azione che eseguono richieste HTTP **server-side** (proxy)
+- La configurazione è separata in due file:
+  - `config/homepage.yaml` → sezione `actions:` definisce nome visuale, icona, descrizione, e una **chiave di riferimento**
+  - `config/actions.yml` → definisce i dettagli tecnici: HTTP method, URL, headers, body — **mai esposti al browser**
+- Il frontend invia solo il nome dell'azione via `POST /homepage/action { "actionName": "..." }`
+- L'`ActionController` carica `actions.yml`, costruisce la richiesta HTTP con i parametri configurati e la esegue server-side
+- Due modalità configurabili via `data.actions_mode`:
+  - `sync`: il server restituisce `{statusCode, body}` — la modale mostra status code + body completo
+  - `async`: il server restituisce `{statusCode}` — la modale mostra ✅ OK (2xx) o ❌ KO
+- Timeout globale configurabile: `data.actions_timeout_seconds` (default 30s)
+- Body limitato a 1 MB in modalità sync per prevenire memory exhaustion
+- Vantaggi di sicurezza: headers/token restano lato server, nessun problema CORS, il browser non vede mai credenziali
 
 ## CORS
 - Configurabile in `internal/api/middleware/cors.go`

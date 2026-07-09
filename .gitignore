@@ -35,3 +35,8 @@ go.work.sum
 
 #do not leak secrets please
 .env
+
+# Actions configuration holds HTTP headers/tokens and must never be committed.
+# Use config/actions.yml.example as a template and deploy the real file separately.
+config/actions.yml
+

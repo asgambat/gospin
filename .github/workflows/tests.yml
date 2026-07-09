@@ -5,6 +5,7 @@ on:
     branches: [ main ]
   pull_request:
     branches: [ main ]
+  workflow_call:
 
 # Explicit minimal permissions: both jobs only checkout source and run
 # go vet / lint / tests. No write access to the repository or other

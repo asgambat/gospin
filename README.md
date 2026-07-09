@@ -100,6 +100,8 @@ data:
   persist_interval_secs: 5 #how often to persist data to file
   base_url: "http://localhost/"  # Base URL for container URL generation, supports $1 token
   spin_up_url: "http://localhost/"  # Base URL for container lazy startup URL generation supports $1 token
+  actions_mode: "async"             # "sync" or "async" — how actions return results to the frontend
+  actions_timeout_seconds: 30       # timeout for proxied HTTP action requests
 
 misc:
   scheduling_enabled: true       # Enable/disable automatic containers starting/stopping based on schedules
@@ -292,6 +294,66 @@ The modal's source of truth is the same `data.services` + `data.bookmarks` alrea
 
 Accessibility: the modal uses `role="dialog"` + `aria-modal="true"` + `aria-label="Search services and bookmarks"`, and each result carries `role="option"` with `aria-selected` reflecting the keyboard position.
 
+### Actions Configuration
+
+GoSpin supports configurable HTTP action buttons on the homepage dashboard. Actions execute HTTP requests **server-side** (the browser never sees headers, tokens, or request bodies).
+
+Two files work together:
+
+| File | Purpose |
+|------|---------|
+| `config/homepage.yaml` → `actions:` section | Visual definition: name, icon, description, and a **reference key** |
+| `config/actions.yml` | Technical definition: HTTP method, target URL, headers, and body |
+
+#### `config/actions.yml` — Technical configuration (server-side only)
+
+```yaml
+actions:
+  avvia-firefox:
+    method: POST
+    url: "https://api.example.com/container/start"
+    headers:
+      Authorization: "Bearer xxx-secret-token"
+      Content-Type: "application/json"
+    body: '{"container": "jlesage-firefox"}'
+
+  ping-gospin:
+    method: GET
+    url: "https://gospin.lan.asga.uk/health"
+```
+
+#### `config/homepage.yaml` → `actions:` section
+
+```yaml
+actions:
+  - group: Controlli
+    items:
+      - name: Avvia Firefox
+        action: avvia-firefox          # references actions.yml
+        icon: firefox.png
+        description: Avvia il container Firefox
+```
+
+#### Execution modes
+
+Configured via `data.actions_mode` in `config/config.yaml`:
+
+| Mode | Server returns | Modal shows |
+|------|---------------|-------------|
+| `sync` | `{statusCode, body}` | Status code + full response body |
+| `async` (default) | `{statusCode}` | ✅ OK (2xx) or ❌ KO (otherwise) |
+
+The action timeout is configured globally via `data.actions_timeout_seconds` (default: 30s).
+
+#### Security
+
+- Headers, tokens, and request bodies are stored in `actions.yml` **on the server only** and are **never** exposed to the browser
+- The browser sends only an action reference name (e.g. `"actionName": "avvia-firefox"`)
+- The Go backend proxies the HTTP request server-side, eliminating CORS concerns
+- Body responses are capped at 1 MB in sync mode to prevent memory exhaustion
+
+> **Note on search:** Action buttons are intentionally **excluded** from the homepage search index. Actions trigger server-side HTTP requests rather than navigating to a URL, so they are not searchable links like services and bookmarks. The search modal indexes only `services` and `bookmarks`.
+
 ### Notes
 
 - The file is **hot-reloaded**: when the content-hash on the `/homepage` response changes, the page re-fetches and re-applies all visuals (theme, fonts, layout) without a full reload.
@@ -343,6 +405,12 @@ Accessibility: the modal uses `role="dialog"` + `aria-modal="true"` + `aria-labe
 |--------|----------|-------------|
 | GET | `/configuration` | Get application configuration for frontend |
 
+
+### Homepage
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/homepage` | Get homepage configuration (services, bookmarks, actions, settings) |
+| POST | `/homepage/action` | Execute a named HTTP action via server-side proxy. Body: `{"actionName": "..."}` |
 
 ### API Examples
 
