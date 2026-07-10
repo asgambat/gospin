@@ -14,7 +14,7 @@ COPY . .
 # into the binary so they surface on the homepage footer.
 # Default version matches .version in the repo root — CI overrides it via
 # --build-arg VERSION=... which is read from .version by the workflow.
-ARG VERSION="48"
+ARG VERSION="0.0.11"
 ARG BUILD_TIME="unknown"
 ARG GIT_COMMIT="unknown"
 ARG GO_VERSION="unknown"

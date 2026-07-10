@@ -242,7 +242,7 @@ tasks:
   version:bump:
     desc: 'Bump version, commit, and tag (usage: task version:bump -- 0.0.11)'
     cmds:
-      - bash .task/version_bump.sh "{{index .CLI_ARGS 0}}"
+      - bash .task/version_bump.sh "{{.CLI_ARGS}}"
     preconditions:
-      - sh: '[ -n "{{index .CLI_ARGS 0}}" ]'
+      - sh: '[ -n "{{.CLI_ARGS}}" ]'
         msg: "Usage: task version:bump -- <new-version>  (e.g. task version:bump -- 0.0.11)"
