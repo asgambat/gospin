@@ -12,7 +12,7 @@ vars:
   # Version metadata — shell-evaluated at task runtime (same logic as Makefile)
   VERSION_PKG: github.com/bassista/go_spin/internal/version
   VERSION:
-    sh: git describe --tags --always --dirty 2>/dev/null || echo "0.0.9"
+    sh: git describe --tags --always --dirty 2>/dev/null || cat .version
   BUILD_TIME:
     sh: date -u '+%Y-%m-%d_%H:%M:%S'
   GIT_COMMIT:
@@ -228,3 +228,21 @@ tasks:
       - task: build
       - cmd: echo "Release binary built at {{.BIN_DIR}}/{{.BINARY}}{{exeExt}}"
         silent: true
+
+  # ============================================================
+  # Version management
+  # ============================================================
+
+  version:show:
+    desc: "Show the current version (source of truth: .version file)"
+    cmds:
+      - cmd: cat .version
+        silent: true
+
+  version:bump:
+    desc: 'Bump version, commit, and tag (usage: task version:bump -- 0.0.11)'
+    cmds:
+      - bash .task/version_bump.sh "{{index .CLI_ARGS 0}}"
+    preconditions:
+      - sh: '[ -n "{{index .CLI_ARGS 0}}" ]'
+        msg: "Usage: task version:bump -- <new-version>  (e.g. task version:bump -- 0.0.11)"

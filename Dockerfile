@@ -12,7 +12,9 @@ COPY . .
 # Defaults are safe fallbacks; CI / docker buildx should pass these as
 # `--build-arg` to embed the real git tag, commit SHA, and Go version
 # into the binary so they surface on the homepage footer.
-ARG VERSION="0.0.9"
+# Default version matches .version in the repo root — CI overrides it via
+# --build-arg VERSION=... which is read from .version by the workflow.
+ARG VERSION="0.0.10"
 ARG BUILD_TIME="unknown"
 ARG GIT_COMMIT="unknown"
 ARG GO_VERSION="unknown"

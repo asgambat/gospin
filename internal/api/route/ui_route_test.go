@@ -57,3 +57,50 @@ func TestUIRoute_ServiceWorkerServedWithCorrectHeaders(t *testing.T) {
 		t.Error("expected response body to contain service worker code")
 	}
 }
+
+func TestUIRoute_CacheBusterInjected(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	t.Chdir("../../..")
+
+	r := gin.New()
+	NewUIRouter(r)
+
+	cases := []struct {
+		name   string
+		path   string
+		needle string
+		buster string
+	}{
+		{"index", "/ui", `src="/ui/assets/app.js?v=`, appJSCacheBuster},
+		{"home", "/ui/home", `src="/ui/home.js?v=`, homeJSCacheBuster},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			req, _ := http.NewRequest(http.MethodGet, tc.path, nil)
+			w := httptest.NewRecorder()
+			r.ServeHTTP(w, req)
+
+			if w.Code != http.StatusOK {
+				t.Fatalf("expected status 200, got %d", w.Code)
+			}
+
+			body := w.Body.String()
+			if !strings.Contains(body, tc.needle+tc.buster) {
+				t.Errorf("expected body to contain %q, got a snippet: %s", tc.needle+tc.buster, body[:min(len(body), 200)])
+			}
+			// The original un-busted tag must no longer be present.
+			if strings.Contains(body, tc.needle[:len(tc.needle)-3]+`"`) {
+				t.Errorf("expected original un-busted tag to be rewritten, body snippet: %s", body[:min(len(body), 200)])
+			}
+		})
+	}
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}

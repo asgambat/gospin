@@ -27,7 +27,7 @@ TAILWIND_PACKAGE = tailwindcss-$(OS_SYSNAME)-$(OS_MACHINE)
 # under "settings", so users cannot override them via homepage.yaml).
 # Override any of them at the command line, e.g. `make build VERSION=v2.0.0`.
 # ----------------------------------------------------------------------------
-VERSION    ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "0.0.9")
+VERSION    ?= $(shell git describe --tags --always --dirty 2>/dev/null || cat .version)
 BUILD_TIME := $(shell date -u '+%Y-%m-%d_%H:%M:%S')
 GIT_COMMIT := $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 GO_VERSION := $(shell go version | awk '{print $$3}')

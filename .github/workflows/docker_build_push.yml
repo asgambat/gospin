@@ -79,7 +79,7 @@ jobs:
         id: meta-build
         run: |
           set -euo pipefail
-          VERSION=$(git describe --tags --always --dirty 2>/dev/null || echo "0.0.9")
+          VERSION=$(git describe --tags --always --dirty 2>/dev/null || cat .version)
           # BUILD_TIME (underscore format, e.g. 2026-06-22_14:30:00) is the
           # human-facing display format consumed by the Dockerfile's
           # `-X -ldflags` injection — surfaced at the homepage footer and in

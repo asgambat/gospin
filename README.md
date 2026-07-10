@@ -45,7 +45,7 @@ cd gospin
 make build            # → ./.build/main
 
 # Or, manually with raw ldflags:
-VERSION=$(git describe --tags --always --dirty 2>/dev/null || echo "0.0.9")
+VERSION=$(git describe --tags --always --dirty 2>/dev/null || cat .version)
 BUILD_TIME=$(date -u '+%Y-%m-%d_%H:%M:%S')
 GIT_COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 GO_VERSION=$(go version | awk '{print $3}')
@@ -67,7 +67,7 @@ The version string rendered in the bottom-right of the dashboard is **not** read
 
 | Variable | Source (Makefile default) | Example value |
 |----------|---------------------------|---------------|
-| `Version` | `git describe --tags --always --dirty` (fallback `0.0.9`) | `v1.2.3`, `v1.2.3-4-gabc1234`, `v1.2.3-dirty` |
+| `Version` | `git describe --tags --always --dirty` (fallback `0.0.10`) | `v1.2.3`, `v1.2.3-4-gabc1234`, `v1.2.3-dirty` |
 | `BuildTime` | `date -u '+%Y-%m-%d_%H:%M:%S'` | `2026-06-22 14:30:00` |
 | `GitCommit` | `git rev-parse --short HEAD` (fallback `unknown`) | `abc1234` |
 | `GoVersion` | `go version \| awk '{print $3}'` | `go1.25.6` |

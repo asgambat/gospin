@@ -144,7 +144,7 @@ DataDocument
 
 ### Build metadata (internal/version + -ldflags)
 - Le quattro variabili `Version`, `BuildTime`, `GitCommit`, `GoVersion` definite in `internal/version/version.go` (tutte mutabili a link-time) vengono popolate al build tramite `-ldflags "-X ..."`:
-  - `Version` ← `git describe --tags --always --dirty` (fallback `0.0.9`)
+  - `Version` ← `git describe --tags --always --dirty` (fallback `0.0.10`)
   - `BuildTime` ← `date -u '+%Y-%m-%d_%H:%M:%S'`
   - `GitCommit` ← `git rev-parse --short HEAD` (fallback `unknown`)
   - `GoVersion` ← `go version | awk '{print $3}'`
