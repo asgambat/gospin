@@ -67,7 +67,7 @@ The version string rendered in the bottom-right of the dashboard is **not** read
 
 | Variable | Source (Makefile default) | Example value |
 |----------|---------------------------|---------------|
-| `Version` | `git describe --tags --always --dirty` (fallback `118`) | `v1.2.3`, `v1.2.3-4-gabc1234`, `v1.2.3-dirty` |
+| `Version` | `git describe --tags --always --dirty` (fallback `48`) | `v1.2.3`, `v1.2.3-4-gabc1234`, `v1.2.3-dirty` |
 | `BuildTime` | `date -u '+%Y-%m-%d_%H:%M:%S'` | `2026-06-22 14:30:00` |
 | `GitCommit` | `git rev-parse --short HEAD` (fallback `unknown`) | `abc1234` |
 | `GoVersion` | `go version \| awk '{print $3}'` | `go1.25.6` |
