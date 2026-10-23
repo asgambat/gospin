@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -332,5 +333,113 @@ func TestActionController_LogDanglingReferences_Empty(t *testing.T) {
 	ac := NewActionController("/nonexistent/actions.yml", "async", 30*time.Second)
 	if d := ac.LogDanglingReferences(nil); d != nil {
 		t.Errorf("expected nil for empty references, got %v", d)
+	}
+}
+
+func TestActionController_LogDanglingReferences_SkippedWithoutActions(t *testing.T) {
+	// actions.yml is optional: without any defined action every reference would
+	// look dangling, so the check must stay silent.
+	ac := NewActionController(filepath.Join(t.TempDir(), "actions.yml"), "async", 30*time.Second)
+
+	if d := ac.LogDanglingReferences([]string{"avvia-firefox", "ferma-firefox"}); d != nil {
+		t.Errorf("expected no dangling references when no action is defined, got %v", d)
+	}
+}
+
+func TestActionController_LogDanglingReferences_IgnoresEmptyNames(t *testing.T) {
+	tmpDir := t.TempDir()
+	actionsPath := filepath.Join(tmpDir, "actions.yml")
+	content := "actions:\n  defined-action:\n    method: GET\n    url: \"https://example.com\"\n"
+	if err := os.WriteFile(actionsPath, []byte(content), 0644); err != nil {
+		t.Fatalf("failed to write actions.yml: %v", err)
+	}
+
+	ac := NewActionController(actionsPath, "async", 30*time.Second)
+
+	// A homepage item without an `action:` key carries an empty reference and
+	// must not be reported as dangling.
+	if d := ac.LogDanglingReferences([]string{"", "defined-action"}); d != nil {
+		t.Errorf("expected no dangling references, got %v", d)
+	}
+}
+
+func TestActionController_ReloadsConfigAfterFileIsFixed(t *testing.T) {
+	targetServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer targetServer.Close()
+
+	tmpDir := t.TempDir()
+	actionsPath := filepath.Join(tmpDir, "actions.yml")
+	// The startup load fails on the broken YAML, leaving no configuration.
+	if err := os.WriteFile(actionsPath, []byte("actions: [broken\n"), 0644); err != nil {
+		t.Fatalf("failed to write actions.yml: %v", err)
+	}
+
+	ac := NewActionController(actionsPath, "async", 5*time.Second)
+
+	r := gin.New()
+	r.POST("/homepage/action", ac.ExecuteAction)
+
+	post := func() *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodPost, "/homepage/action", strings.NewReader(`{"actionName": "test-action"}`))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+		return w
+	}
+
+	if w := post(); w.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want 500 while the file is broken: %s", w.Code, w.Body.String())
+	}
+
+	// Fixing the file is picked up by the next request, without a restart.
+	fixed := "actions:\n  test-action:\n    method: GET\n    url: \"" + targetServer.URL + "/ping\"\n"
+	if err := os.WriteFile(actionsPath, []byte(fixed), 0644); err != nil {
+		t.Fatalf("failed to rewrite actions.yml: %v", err)
+	}
+
+	if w := post(); w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 after the file is fixed: %s", w.Code, w.Body.String())
+	}
+}
+
+// TestActionController_ConcurrentRequestsUseCachedConfig exercises the code
+// path that reloads the configuration when the startup load failed. Run with
+// -race it proves the cache is not written concurrently by the request
+// handlers.
+func TestActionController_ConcurrentRequestsUseCachedConfig(t *testing.T) {
+	tmpDir := t.TempDir()
+	actionsPath := filepath.Join(tmpDir, "actions.yml")
+	if err := os.WriteFile(actionsPath, []byte("actions: [broken\n"), 0644); err != nil {
+		t.Fatalf("failed to write actions.yml: %v", err)
+	}
+
+	ac := NewActionController(actionsPath, "async", 5*time.Second)
+
+	r := gin.New()
+	r.POST("/homepage/action", ac.ExecuteAction)
+
+	const requests = 16
+	codes := make(chan int, requests)
+	var wg sync.WaitGroup
+	for i := 0; i < requests; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			req := httptest.NewRequest(http.MethodPost, "/homepage/action", strings.NewReader(`{"actionName": "test-action"}`))
+			req.Header.Set("Content-Type", "application/json")
+			w := httptest.NewRecorder()
+			r.ServeHTTP(w, req)
+			codes <- w.Code
+		}()
+	}
+	wg.Wait()
+	close(codes)
+
+	for code := range codes {
+		if code != http.StatusInternalServerError {
+			t.Errorf("status = %d, want 500 while the file is broken", code)
+		}
 	}
 }

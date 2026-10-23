@@ -21,7 +21,7 @@ type ScheduleController struct {
 func NewScheduleController(store cache.ScheduleStore) *ScheduleController {
 	v := validator.New()
 	service := &ScheduleCrudService{Store: store}
-	validator := &ScheduleCrudValidator{validator: v}
+	validator := &ScheduleCrudValidator{validator: v, store: store}
 
 	return &ScheduleController{
 		crud: &CrudController[repository.Schedule]{

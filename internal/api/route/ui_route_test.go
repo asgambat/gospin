@@ -3,6 +3,8 @@ package route
 import (
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -70,14 +72,21 @@ func TestUIRoute_CacheBusterInjected(t *testing.T) {
 		name   string
 		path   string
 		needle string
-		buster string
+		bundle string
 	}{
-		{"index", "/ui", `src="/ui/assets/app.js?v=`, appJSCacheBuster},
-		{"home", "/ui/home", `src="/ui/home.js?v=`, homeJSCacheBuster},
+		{"index", "/ui", `src="/ui/assets/app.js?v=`, "assets/app.js"},
+		{"home", "/ui/home", `src="/ui/home.js?v=`, "home.js"},
 	}
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
+			// A "dev" hash means the bundle could not be read: the cache-busting
+			// would silently stop working, so require a real content hash.
+			buster := assetVersion(tc.bundle)
+			if buster == "dev" || len(buster) != 8 {
+				t.Fatalf("cache-buster = %q, want 8 hex characters", buster)
+			}
+
 			req, _ := http.NewRequest(http.MethodGet, tc.path, nil)
 			w := httptest.NewRecorder()
 			r.ServeHTTP(w, req)
@@ -87,8 +96,8 @@ func TestUIRoute_CacheBusterInjected(t *testing.T) {
 			}
 
 			body := w.Body.String()
-			if !strings.Contains(body, tc.needle+tc.buster) {
-				t.Errorf("expected body to contain %q, got a snippet: %s", tc.needle+tc.buster, body[:min(len(body), 200)])
+			if !strings.Contains(body, tc.needle+buster) {
+				t.Errorf("expected body to contain %q, got a snippet: %s", tc.needle+buster, body[:min(len(body), 200)])
 			}
 			// The original un-busted tag must no longer be present.
 			if strings.Contains(body, tc.needle[:len(tc.needle)-3]+`"`) {
@@ -98,9 +107,25 @@ func TestUIRoute_CacheBusterInjected(t *testing.T) {
 	}
 }
 
-func min(a, b int) int {
-	if a < b {
-		return a
+func TestUIRoute_FirstExistingDirPrefersFirstMatch(t *testing.T) {
+	tmp := t.TempDir()
+	first := filepath.Join(tmp, "first")
+	second := filepath.Join(tmp, "second")
+	file := filepath.Join(tmp, "file.txt")
+
+	for _, dir := range []string{first, second} {
+		if err := os.Mkdir(dir, 0755); err != nil {
+			t.Fatalf("failed to create %s: %v", dir, err)
+		}
 	}
-	return b
+	if err := os.WriteFile(file, []byte("x"), 0644); err != nil {
+		t.Fatalf("failed to write %s: %v", file, err)
+	}
+
+	if got := firstExistingDir(file, first, second); got != first {
+		t.Errorf("firstExistingDir() = %q, want the first existing directory %q", got, first)
+	}
+	if got := firstExistingDir(file, filepath.Join(tmp, "missing")); got != "" {
+		t.Errorf("firstExistingDir() = %q, want empty when no candidate is a directory", got)
+	}
 }

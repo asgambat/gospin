@@ -5,18 +5,21 @@
 # 2. Docker Hub (docker.io)
 #
 # TRIGGERS:
-# 1. On a push to the 'main' branch (automatic).
-# 2. When a new version tag 'v*.*.*' is pushed (automatic).
-# 3. On a pull request to 'main' (automatic, build-only validation).
-# 4. Manually for any branch, using the 'Run workflow' button (manual).
+# 1. On a push to the 'main' branch (automatic): publishes the 'main' and
+#    'latest' tags to both registries.
+# 2. On a pull request to 'main' (automatic, build-only validation).
+# 3. Manually for any branch, using the 'Run workflow' button (manual):
+#    publishes a tag named after the branch.
+#
+# Version tags ('v*.*.*') are published by .github/workflows/docker-release.yml
+# only. Keeping the tag trigger out of this workflow avoids two concurrent
+# multi-arch builds racing on the same semver tags.
 #
 name: Docker Image CI/CD
 
 on:
   push:
     branches: [ "main" ]
-    tags:
-      - 'v*.*.*' # Trigger on version tags like v1.0, v1.2.3
     paths-ignore:
       - 'README.md' # This will prevent the workflow from running on changes to README.md
   pull_request:
@@ -130,10 +133,6 @@ jobs:
 
             # Creates the 'latest' tag when a push is made to the default branch (main).
             type=raw,value=latest,enable={{is_default_branch}}
-
-            # Creates version tags when a git tag is pushed (e.g., v1.2.3 -> 1.2.3 and 1.2).
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
           labels: |
             # OCI-standard build-metadata labels. The four values mirror what
             # `internal/version.BuildInfo()` prints at the homepage footer (and

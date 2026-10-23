@@ -19,6 +19,8 @@ import (
 
 type ContainerController struct {
 	crud          *CrudController[repository.Container]
+	store         cache.ContainerStore
+	runtime       runtime.ContainerRuntime
 	importService *cosmos.ImportService
 	cosmosBaseUrl string
 	cosmosToken   string
@@ -42,6 +44,8 @@ func NewContainerController(ctx context.Context, store cache.ContainerStore, run
 			Service:   service,
 			Validator: validator,
 		},
+		store:         store,
+		runtime:       runtime,
 		importService: importService,
 		cosmosEnabled: cosmosEnabled,
 		cosmosBaseUrl: cosmosBaseUrl,

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -12,15 +13,59 @@ import (
 	"github.com/bassista/go_spin/internal/logger"
 )
 
-// homeJSCacheBuster is a short content hash of ui/home.js, computed once at
-// process startup and appended as a ?v= query parameter to the <script> tag
-// in /ui/home. It forces browsers (and CDNs) to re-fetch the JS after every
-// deployment without waiting for the service worker cache to expire.
-var homeJSCacheBuster string
+// isDir reports whether path exists and is a directory.
+func isDir(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && info.IsDir()
+}
 
-// appJSCacheBuster is the same cache-busting hash for ui/assets/app.js,
-// injected into /ui (index.html) the same way as homeJSCacheBuster.
-var appJSCacheBuster string
+// firstExistingDir returns the first candidate that is an existing directory,
+// or "" when none is. Kept separate from resolveUIDir so the preference order
+// can be tested without relying on the layout around the test binary.
+func firstExistingDir(candidates ...string) string {
+	for _, candidate := range candidates {
+		if isDir(candidate) {
+			return candidate
+		}
+	}
+	return ""
+}
+
+// resolveUIDir returns the directory holding the UI assets. It prefers ./ui
+// (the layout of the container image and of a checkout) and falls back to a
+// "ui" directory next to the executable, so a binary started from another
+// working directory still serves the pages and real cache-busting hashes
+// instead of silently falling back to the "dev" placeholder.
+//
+// Resolved on every call rather than cached: the value depends on the working
+// directory, which the process (or a test) can change after startup, and a
+// stale cache would pin every later read to the wrong directory.
+func resolveUIDir() string {
+	if dir := firstExistingDir("./ui"); dir != "" {
+		return dir
+	}
+	if exe, err := os.Executable(); err == nil {
+		if dir := firstExistingDir(filepath.Join(filepath.Dir(exe), "ui")); dir != "" {
+			return dir
+		}
+	}
+	// Debug level: the fallback mirrors the historical behaviour, and the
+	// unreadable file paths are already reported by fileHash.
+	logger.WithComponent("ui_router").Debugf("UI directory not found at ./ui or next to the executable, using ./ui")
+	return "./ui"
+}
+
+// uiPath joins name to the resolved UI directory.
+func uiPath(name string) string {
+	return filepath.Join(resolveUIDir(), name)
+}
+
+// assetVersion returns the content hash used as the ?v= cache-busting value
+// for a bundle. Computed per request: the files are small, and a cached value
+// would go stale if the UI directory changes under a running process.
+func assetVersion(name string) string {
+	return fileHash(uiPath(name))
+}
 
 // fileHash returns the first 8 hex characters of the SHA-256 hash of the
 // file at path, or "dev" if the file cannot be read.
@@ -34,9 +79,26 @@ func fileHash(path string) string {
 	return fmt.Sprintf("%x", h[:4])
 }
 
-func init() {
-	homeJSCacheBuster = fileHash("./ui/home.js")
-	appJSCacheBuster = fileHash("./ui/assets/app.js")
+// serveGhostboardPage serves the ghostboard page with the script tag rewritten
+// to carry the content hash of ghostboard.js, so deployments are picked up
+// immediately even when the service worker cache is still warm.
+func serveGhostboardPage(c *gin.Context) {
+	c.Header("Cache-Control", "no-cache, must-revalidate")
+	html, err := os.ReadFile(uiPath("ghostboard.html"))
+	if err != nil {
+		logger.WithComponent("ui_router").Errorf("cannot read ghostboard page: %v", err)
+		c.Status(http.StatusInternalServerError)
+		return
+	}
+
+	rewritten := strings.Replace(
+		string(html),
+		`src="/ui/assets/ghostboard.js"`,
+		fmt.Sprintf(`src="/ui/assets/ghostboard.js?v=%s"`, assetVersion("assets/ghostboard.js")),
+		1,
+	)
+
+	c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(rewritten))
 }
 
 // NewUIRouter sets up routes to serve the UI static files under /ui.
@@ -55,13 +117,13 @@ func NewUIRouter(r *gin.Engine) {
 		}
 		c.Next()
 	})
-	assetsGroup.Static("/", "./ui/assets")
+	assetsGroup.Static("/", uiPath("assets"))
 
 	// Serve favicon
 	r.GET("/favicon.ico", func(c *gin.Context) {
 		c.Header("Content-Type", "image/x-icon")
 		c.Header("Cache-Control", "public, max-age=86400")
-		c.File("./ui/assets/vite.ico")
+		c.File(uiPath("assets/vite.ico"))
 	})
 
 	// Redirect root to /ui
@@ -77,7 +139,7 @@ func NewUIRouter(r *gin.Engine) {
 		c.Header("Content-Type", "application/javascript; charset=utf-8")
 		c.Header("Service-Worker-Allowed", "/")
 		c.Header("Cache-Control", "public, max-age=3600")
-		c.File("./ui/service-worker.js")
+		c.File(uiPath("service-worker.js"))
 	})
 
 	// Serve index.html for the /ui root (no caching for HTML).
@@ -87,9 +149,9 @@ func NewUIRouter(r *gin.Engine) {
 	r.GET("/ui", func(c *gin.Context) {
 		c.Header("Cache-Control", "no-cache, must-revalidate")
 
-		html, err := os.ReadFile("./ui/index.html")
+		html, err := os.ReadFile(uiPath("index.html"))
 		if err != nil {
-			c.File("./ui/index.html")
+			c.File(uiPath("index.html"))
 			return
 		}
 
@@ -97,7 +159,7 @@ func NewUIRouter(r *gin.Engine) {
 		rewritten := strings.Replace(
 			string(html),
 			`src="/ui/assets/app.js"`,
-			fmt.Sprintf(`src="/ui/assets/app.js?v=%s"`, appJSCacheBuster),
+			fmt.Sprintf(`src="/ui/assets/app.js?v=%s"`, assetVersion("assets/app.js")),
 			1,
 		)
 
@@ -111,9 +173,9 @@ func NewUIRouter(r *gin.Engine) {
 	r.GET("/ui/home", func(c *gin.Context) {
 		c.Header("Cache-Control", "no-cache, must-revalidate")
 
-		html, err := os.ReadFile("./ui/home.html")
+		html, err := os.ReadFile(uiPath("home.html"))
 		if err != nil {
-			c.File("./ui/home.html")
+			c.File(uiPath("home.html"))
 			return
 		}
 
@@ -121,7 +183,7 @@ func NewUIRouter(r *gin.Engine) {
 		rewritten := strings.Replace(
 			string(html),
 			`src="/ui/home.js"`,
-			fmt.Sprintf(`src="/ui/home.js?v=%s"`, homeJSCacheBuster),
+			fmt.Sprintf(`src="/ui/home.js?v=%s"`, assetVersion("home.js")),
 			1,
 		)
 
@@ -129,8 +191,14 @@ func NewUIRouter(r *gin.Engine) {
 	})
 	r.GET("/ui/home.js", func(c *gin.Context) {
 		c.Header("Cache-Control", "public, max-age=3600")
-		c.File("./ui/home.js")
+		c.File(uiPath("home.js"))
 	})
+
+	// Serve the shared text board. The board name is part of the path
+	// (/ui/ghostboard/lavoro) and is resolved client-side, so every sub-path
+	// returns the same page.
+	r.GET("/ui/ghostboard", serveGhostboardPage)
+	r.GET("/ui/ghostboard/*board", serveGhostboardPage)
 
 	// Serve index.html for any sub-path under /ui (SPA client-side routing)
 	r.NoRoute(func(c *gin.Context) {
@@ -138,7 +206,7 @@ func NewUIRouter(r *gin.Engine) {
 
 		// Only handle /ui/* paths, return 404 for others
 		if p == "/ui" || strings.HasPrefix(p, "/ui/") {
-			c.File("./ui/index.html")
+			c.File(uiPath("index.html"))
 			return
 		}
 		c.JSON(http.StatusNotFound, gin.H{"error": "not found"})

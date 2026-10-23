@@ -14,6 +14,8 @@ func NewContainerRouter(appCtx *app.App, group *gin.RouterGroup) {
 	timeoutMiddleware := middleware.RequestTimeout(appCtx.Config.Server.RequestTimeout)
 
 	group.GET("containers", timeoutMiddleware, cc.AllContainers)
+	group.GET("containers/orphans", timeoutMiddleware, cc.ListOrphanContainers)
+	group.POST("containers/orphans/remove", timeoutMiddleware, cc.RemoveOrphanContainers)
 	group.POST("containers/import", timeoutMiddleware, cc.ImportContainers)
 	group.POST("container", timeoutMiddleware, cc.CreateOrUpdateContainer)
 	group.DELETE("container/:name", timeoutMiddleware, cc.DeleteContainer)

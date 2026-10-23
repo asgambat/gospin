@@ -18,9 +18,10 @@ const ENV_PREFIX = "GO_SPIN"
 
 // Config holds all application configuration (immutable after load)
 type Config struct {
-	Misc   MiscConfig
-	Data   DataConfig
-	Server ServerConfig
+	Misc       MiscConfig
+	Ghostboard GhostboardConfig
+	Data       DataConfig
+	Server     ServerConfig
 }
 
 type ServerConfig struct {
@@ -46,6 +47,51 @@ type DataConfig struct {
 	StatsRefreshIntervalSecs int
 	ActionsTimeoutSeconds    int
 	SchedulingEnabled        bool
+}
+
+// GhostboardConfig tunes the shared-text boards served at /ui/ghostboard.
+type GhostboardConfig struct {
+	FilePath          string
+	ClearDelay        time.Duration
+	MaxTextBytes      int
+	PersistInterval   time.Duration
+	HeartbeatInterval time.Duration
+}
+
+const (
+	defaultGhostboardClearDelaySecs      = 300
+	defaultGhostboardMaxTextBytes        = 16777216
+	defaultGhostboardPersistIntervalSecs = 2
+	defaultGhostboardHeartbeatSecs       = 25
+)
+
+// DefaultGhostboardConfig returns the defaults documented in config.yaml.
+func DefaultGhostboardConfig() GhostboardConfig {
+	return GhostboardConfig{
+		ClearDelay:        defaultGhostboardClearDelaySecs * time.Second,
+		MaxTextBytes:      defaultGhostboardMaxTextBytes,
+		PersistInterval:   defaultGhostboardPersistIntervalSecs * time.Second,
+		HeartbeatInterval: defaultGhostboardHeartbeatSecs * time.Second,
+	}
+}
+
+// WithDefaults fills unset fields with their defaults. It keeps an empty
+// FilePath as-is, which disables persistence.
+func (g GhostboardConfig) WithDefaults() GhostboardConfig {
+	defaults := DefaultGhostboardConfig()
+	if g.ClearDelay <= 0 {
+		g.ClearDelay = defaults.ClearDelay
+	}
+	if g.MaxTextBytes <= 0 {
+		g.MaxTextBytes = defaults.MaxTextBytes
+	}
+	if g.PersistInterval <= 0 {
+		g.PersistInterval = defaults.PersistInterval
+	}
+	if g.HeartbeatInterval <= 0 {
+		g.HeartbeatInterval = defaults.HeartbeatInterval
+	}
+	return g
 }
 
 type MiscConfig struct {
@@ -79,7 +125,6 @@ func LoadConfig() (*Config, error) {
 	viper.SetDefault("server.idle_timeout_secs", 120)
 	viper.SetDefault("server.shutdown_timeout_secs", 5)
 	viper.SetDefault("server.request_timeout_millis", 1000)
-	viper.SetDefault("server.cors_allowed_origins", "*")
 
 	viper.SetDefault("data.file_path", confPath+"/data/config.json")
 	viper.SetDefault("data.persist_interval_secs", 5)
@@ -98,6 +143,11 @@ func LoadConfig() (*Config, error) {
 	viper.SetDefault("misc.log_level", "info")
 	viper.SetDefault("misc.cosmos_base_url", "")
 	viper.SetDefault("misc.cosmos_token", "")
+	viper.SetDefault("ghostboard.file_path", "")
+	viper.SetDefault("ghostboard.clear_delay_secs", defaultGhostboardClearDelaySecs)
+	viper.SetDefault("ghostboard.max_text_bytes", defaultGhostboardMaxTextBytes)
+	viper.SetDefault("ghostboard.persist_interval_secs", defaultGhostboardPersistIntervalSecs)
+	viper.SetDefault("ghostboard.heartbeat_interval_secs", defaultGhostboardHeartbeatSecs)
 
 	// Environment variables automatically override config file values
 	viper.AutomaticEnv()
@@ -126,6 +176,13 @@ func LoadConfig() (*Config, error) {
 		return nil, err
 	}
 
+	ghostboardFilePath := viper.GetString("ghostboard.file_path")
+	if ghostboardFilePath == "" {
+		// Keep board data next to the main data file unless a dedicated path
+		// is configured, so the whole application state stays together.
+		ghostboardFilePath = filepath.Join(filepath.Dir(viper.GetString("data.file_path")), "ghostboard.json")
+	}
+
 	// Build immutable config struct
 	cfg := &Config{
 		Server: ServerConfig{
@@ -136,7 +193,7 @@ func LoadConfig() (*Config, error) {
 			IdleTimeout:        time.Duration(viper.GetInt("server.idle_timeout_secs")) * time.Second,
 			ShutDownTimeout:    time.Duration(viper.GetInt("server.shutdown_timeout_secs")) * time.Second,
 			RequestTimeout:     time.Duration(viper.GetInt("server.request_timeout_millis")) * time.Millisecond,
-			CORSAllowedOrigins: viper.GetString("server.cors_allowed_origins"),
+			CORSAllowedOrigins: corsAllowedOrigins(),
 		},
 		Data: DataConfig{
 			FilePath:                 viper.GetString("data.file_path"),
@@ -150,6 +207,14 @@ func LoadConfig() (*Config, error) {
 			SystemMonitorMountPoint:  viper.GetString("data.system_monitor_mount_point"),
 			ActionsMode:              viper.GetString("data.actions_mode"),
 			ActionsTimeoutSeconds:    viper.GetInt("data.actions_timeout_seconds"),
+		},
+
+		Ghostboard: GhostboardConfig{
+			FilePath:          ghostboardFilePath,
+			ClearDelay:        time.Duration(viper.GetInt("ghostboard.clear_delay_secs")) * time.Second,
+			MaxTextBytes:      viper.GetInt("ghostboard.max_text_bytes"),
+			PersistInterval:   time.Duration(viper.GetInt("ghostboard.persist_interval_secs")) * time.Second,
+			HeartbeatInterval: time.Duration(viper.GetInt("ghostboard.heartbeat_interval_secs")) * time.Second,
 		},
 
 		Misc: MiscConfig{
@@ -172,6 +237,36 @@ func LoadConfig() (*Config, error) {
 	fmt.Println("All configuration loaded successfully")
 
 	return cfg, nil
+}
+
+// defaultCORSAllowedOrigins is the permissive allow-list used when the CORS key
+// is absent from both the configuration file and the environment.
+const defaultCORSAllowedOrigins = "*"
+
+// corsAllowedOrigins resolves the CORS allow-list. The canonical key is
+// misc.cors_allowed_origins (the one documented in config/config.yaml,
+// docs/progetto.txt and README.md); server.cors_allowed_origins is still
+// honoured as a deprecated alias so upgrades never silently widen the
+// allow-list to the permissive default. When both keys are set to different
+// values the canonical one wins, with a warning naming both: an installation that
+// still overrides the deprecated key through the environment would otherwise
+// switch allow-lists without any trace in the logs.
+func corsAllowedOrigins() string {
+	miscOrigins := viper.GetString("misc.cors_allowed_origins")
+	serverOrigins := viper.GetString("server.cors_allowed_origins")
+
+	switch {
+	case miscOrigins != "" && serverOrigins != "" && miscOrigins != serverOrigins:
+		logger.WithComponent("config").Warnf("both misc.cors_allowed_origins (%q) and the deprecated server.cors_allowed_origins (%q) are set, using misc.cors_allowed_origins", miscOrigins, serverOrigins)
+		return miscOrigins
+	case miscOrigins != "":
+		return miscOrigins
+	case serverOrigins != "":
+		logger.WithComponent("config").Warn("server.cors_allowed_origins is deprecated, use misc.cors_allowed_origins")
+		return serverOrigins
+	default:
+		return defaultCORSAllowedOrigins
+	}
 }
 
 func dataFileExistenceCheck() error {
@@ -248,6 +343,18 @@ func (c *Config) validate() error {
 	}
 	if c.Data.ActionsTimeoutSeconds <= 0 {
 		return fmt.Errorf("data.actions_timeout_seconds must be positive")
+	}
+	if c.Ghostboard.ClearDelay <= 0 {
+		return fmt.Errorf("ghostboard.clear_delay_secs must be positive")
+	}
+	if c.Ghostboard.MaxTextBytes <= 0 {
+		return fmt.Errorf("ghostboard.max_text_bytes must be positive")
+	}
+	if c.Ghostboard.PersistInterval <= 0 {
+		return fmt.Errorf("ghostboard.persist_interval_secs must be positive")
+	}
+	if c.Ghostboard.HeartbeatInterval <= 0 {
+		return fmt.Errorf("ghostboard.heartbeat_interval_secs must be positive")
 	}
 
 	return nil

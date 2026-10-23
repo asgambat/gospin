@@ -26,6 +26,7 @@ type Container struct {
 	Active       *bool  `json:"active" validate:"required"`
 	ActivatedAt  *int64 `json:"activatedAt"`
 	Favorite     *bool  `json:"favorite"`
+	Pinned       *bool  `json:"pinned"`
 	Name         string `json:"name" validate:"required"`
 	FriendlyName string `json:"friendly_name" validate:"required"`
 	URL          string `json:"url" validate:"required,url"`
@@ -43,14 +44,18 @@ type Schedule struct {
 	Target     string  `json:"target" validate:"required"`
 	TargetType string  `json:"targetType" validate:"required,oneof=container group"`
 	ID         string  `json:"id" validate:"required"`
-	Timers     []Timer `json:"timers"`
+	Timers     []Timer `json:"timers" validate:"dive"`
 }
 
-// Timer represents a scheduled start/stop window.
+// Timer represents a scheduled start/stop window. StartTime and StopTime are
+// both optional, but at least one of them must be set: a timer with only
+// StartTime brings the target up at that time, a timer with only StopTime
+// stops it. Active is required: a persisted timer always carries an explicit
+// flag, so the scheduler and a reload of the data file cannot disagree on it.
 type Timer struct {
 	Active    *bool  `json:"active" validate:"required"`
-	StartTime string `json:"startTime" validate:"required"`
-	StopTime  string `json:"stopTime" validate:"required"`
+	StartTime string `json:"startTime" validate:"omitempty,datetime=15:04"`
+	StopTime  string `json:"stopTime" validate:"omitempty,datetime=15:04"`
 	Days      []int  `json:"days" validate:"dive,min=0,max=6"`
 }
 
@@ -98,6 +103,10 @@ func (t *Container) applyDefaults() {
 	if t.Favorite == nil {
 		v := false
 		t.Favorite = &v
+	}
+	if t.Pinned == nil {
+		v := false
+		t.Pinned = &v
 	}
 }
 

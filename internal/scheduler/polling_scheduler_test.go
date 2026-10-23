@@ -789,3 +789,327 @@ func TestPollingScheduler_ConcurrentStartMultipleTimes(t *testing.T) {
 	cancel()
 	time.Sleep(50 * time.Millisecond)
 }
+
+func TestTimerLabel(t *testing.T) {
+	t.Run("start and stop", func(t *testing.T) {
+		timer := repository.Timer{StartTime: "08:00", StopTime: "18:00"}
+		if got := timerLabel(timer); got != "08:00-18:00" {
+			t.Errorf("timerLabel() = %q, want %q", got, "08:00-18:00")
+		}
+	})
+
+	t.Run("start only", func(t *testing.T) {
+		timer := repository.Timer{StartTime: "08:00"}
+		if got := timerLabel(timer); got != "start 08:00" {
+			t.Errorf("timerLabel() = %q, want %q", got, "start 08:00")
+		}
+	})
+
+	t.Run("stop only", func(t *testing.T) {
+		timer := repository.Timer{StopTime: "18:00"}
+		if got := timerLabel(timer); got != "stop 18:00" {
+			t.Errorf("timerLabel() = %q, want %q", got, "stop 18:00")
+		}
+	})
+}
+
+func TestIsStartOnlyActiveNow(t *testing.T) {
+	monday := time.Date(2024, 3, 18, 0, 0, 0, 0, time.UTC) // Monday (weekday 1)
+	startOnly := repository.Timer{StartTime: "08:00", Days: []int{1}, Active: boolPtr(true)}
+
+	t.Run("after start time on selected day", func(t *testing.T) {
+		if !isStartOnlyActiveNow(startOnly, monday.Add(10*time.Hour)) {
+			t.Error("expected start-only timer to be active after its start time")
+		}
+	})
+
+	t.Run("before start time", func(t *testing.T) {
+		if isStartOnlyActiveNow(startOnly, monday.Add(7*time.Hour)) {
+			t.Error("expected start-only timer to be inactive before its start time")
+		}
+	})
+
+	t.Run("day not selected", func(t *testing.T) {
+		otherDay := repository.Timer{StartTime: "08:00", Days: []int{2}, Active: boolPtr(true)}
+		if isStartOnlyActiveNow(otherDay, monday.Add(10*time.Hour)) {
+			t.Error("expected start-only timer to be inactive on a day not in Days")
+		}
+	})
+
+	t.Run("empty start time", func(t *testing.T) {
+		noStart := repository.Timer{Days: []int{1}, Active: boolPtr(true)}
+		if isStartOnlyActiveNow(noStart, monday.Add(10*time.Hour)) {
+			t.Error("expected false when StartTime is empty")
+		}
+	})
+
+	t.Run("invalid start time", func(t *testing.T) {
+		invalid := repository.Timer{StartTime: "invalid", Days: []int{1}, Active: boolPtr(true)}
+		if isStartOnlyActiveNow(invalid, monday.Add(10*time.Hour)) {
+			t.Error("expected false for an unparsable StartTime")
+		}
+	})
+}
+
+func TestIsStopDueNow(t *testing.T) {
+	monday := time.Date(2024, 3, 18, 0, 0, 0, 0, time.UTC) // Monday (weekday 1)
+	stopOnly := repository.Timer{StopTime: "18:00", Days: []int{1}, Active: boolPtr(true)}
+
+	t.Run("after stop time on selected day", func(t *testing.T) {
+		if !isStopDueNow(stopOnly, monday.Add(19*time.Hour)) {
+			t.Error("expected stop-only timer to be due after its stop time")
+		}
+	})
+
+	t.Run("before stop time", func(t *testing.T) {
+		if isStopDueNow(stopOnly, monday.Add(10*time.Hour)) {
+			t.Error("expected stop-only timer not to be due before its stop time")
+		}
+	})
+
+	t.Run("day not selected", func(t *testing.T) {
+		otherDay := repository.Timer{StopTime: "18:00", Days: []int{2}, Active: boolPtr(true)}
+		if isStopDueNow(otherDay, monday.Add(19*time.Hour)) {
+			t.Error("expected stop-only timer not to be due on a day not in Days")
+		}
+	})
+
+	t.Run("empty stop time", func(t *testing.T) {
+		noStop := repository.Timer{Days: []int{1}, Active: boolPtr(true)}
+		if isStopDueNow(noStop, monday.Add(19*time.Hour)) {
+			t.Error("expected false when StopTime is empty")
+		}
+	})
+
+	t.Run("invalid stop time", func(t *testing.T) {
+		invalid := repository.Timer{StopTime: "invalid", Days: []int{1}, Active: boolPtr(true)}
+		if isStopDueNow(invalid, monday.Add(19*time.Hour)) {
+			t.Error("expected false for an unparsable StopTime")
+		}
+	})
+}
+
+func TestPollingScheduler_Tick_StartOnlyTimerStartsContainer(t *testing.T) {
+	store := &MockStore{
+		doc: repository.DataDocument{
+			Containers: []repository.Container{
+				{Name: "c1", Active: boolPtr(true)},
+			},
+			Schedules: []repository.Schedule{
+				{
+					ID:         "start-only",
+					Target:     "c1",
+					TargetType: "container",
+					Timers: []repository.Timer{
+						{
+							StartTime: "00:00",
+							Days:      []int{0, 1, 2, 3, 4, 5, 6},
+							Active:    boolPtr(true),
+						},
+					},
+				},
+			},
+		},
+	}
+
+	rt := NewMockRuntime()
+	scheduler := NewPollingScheduler(store, rt, 30*time.Second, time.UTC)
+
+	scheduler.tick(context.Background())
+
+	if len(rt.started) != 1 || rt.started[0] != "c1" {
+		t.Errorf("expected c1 to be started by a start-only timer, got started: %v", rt.started)
+	}
+	if len(rt.stopped) != 0 {
+		t.Errorf("expected no stops from a start-only timer, got stopped: %v", rt.stopped)
+	}
+}
+
+func TestPollingScheduler_Tick_StopOnlyTimerStopsContainer(t *testing.T) {
+	store := &MockStore{
+		doc: repository.DataDocument{
+			Containers: []repository.Container{
+				{Name: "c1", Active: boolPtr(true)},
+			},
+			Schedules: []repository.Schedule{
+				{
+					ID:         "stop-only",
+					Target:     "c1",
+					TargetType: "container",
+					Timers: []repository.Timer{
+						{
+							StopTime: "00:00",
+							Days:     []int{0, 1, 2, 3, 4, 5, 6},
+							Active:   boolPtr(true),
+						},
+					},
+				},
+			},
+		},
+	}
+
+	rt := NewMockRuntime()
+	rt.running["c1"] = true // Running, but never started by this scheduler today
+	scheduler := NewPollingScheduler(store, rt, 30*time.Second, time.UTC)
+
+	scheduler.tick(context.Background())
+
+	if len(rt.stopped) != 1 || rt.stopped[0] != "c1" {
+		t.Errorf("expected c1 to be stopped by a stop-only timer, got stopped: %v", rt.stopped)
+	}
+	if len(rt.started) != 0 {
+		t.Errorf("expected no starts from a stop-only timer, got started: %v", rt.started)
+	}
+}
+
+func TestPollingScheduler_Tick_StopOnlyTimerStopsOncePerDay(t *testing.T) {
+	store := &MockStore{
+		doc: repository.DataDocument{
+			Containers: []repository.Container{
+				{Name: "c1", Active: boolPtr(true)},
+			},
+			Schedules: []repository.Schedule{
+				{
+					ID:         "stop-only",
+					Target:     "c1",
+					TargetType: "container",
+					Timers: []repository.Timer{
+						{
+							StopTime: "00:00",
+							Days:     []int{0, 1, 2, 3, 4, 5, 6},
+							Active:   boolPtr(true),
+						},
+					},
+				},
+			},
+		},
+	}
+
+	rt := NewMockRuntime()
+	rt.running["c1"] = true
+	scheduler := NewPollingScheduler(store, rt, 30*time.Second, time.UTC)
+
+	scheduler.tick(context.Background())
+	scheduler.tick(context.Background())
+
+	if len(rt.stopped) != 1 {
+		t.Errorf("expected exactly one stop per day, got %v", rt.stopped)
+	}
+}
+
+// TestPollingScheduler_Tick_StopOnlyTimerOverridesStartOnlyTimer covers the
+// "shut everything down at night" setup: a start-only timer keeps the target up
+// until midnight, so a due stop-only timer must still be able to stop it.
+func TestPollingScheduler_Tick_StopOnlyTimerOverridesStartOnlyTimer(t *testing.T) {
+	store := &MockStore{
+		doc: repository.DataDocument{
+			Containers: []repository.Container{
+				{Name: "c1", Active: boolPtr(true)},
+			},
+			Schedules: []repository.Schedule{
+				{
+					ID:         "morning",
+					Target:     "c1",
+					TargetType: "container",
+					Timers: []repository.Timer{
+						{
+							StartTime: "00:00",
+							Days:      []int{0, 1, 2, 3, 4, 5, 6},
+							Active:    boolPtr(true),
+						},
+					},
+				},
+				{
+					ID:         "night",
+					Target:     "c1",
+					TargetType: "container",
+					Timers: []repository.Timer{
+						{
+							StopTime: "00:00",
+							Days:     []int{0, 1, 2, 3, 4, 5, 6},
+							Active:   boolPtr(true),
+						},
+					},
+				},
+			},
+		},
+	}
+
+	rt := NewMockRuntime()
+	rt.running["c1"] = true
+	scheduler := NewPollingScheduler(store, rt, 30*time.Second, time.UTC)
+
+	scheduler.tick(context.Background())
+
+	if len(rt.started) != 0 {
+		t.Errorf("expected the start-only timer to leave c1 running, got started: %v", rt.started)
+	}
+	if len(rt.stopped) != 1 || rt.stopped[0] != "c1" {
+		t.Fatalf("expected a due stop-only timer to stop c1, got stopped: %v", rt.stopped)
+	}
+
+	// The stop must stick: the open-ended start-only timer must not bring it back.
+	scheduler.tick(context.Background())
+
+	if len(rt.started) != 0 {
+		t.Errorf("expected no restart after the stop-only timer stopped c1, got started: %v", rt.started)
+	}
+	if len(rt.stopped) != 1 {
+		t.Errorf("expected exactly one stop per day, got %v", rt.stopped)
+	}
+}
+
+// TestPollingScheduler_Tick_WindowTimerWinsOverStopOnlyTimer documents the other
+// half of the precedence rule: a start+stop window that contains the current time
+// declares its own end, so a due stop-only timer must not cut it short.
+func TestPollingScheduler_Tick_WindowTimerWinsOverStopOnlyTimer(t *testing.T) {
+	store := &MockStore{
+		doc: repository.DataDocument{
+			Containers: []repository.Container{
+				{Name: "c1", Active: boolPtr(true)},
+			},
+			Schedules: []repository.Schedule{
+				{
+					ID:         "window",
+					Target:     "c1",
+					TargetType: "container",
+					Timers: []repository.Timer{
+						{
+							// Same start and stop: a window that covers the whole day.
+							StartTime: "00:00",
+							StopTime:  "00:00",
+							Days:      []int{0, 1, 2, 3, 4, 5, 6},
+							Active:    boolPtr(true),
+						},
+					},
+				},
+				{
+					ID:         "night",
+					Target:     "c1",
+					TargetType: "container",
+					Timers: []repository.Timer{
+						{
+							StopTime: "00:00",
+							Days:     []int{0, 1, 2, 3, 4, 5, 6},
+							Active:   boolPtr(true),
+						},
+					},
+				},
+			},
+		},
+	}
+
+	rt := NewMockRuntime()
+	rt.running["c1"] = true
+	scheduler := NewPollingScheduler(store, rt, 30*time.Second, time.UTC)
+
+	scheduler.tick(context.Background())
+
+	if len(rt.stopped) != 0 {
+		t.Errorf("expected the active window timer to keep c1 running, got stopped: %v", rt.stopped)
+	}
+	// c1 was already running, so the tick only records the start evaluation.
+	if got := scheduler.getFlags("c1").StartedDayKey; got == "" {
+		t.Error("expected the window timer to be evaluated as active, but the container was never marked as started today")
+	}
+}

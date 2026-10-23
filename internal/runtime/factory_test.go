@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"context"
+	"slices"
 	"sync"
 	"testing"
 
@@ -9,7 +10,7 @@ import (
 )
 
 func TestNewRuntimeFromConfig_Memory(t *testing.T) {
-	rt, err := NewRuntimeFromConfig(RuntimeTypeMemory, nil)
+	rt, err := NewRuntimeFromConfig(RuntimeTypeMemory, nil, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -28,7 +29,7 @@ func TestNewRuntimeFromConfig_MemoryWithDocument(t *testing.T) {
 		},
 	}
 
-	rt, err := NewRuntimeFromConfig(RuntimeTypeMemory, doc)
+	rt, err := NewRuntimeFromConfig(RuntimeTypeMemory, doc, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -48,7 +49,7 @@ func TestNewRuntimeFromConfig_MemoryWithDocument(t *testing.T) {
 func TestNewRuntimeFromConfig_Docker(t *testing.T) {
 	// This test may fail if Docker is not available
 	// We just check that it doesn't return an unknown runtime error
-	_, err := NewRuntimeFromConfig(RuntimeTypeDocker, nil)
+	_, err := NewRuntimeFromConfig(RuntimeTypeDocker, nil, nil)
 	// If Docker is not available, we expect an error, but not "unknown runtime type"
 	if err != nil {
 		if err.Error() == "unknown runtime type: docker (supported: docker, memory)" {
@@ -61,7 +62,7 @@ func TestNewRuntimeFromConfig_Docker(t *testing.T) {
 
 func TestNewRuntimeFromConfig_EmptyString(t *testing.T) {
 	// Empty string should default to Docker
-	_, err := NewRuntimeFromConfig("", nil)
+	_, err := NewRuntimeFromConfig("", nil, nil)
 	if err != nil {
 		// If Docker is not available, we expect an error, but not "unknown runtime type"
 		if err.Error() == "unknown runtime type:  (supported: docker, memory)" {
@@ -72,7 +73,7 @@ func TestNewRuntimeFromConfig_EmptyString(t *testing.T) {
 }
 
 func TestNewRuntimeFromConfig_UnknownType(t *testing.T) {
-	_, err := NewRuntimeFromConfig("unknown-runtime", nil)
+	_, err := NewRuntimeFromConfig("unknown-runtime", nil, nil)
 	if err == nil {
 		t.Error("expected error for unknown runtime type")
 	}
@@ -97,7 +98,7 @@ func TestNewRuntimeFromConfig_ConcurrentCreation(t *testing.T) {
 		wg.Add(1)
 		go func(idx int) {
 			defer wg.Done()
-			rt, err := NewRuntimeFromConfig(RuntimeTypeMemory, doc)
+			rt, err := NewRuntimeFromConfig(RuntimeTypeMemory, doc, nil)
 			if err != nil {
 				t.Errorf("goroutine %d: unexpected error: %v", idx, err)
 				return
@@ -136,7 +137,7 @@ func TestMemoryRuntime_ConcurrentOperations(t *testing.T) {
 		},
 	}
 
-	rt, err := NewRuntimeFromConfig(RuntimeTypeMemory, doc)
+	rt, err := NewRuntimeFromConfig(RuntimeTypeMemory, doc, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -180,4 +181,21 @@ func TestMemoryRuntime_ConcurrentOperations(t *testing.T) {
 	}
 
 	wg.Wait()
+}
+
+func TestNewRuntimeFromConfig_MemoryWithRegistry(t *testing.T) {
+	registry := &registryStub{containers: []repository.Container{{Name: "c1"}}}
+
+	rt, err := NewRuntimeFromConfig(RuntimeTypeMemory, nil, registry)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	names, err := rt.ListContainers(context.Background())
+	if err != nil {
+		t.Fatalf("ListContainers() error = %v", err)
+	}
+	if !slices.Equal(names, []string{"c1"}) {
+		t.Errorf("ListContainers() = %v, want [c1]", names)
+	}
 }

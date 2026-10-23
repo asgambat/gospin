@@ -2,6 +2,8 @@ package runtime
 
 import (
 	"context"
+	"errors"
+	"slices"
 	"sync"
 	"testing"
 
@@ -191,5 +193,70 @@ func TestMemoryRuntime_Stats(t *testing.T) {
 	}
 	if stats.MemoryMB != 0.0 {
 		t.Errorf("expected MemoryMB 0, got %v", stats.MemoryMB)
+	}
+}
+
+// registryStub implements ContainerRegistry for tests.
+type registryStub struct {
+	err        error
+	containers []repository.Container
+}
+
+func (s *registryStub) Snapshot() (repository.DataDocument, error) {
+	if s.err != nil {
+		return repository.DataDocument{}, s.err
+	}
+	return repository.DataDocument{Containers: s.containers}, nil
+}
+
+// TestMemoryRuntime_ListContainersMirrorsRegistry covers the container created
+// after start-up: it is unknown to the seeded running map, so it must still be
+// reported, otherwise the orphan cleanup would treat a live container as missing.
+func TestMemoryRuntime_ListContainersMirrorsRegistry(t *testing.T) {
+	seed := repository.DataDocument{
+		Containers: []repository.Container{
+			{Name: "seeded", Running: boolPtr(true)},
+		},
+	}
+	registry := &registryStub{containers: []repository.Container{
+		{Name: "created-later"},
+		{Name: "seeded"},
+		{Name: ""},
+	}}
+
+	mr := NewMemoryRuntimeWithRegistry(&seed, registry)
+
+	names, err := mr.ListContainers(context.Background())
+	if err != nil {
+		t.Fatalf("ListContainers() error = %v", err)
+	}
+
+	want := []string{"created-later", "seeded"}
+	if !slices.Equal(names, want) {
+		t.Errorf("ListContainers() = %v, want %v", names, want)
+	}
+}
+
+func TestMemoryRuntime_ListContainersWithoutRegistry(t *testing.T) {
+	mr := NewMemoryRuntimeWithRegistry(nil, nil)
+
+	if err := mr.Start(context.Background(), "c1"); err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+
+	names, err := mr.ListContainers(context.Background())
+	if err != nil {
+		t.Fatalf("ListContainers() error = %v", err)
+	}
+	if !slices.Equal(names, []string{"c1"}) {
+		t.Errorf("ListContainers() = %v, want [c1]", names)
+	}
+}
+
+func TestMemoryRuntime_ListContainersRegistryError(t *testing.T) {
+	mr := NewMemoryRuntimeWithRegistry(nil, &registryStub{err: errors.New("boom")})
+
+	if _, err := mr.ListContainers(context.Background()); err == nil {
+		t.Fatal("expected the registry error to be propagated")
 	}
 }

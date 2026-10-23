@@ -40,3 +40,10 @@ go.work.sum
 # Use config/actions.yml.example as a template and deploy the real file separately.
 config/actions.yml
 
+# Task's fingerprint cache. Committing it makes `task build` (and the lint/test it
+# precedes) look up to date on a fresh clone and skip the work entirely.
+.task/checksum/
+
+# Local assistant/tooling state (e.g. CommandCode taste notes), not part of the app.
+.commandcode/
+

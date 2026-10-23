@@ -219,6 +219,55 @@ func TestContainerController_CreateOrUpdateContainer_StoreError(t *testing.T) {
 	}
 }
 
+func TestContainerController_CreateOrUpdateContainer_Pinned(t *testing.T) {
+	store := &mockContainerStore{
+		doc: repository.DataDocument{
+			Containers: []repository.Container{},
+		},
+	}
+
+	cc := NewContainerController(context.Background(), store, &mockContainerRuntimeForContainer{}, "", "")
+
+	r := gin.New()
+	r.POST("/container", cc.CreateOrUpdateContainer)
+
+	active := true
+	running := false
+	pinned := true
+	favorite := false
+	container := repository.Container{
+		Name:         "pinned-container",
+		FriendlyName: "Pinned Container",
+		URL:          "http://pinned.local",
+		Active:       &active,
+		Running:      &running,
+		Favorite:     &favorite,
+		Pinned:       &pinned,
+	}
+	body, _ := json.Marshal(container)
+
+	req := httptest.NewRequest(http.MethodPost, "/container", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var containers []repository.Container
+	if err := json.Unmarshal(w.Body.Bytes(), &containers); err != nil {
+		t.Fatalf("failed to unmarshal response: %v", err)
+	}
+	if len(containers) != 1 {
+		t.Fatalf("expected 1 container, got %d", len(containers))
+	}
+	if containers[0].Pinned == nil || !*containers[0].Pinned {
+		t.Error("expected pinned flag to survive create")
+	}
+}
+
 func TestContainerController_DeleteContainer_Success(t *testing.T) {
 	active := true
 	running := false

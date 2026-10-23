@@ -2,17 +2,28 @@ package runtime
 
 import (
 	"context"
+	"fmt"
+	"slices"
 	"sync"
 
 	"github.com/bassista/go_spin/internal/logger"
 	"github.com/bassista/go_spin/internal/repository"
 )
 
+// ContainerRegistry exposes the containers registered in the data document.
+// The memory runtime has no container daemon to ask, so it mirrors the registry:
+// a registered container exists in the runtime even if it was added after start-up.
+// It is satisfied by the cache store.
+type ContainerRegistry interface {
+	Snapshot() (repository.DataDocument, error)
+}
+
 // MemoryRuntime is a temporary ContainerRuntime implementation that keeps state in memory.
 // It is useful while the Docker-socket implementation is not available to execute tests or other development tasks.
 type MemoryRuntime struct {
-	running map[string]bool
-	mu      sync.RWMutex
+	running  map[string]bool
+	registry ContainerRegistry
+	mu       sync.RWMutex
 }
 
 func NewMemoryRuntime() *MemoryRuntime {
@@ -29,6 +40,19 @@ func NewMemoryRuntimeFromDocument(doc repository.DataDocument) *MemoryRuntime {
 			mr.running[c.Name] = *c.Running
 		}
 	}
+	return mr
+}
+
+// NewMemoryRuntimeWithRegistry creates a memory runtime that seeds its running
+// state from doc (which may be nil) and answers ListContainers from the live
+// registry. Without the registry, containers created after start-up would be
+// reported as missing and the orphan cleanup would delete them.
+func NewMemoryRuntimeWithRegistry(doc *repository.DataDocument, registry ContainerRegistry) *MemoryRuntime {
+	mr := NewMemoryRuntime()
+	if doc != nil {
+		mr = NewMemoryRuntimeFromDocument(*doc)
+	}
+	mr.registry = registry
 	return mr
 }
 
@@ -56,15 +80,32 @@ func (m *MemoryRuntime) Stop(_ context.Context, containerName string) error {
 	return nil
 }
 
-// ListContainers returns the names of containers known to the memory runtime.
-// Names are returned exactly as they are stored (case-sensitive).
+// ListContainers returns the names of containers known to the memory runtime:
+// the ones it tracks plus every container registered in the data document. Names
+// are returned exactly as they are stored (case-sensitive), sorted and without
+// duplicates.
 func (m *MemoryRuntime) ListContainers(_ context.Context) ([]string, error) {
 	m.mu.RLock()
-	defer m.mu.RUnlock()
 	names := make([]string, 0, len(m.running))
 	for n := range m.running {
 		names = append(names, n)
 	}
+	m.mu.RUnlock()
+
+	if m.registry != nil {
+		doc, err := m.registry.Snapshot()
+		if err != nil {
+			return nil, fmt.Errorf("snapshot registry: %w", err)
+		}
+		for _, c := range doc.Containers {
+			if c.Name != "" {
+				names = append(names, c.Name)
+			}
+		}
+	}
+
+	slices.Sort(names)
+	names = slices.Compact(names)
 	logger.WithComponent("memory-runtime").Debugf("listing containers: %v", names)
 	return names, nil
 }

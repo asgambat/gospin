@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gospin - Ghostboard</title>
+    <script>
+        (function () {
+            try {
+                var saved = localStorage.getItem('gosspin.ghostboard.theme');
+                var dark = saved === 'dark' || (!saved && window.matchMedia('(prefers-color-scheme: dark)').matches);
+                if (dark) {
+                    document.documentElement.classList.add('gb-dark');
+                }
+            } catch (error) {
+                // Storage can be unavailable in private mode; keep the light theme.
+            }
+        })();
+    </script>
+    <link rel="manifest" href="/ui/assets/pwa/manifest.json">
+    <meta name="theme-color" content="#1976d2">
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <style>
+        [x-cloak] { display: none !important; }
+
+        :root {
+            --gb-bg: #f3f4f6;
+            --gb-panel: #ffffff;
+            --gb-text: #111827;
+            --gb-muted: #6b7280;
+            --gb-border: #e5e7eb;
+            --gb-accent: #2563eb;
+            --gb-ok: #059669;
+            --gb-warn: #b45309;
+            --gb-error: #b91c1c;
+            --gb-error-bg: #fee2e2;
+        }
+
+        html.gb-dark {
+            --gb-bg: #0f172a;
+            --gb-panel: #1e293b;
+            --gb-text: #e2e8f0;
+            --gb-muted: #94a3b8;
+            --gb-border: #334155;
+            --gb-accent: #60a5fa;
+            --gb-ok: #34d399;
+            --gb-warn: #fbbf24;
+            --gb-error: #fca5a5;
+            --gb-error-bg: #7f1d1d;
+        }
+
+        body {
+            background-color: var(--gb-bg);
+            color: var(--gb-text);
+            transition: background-color .3s ease, color .3s ease;
+        }
+
+        .gb-panel {
+            background-color: var(--gb-panel);
+            border: 1px solid var(--gb-border);
+        }
+
+        .gb-muted { color: var(--gb-muted); }
+
+        .gb-textarea {
+            background-color: var(--gb-panel);
+            color: var(--gb-text);
+            border-color: var(--gb-border);
+            resize: vertical;
+            min-height: 24rem;
+        }
+
+        .gb-textarea:focus {
+            outline: none;
+            border-color: var(--gb-accent);
+            box-shadow: 0 0 0 3px rgba(37, 99, 235, .15);
+        }
+
+        .gb-btn {
+            background-color: var(--gb-panel);
+            color: var(--gb-text);
+            border: 1px solid var(--gb-border);
+            transition: border-color .15s ease, color .15s ease;
+        }
+
+        .gb-btn:hover:not(:disabled) {
+            border-color: var(--gb-accent);
+            color: var(--gb-accent);
+        }
+
+        .gb-btn:disabled { opacity: .45; cursor: not-allowed; }
+
+        .gb-pill {
+            font-size: .75rem;
+            font-weight: 600;
+            padding: .125rem .5rem;
+            border-radius: 9999px;
+            border: 1px solid currentColor;
+        }
+
+        .gb-pill-live { color: var(--gb-ok); }
+        .gb-pill-connecting, .gb-pill-reconnecting { color: var(--gb-warn); }
+        .gb-pill-error { color: var(--gb-error); }
+
+        .gb-error {
+            background-color: var(--gb-error-bg);
+            color: var(--gb-error);
+            border: 1px solid currentColor;
+        }
+
+        .gb-code {
+            background-color: var(--gb-bg);
+            border: 1px solid var(--gb-border);
+            border-radius: .25rem;
+            padding: 0 .25rem;
+            font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        }
+    </style>
+</head>
+<body class="min-h-screen" x-data="ghostboard()" x-cloak>
+    <div class="container mx-auto px-4 py-8 max-w-4xl">
+        <header class="flex flex-wrap items-start justify-between gap-4 mb-6">
+            <div>
+                <h1 class="text-3xl font-bold">👻 Ghostboard</h1>
+                <p class="gb-muted">Share text between computers: every browser on this board sees the same text, live.</p>
+            </div>
+            <div class="flex items-center gap-2">
+                <span class="gb-pill" :class="statusClass" x-text="statusLabel"></span>
+                <button type="button" @click="toggleTheme()" class="gb-btn px-3 py-1 rounded"
+                        :title="theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'">
+                    <span x-show="theme === 'dark'">☀️</span>
+                    <span x-show="theme !== 'dark'">🌙</span>
+                </button>
+            </div>
+        </header>
+
+        <div class="gb-error px-4 py-3 rounded mb-4 flex items-start justify-between gap-3" x-show="error" x-transition>
+            <span x-text="error"></span>
+            <span class="flex-shrink-0">
+                <button type="button" @click="save()" class="underline mr-3" x-show="boardValid && dirty">Retry</button>
+                <button type="button" @click="error = ''" class="font-bold" aria-label="Dismiss error">&times;</button>
+            </span>
+        </div>
+
+        <section class="gb-panel rounded-lg shadow p-4">
+            <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
+                <div class="text-sm">
+                    <span class="font-semibold">Board:</span>
+                    <code class="gb-code" x-text="board"></code>
+                    <span class="gb-muted ml-3" x-text="revisionLabel"></span>
+                </div>
+                <div class="flex items-center gap-2">
+                    <button type="button" @click="download()" :disabled="!text" class="gb-btn px-3 py-1 rounded text-sm"
+                            title="Download this board as a text file">
+                        ⬇ Download .txt
+                    </button>
+                </div>
+            </div>
+
+            <textarea x-model="text" @input="onInput()" @blur="onBlur()"
+                      :disabled="!boardValid"
+                      class="gb-textarea w-full font-mono text-sm rounded border p-3"
+                      rows="20" spellcheck="false" aria-label="Shared board text"
+                      placeholder="Paste or type anything. Every connected device sees it live."></textarea>
+
+            <div class="flex flex-wrap justify-between gap-2 text-xs gb-muted mt-2">
+                <span x-text="saveLabel"></span>
+                <span x-text="text.length + ' character' + (text.length === 1 ? '' : 's')"></span>
+            </div>
+        </section>
+
+        <p class="text-xs gb-muted mt-4">
+            Open this URL on another device to share the same board:
+            <code class="gb-code break-all" x-text="shareUrl"></code>
+        </p>
+    </div>
+
+    <script src="/ui/assets/ghostboard.js"></script>
+</body>
+</html>

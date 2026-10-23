@@ -1,10 +1,13 @@
 name: Go Tests & Lint
 
+# `develop` is the integration branch, so it gets the same lint and race-test
+# signal as `main`; without it a branch is merged and released without any CI
+# feedback. `workflow_call` lets docker-release.yml reuse this workflow.
 on:
   push:
-    branches: [ main ]
+    branches: [ main, develop ]
   pull_request:
-    branches: [ main ]
+    branches: [ main, develop ]
   workflow_call:
 
 # Explicit minimal permissions: both jobs only checkout source and run

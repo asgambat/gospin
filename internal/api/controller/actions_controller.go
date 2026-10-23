@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
+	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -26,6 +26,13 @@ type ActionController struct {
 	actionsCfgPath string
 	actionsMode    string
 	timeout        time.Duration
+
+	// mu guards actionsCache and loadFailureLogged. Requests may recover the
+	// configuration at runtime (see actionsConfig), so the cached pointer is
+	// replaced while other goroutines read it. Declared after the fields above
+	// because govet's fieldalignment wants the pointer-free data last.
+	mu                sync.RWMutex
+	loadFailureLogged bool
 }
 
 // NewActionController creates a new ActionController.
@@ -43,18 +50,62 @@ func NewActionController(actionsCfgPath, actionsMode string, timeout time.Durati
 		timeout:        timeout,
 	}
 
-	// Load actions config once at startup and cache it
+	// Load the configuration once at startup and cache it. A missing file is
+	// not an error: LoadActionsConfig returns an empty action set, so any error
+	// reported here means the file exists but cannot be used (invalid YAML,
+	// missing method/url, unsupported URL scheme).
 	if actionsCfg, err := config.LoadActionsConfig(actionsCfgPath); err != nil {
-		if !os.IsNotExist(err) {
-			logger.WithComponent("actions_controller").Warnf("failed to load actions config from %s: %v", actionsCfgPath, err)
-		} else {
-			logger.WithComponent("actions_controller").Infof("actions config not found at %s (create it from actions.yml.example to enable actions)", actionsCfgPath)
-		}
+		logger.WithComponent("actions_controller").Warnf("failed to load actions config from %s: %v", actionsCfgPath, err)
+		ac.loadFailureLogged = true
 	} else {
 		ac.actionsCache = actionsCfg
+		if len(actionsCfg.Actions) == 0 {
+			logger.WithComponent("actions_controller").Infof("no actions defined in %s (create it from actions.yml.example to enable actions)", actionsCfgPath)
+		}
 	}
 
 	return ac
+}
+
+// actionsConfig returns the action definitions, loading them on demand when the
+// startup load failed (for example because actions.yml had a syntax error and
+// was fixed afterwards). The mutex keeps concurrent first requests from writing
+// the cached pointer at the same time and from re-parsing the file in a loop.
+func (ac *ActionController) actionsConfig() (*config.ActionsFile, error) {
+	ac.mu.RLock()
+	cached := ac.actionsCache
+	ac.mu.RUnlock()
+	if cached != nil {
+		return cached, nil
+	}
+
+	ac.mu.Lock()
+	defer ac.mu.Unlock()
+	if ac.actionsCache != nil { // loaded by a concurrent request while we waited
+		return ac.actionsCache, nil
+	}
+
+	cfg, err := config.LoadActionsConfig(ac.actionsCfgPath)
+	if err != nil {
+		// Log the first failure only: while the file stays broken every request
+		// would otherwise repeat the same error line.
+		if !ac.loadFailureLogged {
+			logger.WithComponent("actions_controller").Errorf("failed to load actions config from %s: %v", ac.actionsCfgPath, err)
+			ac.loadFailureLogged = true
+		}
+		return nil, err
+	}
+	ac.actionsCache = cfg
+	ac.loadFailureLogged = false
+	return cfg, nil
+}
+
+// cachedActions returns the currently loaded definitions without triggering a
+// load, for callers that must not parse the file (startup checks).
+func (ac *ActionController) cachedActions() *config.ActionsFile {
+	ac.mu.RLock()
+	defer ac.mu.RUnlock()
+	return ac.actionsCache
 }
 
 // Timeout returns the configured per-action HTTP timeout.
@@ -77,13 +128,24 @@ func (ac *ActionController) LogDanglingReferences(referenced []string) []string 
 		return dangling
 	}
 
-	actionsCfg := ac.actionsCache
+	actionsCfg := ac.cachedActions()
 	if actionsCfg == nil {
 		logger.WithComponent("actions_controller").Warnf("skipping dangling-reference check, actions config not loaded")
 		return dangling
 	}
+	if len(actionsCfg.Actions) == 0 {
+		// actions.yml is optional: with no defined action every reference would
+		// look dangling, so a fresh checkout would log one warning per homepage
+		// entry. Nothing can be resolved, so the check is skipped.
+		logger.WithComponent("actions_controller").Debugf("skipping dangling-reference check, no actions defined in %s", ac.actionsCfgPath)
+		return dangling
+	}
 
 	for _, name := range referenced {
+		if name == "" {
+			// A homepage item without an action reference has nothing to resolve.
+			continue
+		}
 		if _, ok := actionsCfg.Actions[name]; !ok {
 			dangling = append(dangling, name)
 			logger.WithComponent("actions_controller").Warnf("action %q is referenced in homepage.yaml but not defined in %s", name, ac.actionsCfgPath)
@@ -122,17 +184,13 @@ func (ac *ActionController) ExecuteAction(c *gin.Context) {
 		return
 	}
 
-	// Use cached actions configuration (loaded once at startup, or lazily on first request)
-	actionsCfg := ac.actionsCache
-	if actionsCfg == nil {
-		var err error
-		actionsCfg, err = config.LoadActionsConfig(ac.actionsCfgPath)
-		if err != nil {
-			logger.WithComponent("actions_controller").Errorf("failed to load actions config from %s: %v", ac.actionsCfgPath, err)
-			ac.errorResponse(c, http.StatusInternalServerError, "actions configuration unavailable")
-			return
-		}
-		ac.actionsCache = actionsCfg
+	// Use the cached configuration; it is loaded on demand (and retried) only
+	// when the startup load failed.
+	actionsCfg, err := ac.actionsConfig()
+	if err != nil {
+		// Already logged once by actionsConfig; do not repeat the same failure.
+		ac.errorResponse(c, http.StatusInternalServerError, "actions configuration unavailable")
+		return
 	}
 
 	actionCfg, ok := actionsCfg.Actions[req.ActionName]

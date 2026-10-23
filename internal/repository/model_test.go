@@ -25,6 +25,13 @@ func TestContainer_ApplyDefaults(t *testing.T) {
 	if *c.Active != false {
 		t.Error("expected Active to default to false")
 	}
+
+	if c.Pinned == nil {
+		t.Error("expected Pinned to be set")
+	}
+	if *c.Pinned != false {
+		t.Error("expected Pinned to default to false")
+	}
 }
 
 func TestContainer_ApplyDefaults_AlreadySet(t *testing.T) {
@@ -34,6 +41,7 @@ func TestContainer_ApplyDefaults_AlreadySet(t *testing.T) {
 		URL:          "http://test.local",
 		Running:      boolPtr(true),
 		Active:       boolPtr(true),
+		Pinned:       boolPtr(true),
 	}
 	c.applyDefaults()
 
@@ -42,6 +50,9 @@ func TestContainer_ApplyDefaults_AlreadySet(t *testing.T) {
 	}
 	if !*c.Active {
 		t.Error("expected Active to remain true")
+	}
+	if !*c.Pinned {
+		t.Error("expected Pinned to remain true")
 	}
 }
 

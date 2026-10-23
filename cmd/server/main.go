@@ -59,7 +59,7 @@ func main() {
 	}
 
 	cacheStore := cache.NewStore(*jsonDoc)
-	rt, err := runtime.NewRuntimeFromConfig(cfg.Misc.RuntimeType, jsonDoc)
+	rt, err := runtime.NewRuntimeFromConfig(cfg.Misc.RuntimeType, jsonDoc, cacheStore)
 	if err != nil {
 		logger.WithComponent("main").Fatalf("cannot init runtime: %v", err)
 	}

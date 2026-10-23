@@ -20,5 +20,11 @@ misc:
   log_format: text
   cosmos_base_url: ""  # Base URL for Cosmos API (e.g., "https://cosmos.example.com")
   cosmos_token: ""     # Bearer token for Cosmos API authentication  
+ghostboard:
+  file_path: ""                        # defaults to <dir of data.file_path>/ghostboard.json
+  clear_delay_secs: 300               # text is cleared this long after the last client disconnects
+  max_text_bytes: 16777216            # largest decoded text per board (16 MiB); the request body limit derives from it
+  persist_interval_secs: 2            # write interval for pending changes (a tick with no changes writes nothing)
+  heartbeat_interval_secs: 25         # SSE keep-alive comment interval
     
 

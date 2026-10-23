@@ -20,9 +20,18 @@ type DayFlags struct {
 // one start and one stop action per container per day (in the configured timezone).
 //
 // Semantics:
-// - If StartedDayKey == today, start is never attempted again today, regardless of running state.
-// - If StoppedDayKey == today, stop is never attempted again today.
-// - Stop evaluation is only performed after a start evaluation has happened that day.
+//   - A timer may define both StartTime and StopTime, only StartTime (start-only: the
+//     target is brought up at that time and left running) or only StopTime
+//     (stop-only: the target is stopped at that time even if this scheduler did not
+//     start it).
+//   - A start+stop window containing the current time keeps the target up, including
+//     against a stop-only timer that is due today.
+//   - A start-only timer keeps the target up until midnight unless a stop-only timer
+//     for the same target is due today: the explicit stop wins.
+//   - If StartedDayKey == today, start is never attempted again today, regardless of running state.
+//   - If StoppedDayKey == today, stop is never attempted again today.
+//   - Stop evaluation is only performed after a start evaluation has happened that
+//     day, unless a stop-only timer is due.
 //
 // NOTE: Flags are in-memory only.
 type PollingScheduler struct {
@@ -94,12 +103,15 @@ func (s *PollingScheduler) tick(ctx context.Context) {
 		groupsByName[g.Name] = g
 	}
 
-	// Initialize desiredRunning map: by default, no container should be running.
-	// This will be set to true if any active schedule/timer indicates it should be running now.
-	desiredRunning := map[string]bool{}
-	for name := range containersByName {
-		desiredRunning[name] = false
-	}
+	// Containers a start+stop window says must be running right now. These windows
+	// declare their own end, so they win over a stop-only request.
+	windowRunning := map[string]bool{}
+	// Containers kept up by a start-only timer, which leaves them running until
+	// midnight. A stop-only timer that is due today overrides this.
+	openEndedRunning := map[string]bool{}
+	// Containers a due stop-only timer asks to stop today. It overrides
+	// openEndedRunning but not an active windowRunning.
+	stopRequested := map[string]bool{}
 
 	// Evaluate all schedules to determine which containers should be running based on active timers.
 	for _, sched := range doc.Schedules {
@@ -116,23 +128,51 @@ func (s *PollingScheduler) tick(ctx context.Context) {
 				logger.WithComponent("sched").Debugf("timer inactive for schedule %s", sched.ID)
 				continue
 			}
-			// Check if this timer is currently active (within its start/stop window, considering days and cross-midnight).
-			if !isTimerActiveNow(timer, now) {
-				continue
+			hasStart := timer.StartTime != ""
+			hasStop := timer.StopTime != ""
+
+			// Start side: a start+stop timer runs inside its window, a start-only
+			// timer runs from its start time until the rest of the day.
+			if hasStart {
+				active := isStartOnlyActiveNow(timer, now)
+				if hasStop {
+					active = isTimerActiveNow(timer, now)
+				}
+				if active {
+					logger.WithComponent("sched").Debugf("timer %s is active for schedule %s, marking %d containers as running", timerLabel(timer), sched.ID, len(containerNames))
+					// For each container targeted by this schedule, mark it as desired running if the container itself is active.
+					for _, containerName := range containerNames {
+						c, ok := containersByName[containerName]
+						if !ok {
+							continue
+						}
+						// Respect the container's own active flag.
+						if c.Active != nil && !*c.Active {
+							continue
+						}
+						if hasStop {
+							windowRunning[containerName] = true
+							continue
+						}
+						openEndedRunning[containerName] = true
+					}
+				}
 			}
 
-			logger.WithComponent("sched").Debugf("timer %s-%s is active for schedule %s, marking %d containers as running", timer.StartTime, timer.StopTime, sched.ID, len(containerNames))
-			// For each container targeted by this schedule, mark it as desired running if the container itself is active.
-			for _, containerName := range containerNames {
-				c, ok := containersByName[containerName]
-				if !ok {
-					continue
+			// Stop side: a stop-only timer asks for a stop once its stop time is due,
+			// regardless of whether this scheduler started the container today.
+			if hasStop && !hasStart && isStopDueNow(timer, now) {
+				logger.WithComponent("sched").Debugf("timer %s is due for schedule %s, requesting stop of %d containers", timerLabel(timer), sched.ID, len(containerNames))
+				for _, containerName := range containerNames {
+					c, ok := containersByName[containerName]
+					if !ok {
+						continue
+					}
+					if c.Active != nil && !*c.Active {
+						continue
+					}
+					stopRequested[containerName] = true
 				}
-				// Respect the container's own active flag.
-				if c.Active != nil && !*c.Active {
-					continue
-				}
-				desiredRunning[containerName] = true
 			}
 		}
 	}
@@ -148,9 +188,13 @@ func (s *PollingScheduler) tick(ctx context.Context) {
 		}
 
 		flags := s.getFlags(containerName)
-		shouldRun := desiredRunning[containerName]
-		logger.WithComponent("sched").Debugf("container %s: shouldRun=%v, startedToday=%v, stoppedToday=%v",
-			containerName, shouldRun, flags.StartedDayKey == todayKey, flags.StoppedDayKey == todayKey)
+		// A window timer that contains the current time wins over a due stop-only
+		// timer; an open-ended start-only timer does not, so an explicit stop can end
+		// the "left running until midnight" state it created.
+		shouldRun := windowRunning[containerName] ||
+			(openEndedRunning[containerName] && !stopRequested[containerName])
+		logger.WithComponent("sched").Debugf("container %s: shouldRun=%v, stopRequested=%v, startedToday=%v, stoppedToday=%v",
+			containerName, shouldRun, stopRequested[containerName], flags.StartedDayKey == todayKey, flags.StoppedDayKey == todayKey)
 		// If we already attempted to start this container today, skip to avoid repeated attempts.
 		// This enforces "at most one start per day" even if the container stops later.
 		if shouldRun {
@@ -178,9 +222,9 @@ func (s *PollingScheduler) tick(ctx context.Context) {
 		}
 
 		// Container should not be running now.
-		// Stop evaluation only happens if a start evaluation occurred today (to avoid premature stops).
-		if flags.StartedDayKey != todayKey {
-			// Stop action is only evaluated after a start evaluation has happened today.
+		// Stop evaluation happens when a stop-only timer is due today, or when a
+		// start evaluation already occurred today (to avoid premature stops).
+		if !stopRequested[containerName] && flags.StartedDayKey != todayKey {
 			logger.WithComponent("sched").Tracef("container %s not started today, skipping stop evaluation", containerName)
 			continue
 		}
@@ -261,12 +305,59 @@ func expandScheduleTargets(
 	}
 }
 
-func isTimerActiveNow(timer repository.Timer, now time.Time) bool {
-	startClock, err := time.Parse("15:04", timer.StartTime)
+// timeOfDayLayout is the HH:MM layout used by timer start/stop times in the
+// schedule payloads and in config/data/config.json.
+const timeOfDayLayout = "15:04"
+
+// timerLabel renders a timer for log messages and covers start-only and
+// stop-only timers, where one of the two times is empty.
+func timerLabel(timer repository.Timer) string {
+	switch {
+	case timer.StartTime != "" && timer.StopTime != "":
+		return timer.StartTime + "-" + timer.StopTime
+	case timer.StartTime != "":
+		return "start " + timer.StartTime
+	default:
+		return "stop " + timer.StopTime
+	}
+}
+
+// isStartOnlyActiveNow reports whether a start-only timer is active: the weekday
+// matches and the start time has already passed today. The container stays
+// desired-running until midnight; what happens after that is decided by other
+// schedules or by manual actions.
+func isStartOnlyActiveNow(timer repository.Timer, now time.Time) bool {
+	if timer.StartTime == "" || !containsInt(timer.Days, int(now.Weekday())) {
+		return false
+	}
+	startClock, err := time.Parse(timeOfDayLayout, timer.StartTime)
 	if err != nil {
 		return false
 	}
-	stopClock, err := time.Parse("15:04", timer.StopTime)
+	start := time.Date(now.Year(), now.Month(), now.Day(), startClock.Hour(), startClock.Minute(), 0, 0, now.Location())
+	return !now.Before(start)
+}
+
+// isStopDueNow reports whether a stop-only timer must stop its targets today:
+// the weekday matches and the stop time has already passed.
+func isStopDueNow(timer repository.Timer, now time.Time) bool {
+	if timer.StopTime == "" || !containsInt(timer.Days, int(now.Weekday())) {
+		return false
+	}
+	stopClock, err := time.Parse(timeOfDayLayout, timer.StopTime)
+	if err != nil {
+		return false
+	}
+	stop := time.Date(now.Year(), now.Month(), now.Day(), stopClock.Hour(), stopClock.Minute(), 0, 0, now.Location())
+	return !now.Before(stop)
+}
+
+func isTimerActiveNow(timer repository.Timer, now time.Time) bool {
+	startClock, err := time.Parse(timeOfDayLayout, timer.StartTime)
+	if err != nil {
+		return false
+	}
+	stopClock, err := time.Parse(timeOfDayLayout, timer.StopTime)
 	if err != nil {
 		return false
 	}

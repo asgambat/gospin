@@ -7,6 +7,7 @@ import (
 
 	"github.com/bassista/go_spin/internal/cache"
 	"github.com/bassista/go_spin/internal/config"
+	"github.com/bassista/go_spin/internal/ghostboard"
 	"github.com/bassista/go_spin/internal/logger"
 	"github.com/bassista/go_spin/internal/repository"
 	"github.com/bassista/go_spin/internal/runtime"
@@ -16,10 +17,11 @@ import (
 // App is the application container (immutable dependencies + lifecycle context).
 // It is not a request context; handlers should still use gin's request context.
 type App struct {
-	Config  *config.Config
-	Repo    repository.Repository
-	Cache   cache.AppStore
-	Runtime runtime.ContainerRuntime
+	Config     *config.Config
+	Repo       repository.Repository
+	Cache      cache.AppStore
+	Runtime    runtime.ContainerRuntime
+	Ghostboard *ghostboard.Store
 
 	BaseCtx     context.Context
 	Cancel      context.CancelFunc
@@ -48,14 +50,27 @@ func New(cfg *config.Config, repo repository.Repository, store cache.AppStore, r
 
 	logger.WithComponent("app").Debugf("all dependencies validated")
 
+	ghostboardCfg := cfg.Ghostboard.WithDefaults()
+	ghostboardStore, err := ghostboard.New(ghostboard.Config{
+		FilePath:        ghostboardCfg.FilePath,
+		ClearDelay:      ghostboardCfg.ClearDelay,
+		MaxTextBytes:    ghostboardCfg.MaxTextBytes,
+		PersistInterval: ghostboardCfg.PersistInterval,
+	})
+	if err != nil {
+		logger.WithComponent("app").Errorf("cannot initialize ghostboard store: %v", err)
+		return nil, err
+	}
+
 	ctx, cancel := context.WithCancel(context.Background())
 	return &App{
-		Config:  cfg,
-		Repo:    repo,
-		Cache:   store,
-		Runtime: rt,
-		BaseCtx: ctx,
-		Cancel:  cancel,
+		Config:     cfg,
+		Repo:       repo,
+		Cache:      store,
+		Runtime:    rt,
+		Ghostboard: ghostboardStore,
+		BaseCtx:    ctx,
+		Cancel:     cancel,
 	}, nil
 }
 
@@ -67,6 +82,14 @@ func (a *App) Shutdown() {
 		return
 	}
 	a.Cancel()
+
+	// Flush ghostboard changes synchronously: the persistence goroutine may be
+	// cancelled before its final write completes.
+	if a.Ghostboard != nil {
+		if err := a.Ghostboard.Flush(); err != nil {
+			logger.WithComponent("app").Errorf("ghostboard flush on shutdown failed: %v", err)
+		}
+	}
 
 	// Attende il completamento del persistence scheduler
 	if a.persistDone != nil {
@@ -89,6 +112,11 @@ func (a *App) StartWatchers() {
 	// Start scheduled persistence goroutine
 	a.persistDone = cache.StartPersistenceScheduler(a.BaseCtx, a.Cache, a.Repo, a.Config.Data.PersistInterval)
 	logger.WithComponent("app").Debugf("persistence scheduler started")
+
+	if a.Ghostboard != nil {
+		a.Ghostboard.StartPersistence(a.BaseCtx)
+		logger.WithComponent("app").Debugf("ghostboard persistence started")
+	}
 
 	if a.Config.Data.SchedulingEnabled {
 		loc := time.Local

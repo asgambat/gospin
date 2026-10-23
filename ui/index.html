@@ -124,14 +124,21 @@
             <div class="flex justify-between items-center mb-4">
                 <div class="flex items-center gap-2">
                     <input type="text" placeholder="Filter by Name" x-model="containerFilter.name" class="border rounded px-2 py-1 text-sm" />
-                    <button @click="showFavoritesOnly = !showFavoritesOnly" :class="showFavoritesOnly ? 'text-yellow-500' : 'text-gray-400'" class="px-2 py-1 text-sm hover:text-yellow-500" title="Toggle favorites only">
+                    <button @click="toggleFavoritesOnly()" :class="showFavoritesOnly ? 'text-yellow-500' : 'text-gray-400'" class="px-2 py-1 text-sm hover:text-yellow-500" title="Toggle favorites only">
                         <span x-show="showFavoritesOnly">⭐</span>
                         <span x-show="!showFavoritesOnly">☆</span>
+                    </button>
+                    <button @click="togglePinnedOnly()" :class="showPinnedOnly ? 'text-blue-500' : 'text-gray-400'" class="px-2 py-1 text-sm hover:text-blue-500" title="Toggle pinned only">
+                        <span x-show="showPinnedOnly">📌</span>
+                        <span x-show="!showPinnedOnly">📍</span>
                     </button>
                 </div>
                 <div :class="showStackButtons ? 'flex flex-col items-end space-y-2' : 'space-x-2'">
                     <button @click="refreshContainersWithStats()" :disabled="isContainerRefreshing" :class="isContainerRefreshing ? 'bg-gray-400 cursor-not-allowed' : 'bg-gray-500 hover:bg-gray-600'" class="text-white px-3 py-1 rounded inline-flex items-center">
                         <span :class="isContainerRefreshing ? 'animate-spin' : ''" class="mr-1">🔄</span> Refresh
+                    </button>
+                    <button @click="previewOrphanContainers()" :disabled="isCleanupChecking" :class="isCleanupChecking ? 'bg-gray-400 cursor-not-allowed' : 'bg-red-500 hover:bg-red-600'" class="text-white px-3 py-1 rounded inline-flex items-center" title="Find registry entries whose container no longer exists in Docker">
+                        <span :class="isCleanupChecking ? 'animate-spin' : ''" class="mr-1">🧹</span> Cleanup
                     </button>
                     <button @click="openContainerModal()" class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600">+ Add Container</button>
                 </div>
@@ -141,6 +148,7 @@
                 <table class="min-w-full">
                     <thead class="bg-gray-50">
                         <tr>
+                            <th class="px-2 py-3 text-center text-xs font-medium text-gray-500 uppercase w-10" title="Pinned containers are always shown first">📌</th>
                             <th class="px-2 py-3 text-center text-xs font-medium text-gray-500 uppercase w-10">⭐</th>
                             <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer" @click="sortContainersBy('name')">
                                 Name
@@ -174,6 +182,11 @@
                     <tbody class="divide-y divide-gray-200">
                         <template x-for="container in filteredSortedContainers" :key="container.name">
                             <tr @click="openContainerDetails(container)" class="hover:bg-gray-50 cursor-pointer swipe-track" :data-name="container.name" data-type="container">
+                                <td class="px-2 py-3 text-center">
+                                    <button @click.stop="togglePinned(container.name)" :class="container.pinned ? 'text-blue-500' : 'text-gray-300'" class="hover:text-blue-500" :title="container.pinned ? 'Unpin container' : 'Pin container to top'" :aria-pressed="!!container.pinned">
+                                        <span x-text="container.pinned ? '📌' : '📍'" class="text-lg"></span>
+                                    </button>
+                                </td>
                                 <td class="px-2 py-3 text-center">
                                     <button @click.stop="async () => { await toggleFavorite(container.name) }" :class="container.favorite ? 'text-yellow-500' : 'text-gray-300'" class="hover:text-yellow-500" title="Toggle favorite">
                                         <span x-text="container.favorite ? '★' : '☆'" class="text-lg"></span>
@@ -211,7 +224,7 @@
                             </tr>
                         </template>
                         <tr x-show="filteredSortedContainers.length === 0">
-                            <td :colspan="10 - (showStatsColumns ? 0 : 2) - (showMetaColumns ? 0 : 2)" class="px-4 py-8 text-center text-gray-500">No containers configured</td>
+                            <td :colspan="11 - (showStatsColumns ? 0 : 2) - (showMetaColumns ? 0 : 2)" class="px-4 py-8 text-center text-gray-500">No containers configured</td>
                         </tr>
                     </tbody>
                 </table>
@@ -254,6 +267,10 @@
                     <div class="flex justify-between">
                         <span class="font-medium">Running</span>
                         <span x-text="detailsContainer.running ? 'Running' : 'Stopped'"></span>
+                    </div>
+                    <div class="flex justify-between">
+                        <span class="font-medium">Pinned</span>
+                        <span x-text="detailsContainer.pinned ? '📌 Yes' : 'No'"></span>
                     </div>
                     <div class="flex justify-between">
                         <span class="font-medium">CPU %</span>
@@ -365,9 +382,7 @@
                                             <span :class="timer.active ? 'text-green-600' : 'text-gray-400'">
                                                 <span x-text="timer.active ? '✅' : '⏸️'"></span>
                                             </span>
-                                            <span class="font-mono">
-                                                <span x-text="timer.startTime"></span> → <span x-text="timer.stopTime"></span>
-                                            </span>
+                                            <span class="font-mono" x-text="formatTimer(timer)"></span>
                                             <span class="text-gray-500" x-text="formatDays(timer.days)"></span>
                                         </div>
                                     </div>
@@ -448,6 +463,10 @@
                         <label class="flex items-center">
                             <input type="checkbox" x-model="containerForm.favorite" class="rounded mr-2">
                             <span class="text-sm">⭐ Favorite</span>
+                        </label>
+                        <label class="flex items-center">
+                            <input type="checkbox" x-model="containerForm.pinned" class="rounded mr-2">
+                            <span class="text-sm">📌 Pin to top</span>
                         </label>
                     </div>
                     <div class="flex justify-end gap-2 pt-4">
@@ -552,13 +571,13 @@
 
                                     <div class="grid grid-cols-3 gap-4 mb-3">
                                         <div>
-                                            <label class="block text-xs font-medium text-gray-600 mb-1">Start Time *</label>
-                                            <input type="time" x-model="timer.startTime" required
+                                            <label class="block text-xs font-medium text-gray-600 mb-1">Start Time</label>
+                                            <input type="time" x-model="timer.startTime"
                                                    class="w-full border rounded px-2 py-1 text-sm">
                                         </div>
                                         <div>
-                                            <label class="block text-xs font-medium text-gray-600 mb-1">Stop Time *</label>
-                                            <input type="time" x-model="timer.stopTime" required
+                                            <label class="block text-xs font-medium text-gray-600 mb-1">Stop Time</label>
+                                            <input type="time" x-model="timer.stopTime"
                                                    class="w-full border rounded px-2 py-1 text-sm">
                                         </div>
                                         <div class="flex items-end">
@@ -568,6 +587,11 @@
                                             </label>
                                         </div>
                                     </div>
+
+                                    <p class="text-xs text-gray-500 mb-3">
+                                        Fill both times for a start/stop window, or leave one empty to schedule only a start
+                                        (the container is brought up and left running) or only a stop.
+                                    </p>
 
                                     <div>
                                         <label class="block text-xs font-medium text-gray-600 mb-2">Days</label>
@@ -632,6 +656,38 @@
         </div>
 
         <!-- Confirmation Modal -->
+        <!-- Orphan containers cleanup modal: preview first, delete only on confirm -->
+        <div x-show="showCleanupModal" class="fixed inset-0 z-60 flex items-center justify-center modal-backdrop" x-transition>
+            <div class="bg-white rounded-lg shadow-xl w-full max-w-lg mx-4" @click.away="closeCleanupModal()">
+                <div class="px-6 py-4 border-b">
+                    <h3 class="text-lg font-semibold">Remove missing containers</h3>
+                </div>
+                <div class="p-6 space-y-4">
+                    <p class="text-sm text-gray-700">
+                        These registry entries are not present in the container runtime anymore. Removing them also deletes
+                        the schedules that target them and their references inside groups.
+                    </p>
+                    <ul class="max-h-64 overflow-y-auto divide-y border rounded">
+                        <template x-for="container in cleanupCandidates" :key="container.name">
+                            <li class="px-3 py-2 text-sm flex justify-between gap-3">
+                                <span class="font-mono" x-text="container.name"></span>
+                                <span class="text-gray-500" x-text="container.friendly_name"></span>
+                            </li>
+                        </template>
+                    </ul>
+                    <p class="text-xs text-gray-500">Nothing is deleted until you confirm.</p>
+                </div>
+                <div class="flex justify-end gap-2 px-6 py-4 border-t">
+                    <button type="button" @click="closeCleanupModal()" class="px-4 py-2 border rounded hover:bg-gray-50">Cancel</button>
+                    <button type="button" @click="confirmCleanup()" :disabled="isCleanupRemoving"
+                            :class="isCleanupRemoving ? 'bg-red-300 cursor-not-allowed' : 'bg-red-500 hover:bg-red-600'"
+                            class="px-4 py-2 text-white rounded">
+                        <span x-text="isCleanupRemoving ? 'Removing...' : 'Remove ' + cleanupCandidates.length + ' container(s)'"></span>
+                    </button>
+                </div>
+            </div>
+        </div>
+
         <div x-show="showConfirmModal" class="fixed inset-0 z-60 flex items-center justify-center modal-backdrop" x-transition>
             <div class="bg-white rounded-lg shadow-xl w-full max-w-md mx-4" @click.away="_confirmResolve && _confirmResolve(false)">
                 <div class="px-6 py-4 border-b flex justify-between items-center">

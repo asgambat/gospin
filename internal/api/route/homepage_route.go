@@ -9,6 +9,7 @@ import (
 	"github.com/bassista/go_spin/internal/api/middleware"
 	"github.com/bassista/go_spin/internal/app"
 	"github.com/bassista/go_spin/internal/config"
+	"github.com/bassista/go_spin/internal/logger"
 )
 
 const defaultHomepageConfigPath = "./config/homepage.yaml"
@@ -31,14 +32,20 @@ func NewHomepageRouter(appCtx *app.App, group *gin.RouterGroup) {
 	group.POST("homepage/action", actionTimeout, ac.ExecuteAction)
 
 	// Non-fatal startup check: warn about actions referenced in homepage.yaml
-	// that have no matching definition in actions.yml.
-	if hpCfg, _, err := config.LoadHomepageConfig(defaultHomepageConfigPath); err == nil {
-		var refs []string
-		for _, group := range hpCfg.Actions {
-			for _, item := range group.Items {
-				refs = append(refs, item.Action)
-			}
-		}
-		ac.LogDanglingReferences(refs)
+	// that have no matching definition in actions.yml. A broken file is
+	// reported here instead of being ignored: the /homepage handler would only
+	// surface it on the first request.
+	hpCfg, _, err := config.LoadHomepageConfig(defaultHomepageConfigPath)
+	if err != nil {
+		logger.WithComponent("homepage_router").Warnf("skipping dangling-reference check, cannot load %s: %v", defaultHomepageConfigPath, err)
+		return
 	}
+
+	var refs []string
+	for _, actionGroup := range hpCfg.Actions {
+		for _, item := range actionGroup.Items {
+			refs = append(refs, item.Action)
+		}
+	}
+	ac.LogDanglingReferences(refs)
 }

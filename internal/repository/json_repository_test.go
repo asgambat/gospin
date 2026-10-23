@@ -1326,3 +1326,104 @@ func (m *MockCacheStoreCountingReplaces) GetReplaceCount() int {
 	defer m.mu.RUnlock()
 	return *m.replaceCount
 }
+
+// TestJSONRepository_WatcherReloadKeepsExistingSchedule reproduces the
+// persist -> watcher-reload cycle: after the persistence scheduler writes the
+// cache to disk, the watcher reloads it. A schedule whose target still exists
+// must survive that round-trip unchanged.
+func TestJSONRepository_WatcherReloadKeepsExistingSchedule(t *testing.T) {
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "config.json")
+
+	doc := createTestDataDocument()
+	doc.Schedules = []Schedule{
+		{
+			ID:         "keep-me",
+			Target:     "container1",
+			TargetType: "container",
+			Timers:     []Timer{{StartTime: "08:00", Days: []int{1, 2, 3, 4, 5}, Active: boolPtrJSON(true)}},
+		},
+	}
+
+	repo, err := NewJSONRepository(configPath)
+	if err != nil {
+		t.Fatalf("failed to create repository: %v", err)
+	}
+	jsonRepo := repo.(*JSONRepository)
+
+	// Persistence flush: snapshot with a fresh timestamp is written to disk.
+	persisted := doc
+	persisted.Metadata.LastUpdate = 2000
+	if err := jsonRepo.Save(context.Background(), &persisted); err != nil {
+		t.Fatalf("failed to persist document: %v", err)
+	}
+
+	cache := &MockCacheStore{
+		doc:        doc,
+		lastUpdate: 1000,
+		dirty:      false,
+	}
+
+	callback := jsonRepo.MakeWatcherCallback(context.Background(), cache)
+	callback()
+
+	if !cache.IsReplaced() {
+		t.Fatal("expected cache to be reloaded from the newer disk version")
+	}
+
+	reloaded, err := cache.Snapshot()
+	if err != nil {
+		t.Fatalf("failed to read cache snapshot: %v", err)
+	}
+	if len(reloaded.Schedules) != 1 {
+		t.Fatalf("expected the schedule to survive the reload, got %d schedules", len(reloaded.Schedules))
+	}
+	if reloaded.Schedules[0].ID != "keep-me" {
+		t.Errorf("expected schedule keep-me after reload, got %q", reloaded.Schedules[0].ID)
+	}
+}
+
+// TestJSONRepository_WatcherReloadDropsOrphanSchedule documents the loader
+// invariant: a schedule pointing at a container that no longer exists is pruned
+// on load, which is exactly why the API must reject such schedules up front.
+func TestJSONRepository_WatcherReloadDropsOrphanSchedule(t *testing.T) {
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "config.json")
+
+	doc := DataDocument{
+		Schedules: []Schedule{
+			{
+				ID:         "orphan",
+				Target:     "missing-container",
+				TargetType: "container",
+				Timers:     []Timer{{StartTime: "08:00", Days: []int{1}}},
+			},
+		},
+		Metadata: Metadata{LastUpdate: 2000},
+	}
+
+	data, err := json.MarshalIndent(doc, "", "  ")
+	if err != nil {
+		t.Fatalf("failed to marshal document: %v", err)
+	}
+	if err := os.WriteFile(configPath, data, 0644); err != nil {
+		t.Fatalf("failed to write data file: %v", err)
+	}
+
+	repo, err := NewJSONRepository(configPath)
+	if err != nil {
+		t.Fatalf("failed to create repository: %v", err)
+	}
+	jsonRepo := repo.(*JSONRepository)
+
+	cache := &MockCacheStore{lastUpdate: 1000, dirty: false}
+	jsonRepo.MakeWatcherCallback(context.Background(), cache)()
+
+	reloaded, err := cache.Snapshot()
+	if err != nil {
+		t.Fatalf("failed to read cache snapshot: %v", err)
+	}
+	if len(reloaded.Schedules) != 0 {
+		t.Errorf("expected the orphan schedule to be pruned, got %d schedules", len(reloaded.Schedules))
+	}
+}

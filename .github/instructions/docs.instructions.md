@@ -30,7 +30,7 @@ Prompting techniques: Prescriptive bullet points with imperative tone for easy c
 2. **Clarity**: Use simple, concise language. Avoid unexplained jargon.
 3. **Consistency**: Maintain a consistent style and format throughout the documentation.
 4. **Examples**: Include examples and use cases to illustrate concepts.
-5. **Lanuage**: Write always documentation and code comments in English.
+5. **Language**: Write documentation, code comments and log messages in English. The single exception is `docs/progetto.txt`, which is maintained in Italian.
 
 <!--
 Purpose: Ensure the assistant gathers critical inputs before drafting.
@@ -57,7 +57,7 @@ Prompting techniques: Stage-gated workflow steps; mandatory approval via enforce
 1. **Initial Draft**: Create the first version following the general guidelines.
 2. **Peer Review**: Request reviews from relevant stakeholders and address feedback.
 3. **Approval**: Obtain final approval from the document owner before publishing.
-4. **Publishing**: Place approved docs in the appropriate folder (e.g., `docs/`, `docs/ADRs/`, `plans/`).
+4. **Publishing**: Place approved docs in the appropriate folder (`docs/`, `docs/ADRs/`, `docs/PRDs/`, `docs/plans/`, `docs/engineering/`).
 5. **Archiving**: Establish a process for archiving outdated documents while ensuring they remain accessible for reference.
 
 <CRITICAL_REQUIREMENT type="MANDATORY">
@@ -136,7 +136,7 @@ Prompting techniques: Sectioned guidance for architecture, data, APIs, UI, and s
 3. **APIs**: Document endpoints, contracts, and authentication.
 4. **User Interface**: Include wireframes, mockups, and accessibility notes.
 5. **Security**: Outline security considerations and mitigations.
- 6. **Location & Naming**: Save under `docs/design/` with a concise, descriptive filename.
+ 6. **Location & Naming**: Save planning and design docs under `docs/plans/` (template: `docs/plans/plan-template.md`), put durable architecture in `docs/ARCHITECTURE.md`, and record decisions in `docs/ADRs/` — use a concise, descriptive filename.
 
 <!--
 Purpose: Define default file formats and locations to reduce ambiguity.
@@ -146,7 +146,8 @@ Prompting techniques: Defaults and canonical paths that tools and assistants can
 
 - Default format: Markdown (`.md`).
 - Default directory: `/docs/` with a relevant filename when no specialized folder applies.
-- Use specialized directories and templates for ADRs (`docs/ADRs/`), PRDs (`docs/PRDs/`), and Design docs (`docs/design/`).
+- Use the specialized directories and templates that already exist: ADRs (`docs/ADRs/adr-template.md`), PRDs (`docs/PRDs/prd-template.md`), plans/design docs (`docs/plans/plan-template.md`), engineering guidelines (`docs/engineering/`).
+- Repository-level docs keep their canonical locations: `README.md` (usage, API endpoints table, configuration), `docs/ARCHITECTURE.md`, `docs/DEVELOPMENT.md`, `docs/progetto.txt` (Italian), `AGENTS.md` and `.github/copilot-instructions.md` (agent rules).
 
 <!--
 Purpose: Establish acceptance criteria any doc must meet before publication.
@@ -157,6 +158,7 @@ Prompting techniques: Concise quality checklist that is easy to verify automatic
 - All new or updated docs must pass a self-review for accuracy, completeness, and clarity.
 - Ensure links are valid and images/diagrams render correctly in GitHub.
 - Update indexes or README tables of contents where applicable.
+- Keep the set in sync after a behaviour, configuration or workflow change: `README.md` (endpoints, config keys and env overrides), `docs/progetto.txt` (architecture, in Italian), `docs/ARCHITECTURE.md` and `docs/DEVELOPMENT.md`, plus `AGENTS.md` and `.github/copilot-instructions.md` when process, test or documentation rules change.
 
 <!--
 Purpose: Visualize the documentation workflow and decision points.

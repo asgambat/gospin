@@ -109,6 +109,7 @@ func (s *ImportService) routeToContainer(route RouteItem) repository.Container {
 
 	active := true
 	favorite := false
+	pinned := false
 	running := false
 
 	return repository.Container{
@@ -117,6 +118,7 @@ func (s *ImportService) routeToContainer(route RouteItem) repository.Container {
 		URL:          url,
 		Active:       &active,
 		Favorite:     &favorite,
+		Pinned:       &pinned,
 		Running:      &running,
 	}
 }

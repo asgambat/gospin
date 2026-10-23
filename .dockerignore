@@ -6,3 +6,13 @@ docker-compose.yml
 dev.Dockerfile
 dev.docker-compose.yml
 .env
+
+# config/actions.yml holds HTTP headers/tokens and is gitignored, but the
+# Docker build context would still copy it into the image (Dockerfile does a
+# full `COPY . .` and then `COPY --from=build /app/config`). Deploy the real
+# file separately, next to the running container.
+config/actions.yml
+
+# Local runtime state (data file and ghostboard persistence). Baking it into
+# the image would ship another deployment's containers and boards.
+config/data/

@@ -2,7 +2,7 @@
 // new install overwrites instead of layering on top of the old cache,
 // and so the activate handler below can deterministically prune stale
 // entries left over from previous versions.
-const CACHE_NAME = 'gosspin-ui-v5';
+const CACHE_NAME = 'gosspin-ui-v6';
 
 self.addEventListener('install', event => {
   // Take control of all clients immediately so the new caching strategy
@@ -16,6 +16,7 @@ self.addEventListener('install', event => {
         '/ui/',
         '/ui/home',
         '/ui/home.js',
+        '/ui/ghostboard',
         '/ui/assets/app.js',
         '/ui/assets/pwa/app-icon-192.png',
         '/ui/assets/pwa/app-icon-512.png',
@@ -59,15 +60,28 @@ self.addEventListener('activate', event => {
 // assets, theme images, etc.) keeps the cache-first strategy for speed.
 self.addEventListener('fetch', event => {
   const url = new URL(event.request.url);
+  const isGhostboardPage = url.pathname === '/ui/ghostboard' ||
+                           url.pathname.startsWith('/ui/ghostboard/');
   const isHTMLorJS = url.pathname === '/ui' ||
                      url.pathname === '/ui/home' ||
                      url.pathname === '/ui/' ||
+                     isGhostboardPage ||
                      url.pathname.endsWith('.js');
 
   if (isHTMLorJS) {
     event.respondWith(
       fetch(event.request)
         .then(response => {
+          // Every /ui/ghostboard/<board> path serves the same page: keep a
+          // single copy under the canonical path instead of one entry per board
+          // name, which would grow the cache without bound.
+          if (isGhostboardPage) {
+            const cloned = response.clone();
+            event.waitUntil(
+              caches.open(CACHE_NAME).then(cache => cache.put('/ui/ghostboard', cloned))
+            );
+            return response;
+          }
           // Clone the response before putting it in cache (the body can
           // only be consumed once). Use waitUntil so the cache write
           // completes even if the fetch handler terminates early.
@@ -77,12 +91,17 @@ self.addEventListener('fetch', event => {
           );
           return response;
         })
-        // ignoreSearch: true is critical — the HTML page injects a
-        // ?v=<hash> cache-busting query parameter on every script tag.
-        // Without it, the offline fallback would look for
-        // /ui/home.js?v=abc123 in cache, miss the pre-cached
-        // /ui/home.js, and serve nothing.
-        .catch(() => caches.match(event.request, { ignoreSearch: true }))
+        .catch(() => {
+          if (isGhostboardPage) {
+            return caches.match('/ui/ghostboard', { ignoreSearch: true });
+          }
+          // ignoreSearch: true is critical — the HTML page injects a
+          // ?v=<hash> cache-busting query parameter on every script tag.
+          // Without it, the offline fallback would look for
+          // /ui/home.js?v=abc123 in cache, miss the pre-cached
+          // /ui/home.js, and serve nothing.
+          return caches.match(event.request, { ignoreSearch: true });
+        })
     );
     return;
   }

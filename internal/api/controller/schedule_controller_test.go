@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/gin-gonic/gin"
@@ -104,7 +105,8 @@ func TestScheduleController_AllSchedules(t *testing.T) {
 func TestScheduleController_CreateOrUpdateSchedule_Valid(t *testing.T) {
 	store := &mockScheduleStore{
 		doc: repository.DataDocument{
-			Schedules: []repository.Schedule{},
+			Containers: []repository.Container{{Name: "my-container"}},
+			Schedules:  []repository.Schedule{},
 		},
 	}
 
@@ -185,6 +187,9 @@ func TestScheduleController_CreateOrUpdateSchedule_ValidationError(t *testing.T)
 func TestScheduleController_CreateOrUpdateSchedule_StoreError(t *testing.T) {
 	store := &mockScheduleStore{
 		addErr: errors.New("store error"),
+		doc: repository.DataDocument{
+			Containers: []repository.Container{{Name: "container1"}},
+		},
 	}
 	sc := NewScheduleController(store)
 
@@ -278,7 +283,8 @@ func TestScheduleController_DeleteSchedule_MissingID(t *testing.T) {
 func TestScheduleController_CreateOrUpdateSchedule_WithMultipleTimers(t *testing.T) {
 	store := &mockScheduleStore{
 		doc: repository.DataDocument{
-			Schedules: []repository.Schedule{},
+			Containers: []repository.Container{{Name: "production-server"}},
+			Schedules:  []repository.Schedule{},
 		},
 	}
 
@@ -324,4 +330,236 @@ func TestScheduleController_CreateOrUpdateSchedule_WithMultipleTimers(t *testing
 	if w.Code != http.StatusOK {
 		t.Errorf("expected status 200, got %d: %s", w.Code, w.Body.String())
 	}
+}
+
+func TestScheduleController_CreateOrUpdateSchedule_PartialTimerAccepted(t *testing.T) {
+	active := true
+
+	tests := []struct {
+		name  string
+		timer Timer
+	}{
+		{
+			name:  "start only",
+			timer: Timer{StartTime: "08:00", Days: []int{1, 2, 3}, Active: &active},
+		},
+		{
+			name:  "stop only",
+			timer: Timer{StopTime: "18:00", Days: []int{1, 2, 3}, Active: &active},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			store := &mockScheduleStore{
+				doc: repository.DataDocument{
+					Containers: []repository.Container{{Name: "container1"}},
+				},
+			}
+			sc := NewScheduleController(store)
+
+			r := gin.New()
+			r.POST("/schedule", sc.CreateOrUpdateSchedule)
+
+			schedule := repository.Schedule{
+				ID:         "sched-" + tt.name,
+				Target:     "container1",
+				TargetType: "container",
+				Timers:     []Timer{tt.timer},
+			}
+			body, _ := json.Marshal(schedule)
+
+			req := httptest.NewRequest(http.MethodPost, "/schedule", bytes.NewReader(body))
+			req.Header.Set("Content-Type", "application/json")
+			w := httptest.NewRecorder()
+
+			r.ServeHTTP(w, req)
+
+			if w.Code != http.StatusOK {
+				t.Errorf("expected status 200, got %d: %s", w.Code, w.Body.String())
+			}
+		})
+	}
+}
+
+func TestScheduleController_CreateOrUpdateSchedule_TimerRequiresStartOrStop(t *testing.T) {
+	active := true
+
+	store := &mockScheduleStore{}
+	sc := NewScheduleController(store)
+
+	r := gin.New()
+	r.POST("/schedule", sc.CreateOrUpdateSchedule)
+
+	schedule := repository.Schedule{
+		ID:         "empty-timer",
+		Target:     "container1",
+		TargetType: "container",
+		Timers:     []Timer{{Days: []int{1}, Active: &active}},
+	}
+	body, _ := json.Marshal(schedule)
+
+	req := httptest.NewRequest(http.MethodPost, "/schedule", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected status 400, got %d: %s", w.Code, w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), "startTime") {
+		t.Errorf("expected the error to mention startTime, got %s", w.Body.String())
+	}
+}
+
+// TestScheduleController_CreateOrUpdateSchedule_TimerRequiresActive pins the
+// contract of the active flag: a timer stored with a nil flag would be read as
+// active by the scheduler but written back as inactive after a reload, so the API
+// rejects the payload instead of guessing.
+func TestScheduleController_CreateOrUpdateSchedule_TimerRequiresActive(t *testing.T) {
+	store := &mockScheduleStore{}
+	sc := NewScheduleController(store)
+
+	r := gin.New()
+	r.POST("/schedule", sc.CreateOrUpdateSchedule)
+
+	payload := `{"id":"no-active","target":"container1","targetType":"container","timers":[{"startTime":"08:00","days":[1]}]}`
+
+	req := httptest.NewRequest(http.MethodPost, "/schedule", strings.NewReader(payload))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected status 400, got %d: %s", w.Code, w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), "Active") {
+		t.Errorf("expected the error to mention Active, got %s", w.Body.String())
+	}
+}
+
+func TestScheduleController_CreateOrUpdateSchedule_InvalidTimeFormat(t *testing.T) {
+	active := true
+
+	tests := []struct {
+		name  string
+		timer Timer
+	}{
+		{name: "invalid start", timer: Timer{StartTime: "not-a-time", StopTime: "18:00", Days: []int{1}, Active: &active}},
+		{name: "out of range stop", timer: Timer{StartTime: "08:00", StopTime: "25:00", Days: []int{1}, Active: &active}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			store := &mockScheduleStore{}
+			sc := NewScheduleController(store)
+
+			r := gin.New()
+			r.POST("/schedule", sc.CreateOrUpdateSchedule)
+
+			schedule := repository.Schedule{
+				ID:         "bad-time",
+				Target:     "container1",
+				TargetType: "container",
+				Timers:     []Timer{tt.timer},
+			}
+			body, _ := json.Marshal(schedule)
+
+			req := httptest.NewRequest(http.MethodPost, "/schedule", bytes.NewReader(body))
+			req.Header.Set("Content-Type", "application/json")
+			w := httptest.NewRecorder()
+
+			r.ServeHTTP(w, req)
+
+			if w.Code != http.StatusBadRequest {
+				t.Errorf("expected status 400, got %d: %s", w.Code, w.Body.String())
+			}
+		})
+	}
+}
+
+func TestScheduleController_CreateOrUpdateSchedule_TargetMustExist(t *testing.T) {
+	active := true
+
+	post := func(t *testing.T, doc repository.DataDocument, sched repository.Schedule) (int, string) {
+		t.Helper()
+
+		store := &mockScheduleStore{doc: doc}
+		sc := NewScheduleController(store)
+
+		r := gin.New()
+		r.POST("/schedule", sc.CreateOrUpdateSchedule)
+
+		body, err := json.Marshal(sched)
+		if err != nil {
+			t.Fatalf("failed to marshal schedule: %v", err)
+		}
+		req := httptest.NewRequest(http.MethodPost, "/schedule", bytes.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+
+		r.ServeHTTP(w, req)
+		return w.Code, w.Body.String()
+	}
+
+	t.Run("container target exists", func(t *testing.T) {
+		doc := repository.DataDocument{Containers: []repository.Container{{Name: "nginx"}}}
+		sched := repository.Schedule{
+			ID: "ok", Target: "nginx", TargetType: "container",
+			Timers: []Timer{{StartTime: "08:00", Days: []int{1}, Active: &active}},
+		}
+
+		code, body := post(t, doc, sched)
+		if code != http.StatusOK {
+			t.Errorf("expected status 200, got %d: %s", code, body)
+		}
+	})
+
+	t.Run("group target exists", func(t *testing.T) {
+		doc := repository.DataDocument{
+			Containers: []repository.Container{{Name: "nginx"}},
+			Groups:     []repository.Group{{Name: "web"}},
+		}
+		sched := repository.Schedule{
+			ID: "ok-group", Target: "web", TargetType: "group",
+			Timers: []Timer{{StopTime: "23:00", Days: []int{1}, Active: &active}},
+		}
+
+		code, body := post(t, doc, sched)
+		if code != http.StatusOK {
+			t.Errorf("expected status 200, got %d: %s", code, body)
+		}
+	})
+
+	t.Run("missing container target", func(t *testing.T) {
+		sched := repository.Schedule{
+			ID: "orphan", Target: "ghost", TargetType: "container",
+			Timers: []Timer{{StartTime: "08:00", Days: []int{1}, Active: &active}},
+		}
+
+		code, body := post(t, repository.DataDocument{}, sched)
+		if code != http.StatusBadRequest {
+			t.Fatalf("expected status 400, got %d: %s", code, body)
+		}
+		if !strings.Contains(body, "not found") {
+			t.Errorf("expected a 'not found' error message, got %s", body)
+		}
+	})
+
+	t.Run("missing group target", func(t *testing.T) {
+		sched := repository.Schedule{
+			ID: "orphan-group", Target: "ghosts", TargetType: "group",
+			Timers: []Timer{{StartTime: "08:00", Days: []int{1}, Active: &active}},
+		}
+
+		code, body := post(t, repository.DataDocument{}, sched)
+		if code != http.StatusBadRequest {
+			t.Fatalf("expected status 400, got %d: %s", code, body)
+		}
+		if !strings.Contains(body, "not found") {
+			t.Errorf("expected a 'not found' error message, got %s", body)
+		}
+	})
 }

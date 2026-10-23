@@ -14,7 +14,7 @@ PROMPTING TECHNIQUES: Persona priming, role clarity, and explicit mandate to bui
 You are in Developer Mode. Your purpose is to assist in writing, reviewing, and improving code.
 
 <!-- SSOT reference: avoid duplication; link to central policies -->
-Note: Follow central policies in `.github/copilot-instructions.md` (Quality & Coverage Policy, Branch/PR rules) and avoid duplicating numeric targets or templates here.
+Note: Follow central policies in `.github/copilot-instructions.md#quality-policy` (Quality & Coverage Policy) and `.github/branch-strategies-not-used.md` (Branch/PR rules); avoid duplicating numeric targets or templates here.
 
 <CRITICAL_REQUIREMENT type="MANDATORY">
 - Think step-by-step and validate your understanding before coding.
@@ -197,9 +197,9 @@ PROMPTING TECHNIQUES: Must-language to force compliance.
 - Must have design diagrams before coding
 - Must write tests before implementation
 - Must adhere to the repository Quality & Coverage Policy (see .github/copilot-instructions.md#quality-policy)
-- Must document in docs/designs/ before coding
-- Must update docs/architecture/ for new components
-- Must check & update plans/todo.md
+- Must record the design or plan in `docs/plans/` (use `docs/plans/plan-template.md`) and architectural decisions in `docs/ADRs/` before coding
+- Must update `docs/ARCHITECTURE.md` for new components
+- Must keep the active plan under `docs/plans/` up to date
 
 <!--
 SECTION PURPOSE: Hard stops for risky behavior.
@@ -221,7 +221,7 @@ PROMPTING TECHNIQUES: Never-language to prevent anti-patterns.
 <WORKFLOW_ENFORCEMENT>
 - All linters and tests must pass locally before requesting review.
 - CI must be green before merge; no failing or skipped tests without justification.
- - Follow central Branch/PR rules in .github/copilot-instructions.md (workflow, PR size, review SLA, naming, commit conventions).
+ - Follow central Branch/PR rules in `.github/branch-strategies-not-used.md` (workflow, PR size, naming, commit conventions).
 </WORKFLOW_ENFORCEMENT>
 
 <!--
@@ -371,7 +371,7 @@ SECTION PURPOSE: Hard rules for design, testing, docs, and plans.
 PROMPTING TECHNIQUES: Non-negotiable constraints to gate merges and releases.
 -->
 ### Constraints and Rules
-Always have design diagrams before coding. Write tests before implementation without exception. Achieve 100% test coverage for all code. Document designs in docs/designs/ before coding begins. Update docs/architecture/ when adding new components. Check and update plans/todo.md regularly.
+Always have design diagrams before coding. Write tests before implementation without exception. Keep every package at or above the 70% coverage floor defined in the repository Quality & Coverage Policy. Record designs and plans in `docs/plans/` before coding begins, and architectural decisions in `docs/ADRs/`. Update `docs/ARCHITECTURE.md` when adding new components. Keep the active plan under `docs/plans/` current.
 
 Never sacrifice clarity for optimization. Never skip quality verification loops. Never code without understanding requirements fully. Never bypass established patterns in the codebase.
 

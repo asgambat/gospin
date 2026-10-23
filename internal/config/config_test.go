@@ -1,9 +1,16 @@
 package config
 
 import (
+	"bytes"
 	"os"
+	"strings"
 	"testing"
 	"time"
+
+	"github.com/sirupsen/logrus"
+	"github.com/spf13/viper"
+
+	"github.com/bassista/go_spin/internal/logger"
 )
 
 func TestConfig_Validate_Valid(t *testing.T) {
@@ -31,6 +38,7 @@ func TestConfig_Validate_Valid(t *testing.T) {
 			SchedulingTZ: "Local",
 			RuntimeType:  "docker",
 		},
+		Ghostboard: DefaultGhostboardConfig(),
 	}
 
 	if err := cfg.validate(); err != nil {
@@ -266,6 +274,7 @@ func TestConfig_Validate_ValidTimezones(t *testing.T) {
 				Misc: MiscConfig{
 					SchedulingTZ: tz,
 				},
+				Ghostboard: DefaultGhostboardConfig(),
 			}
 
 			if err := cfg.validate(); err != nil {
@@ -458,6 +467,7 @@ func TestConfig_Validate_ValidActionsModes(t *testing.T) {
 				Misc: MiscConfig{
 					SchedulingTZ: "Local",
 				},
+				Ghostboard: DefaultGhostboardConfig(),
 			}
 
 			if err := cfg.validate(); err != nil {
@@ -517,6 +527,7 @@ func TestConfig_Validate_EmptyTimezone(t *testing.T) {
 		Misc: MiscConfig{
 			SchedulingTZ: "",
 		},
+		Ghostboard: DefaultGhostboardConfig(),
 	}
 
 	// Empty timezone should be valid (defaults to Local)
@@ -718,5 +729,255 @@ func TestLoadConfig_UsesExistingDataFile(t *testing.T) {
 	}
 	if string(content) != existingContent {
 		t.Errorf("expected '%s', got '%s'", existingContent, string(content))
+	}
+}
+
+func TestCORSAllowedOrigins(t *testing.T) {
+	tests := []struct {
+		name     string
+		misc     string
+		server   string
+		expected string
+	}{
+		{name: "canonical misc key", misc: "https://ui.example", expected: "https://ui.example"},
+		{name: "canonical key wins over deprecated alias", misc: "https://ui.example", server: "https://legacy.example", expected: "https://ui.example"},
+		{name: "deprecated server key is honoured", server: "https://legacy.example", expected: "https://legacy.example"},
+		{name: "default when neither key is set", expected: defaultCORSAllowedOrigins},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			viper.Reset()
+			t.Cleanup(viper.Reset)
+			if tt.misc != "" {
+				viper.Set("misc.cors_allowed_origins", tt.misc)
+			}
+			if tt.server != "" {
+				viper.Set("server.cors_allowed_origins", tt.server)
+			}
+
+			if got := corsAllowedOrigins(); got != tt.expected {
+				t.Errorf("corsAllowedOrigins() = %q, want %q", got, tt.expected)
+			}
+		})
+	}
+}
+
+// TestCORSAllowedOrigins_LogsConflictingKeys covers the upgrade hazard: an
+// installation still overriding the deprecated key through the environment while
+// the configuration file carries the canonical one would otherwise change its
+// allow-list without any trace in the logs.
+func TestCORSAllowedOrigins_LogsConflictingKeys(t *testing.T) {
+	tests := []struct {
+		name     string
+		misc     string
+		server   string
+		expected string
+		wantWarn bool
+	}{
+		{name: "different values warn and keep the canonical key", misc: "https://ui.example", server: "*", expected: "https://ui.example", wantWarn: true},
+		{name: "identical values do not warn", misc: "https://ui.example", server: "https://ui.example", expected: "https://ui.example"},
+		{name: "deprecated key alone warns", server: "https://legacy.example", expected: "https://legacy.example", wantWarn: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var buf bytes.Buffer
+			original := logger.Logger.Out
+			logger.Logger.SetOutput(&buf)
+			t.Cleanup(func() { logger.Logger.SetOutput(original) })
+
+			viper.Reset()
+			t.Cleanup(viper.Reset)
+			if tt.misc != "" {
+				viper.Set("misc.cors_allowed_origins", tt.misc)
+			}
+			if tt.server != "" {
+				viper.Set("server.cors_allowed_origins", tt.server)
+			}
+
+			if got := corsAllowedOrigins(); got != tt.expected {
+				t.Errorf("corsAllowedOrigins() = %q, want %q", got, tt.expected)
+			}
+
+			logged := buf.String()
+			if !tt.wantWarn {
+				if strings.Contains(logged, logrus.WarnLevel.String()) {
+					t.Errorf("expected no warning, got %q", logged)
+				}
+				return
+			}
+
+			if !strings.Contains(logged, logrus.WarnLevel.String()) {
+				t.Fatalf("expected a warning, got %q", logged)
+			}
+			if !strings.Contains(logged, "server.cors_allowed_origins") {
+				t.Errorf("expected the warning to name the deprecated key, got %q", logged)
+			}
+		})
+	}
+}
+
+func TestLoadConfig_CORSAllowedOriginsFromEnv(t *testing.T) {
+	tempDir := t.TempDir()
+	dataFilePath := tempDir + "/data/config.json"
+
+	_ = os.Setenv("GO_SPIN_CONFIG_PATH", tempDir)
+	_ = os.Setenv("GO_SPIN_DATA_FILE_PATH", dataFilePath)
+	_ = os.Setenv("GO_SPIN_MISC_CORS_ALLOWED_ORIGINS", "https://ui.example")
+	defer func() {
+		_ = os.Unsetenv("GO_SPIN_CONFIG_PATH")
+		_ = os.Unsetenv("GO_SPIN_DATA_FILE_PATH")
+		_ = os.Unsetenv("GO_SPIN_MISC_CORS_ALLOWED_ORIGINS")
+	}()
+
+	cfg, err := LoadConfig()
+	if err != nil {
+		t.Fatalf("expected no error, got: %v", err)
+	}
+
+	if cfg.Server.CORSAllowedOrigins != "https://ui.example" {
+		t.Errorf("expected CORS origins from env, got %q", cfg.Server.CORSAllowedOrigins)
+	}
+}
+
+func TestGhostboardConfig_WithDefaults(t *testing.T) {
+	defaults := DefaultGhostboardConfig()
+
+	empty := GhostboardConfig{}.WithDefaults()
+	if empty.ClearDelay != defaults.ClearDelay {
+		t.Errorf("ClearDelay = %v, want %v", empty.ClearDelay, defaults.ClearDelay)
+	}
+	if empty.MaxTextBytes != defaults.MaxTextBytes {
+		t.Errorf("MaxTextBytes = %d, want %d", empty.MaxTextBytes, defaults.MaxTextBytes)
+	}
+	if empty.PersistInterval != defaults.PersistInterval {
+		t.Errorf("PersistInterval = %v, want %v", empty.PersistInterval, defaults.PersistInterval)
+	}
+	if empty.HeartbeatInterval != defaults.HeartbeatInterval {
+		t.Errorf("HeartbeatInterval = %v, want %v", empty.HeartbeatInterval, defaults.HeartbeatInterval)
+	}
+	if empty.FilePath != "" {
+		t.Errorf("FilePath = %q, want empty (persistence disabled)", empty.FilePath)
+	}
+
+	custom := GhostboardConfig{
+		FilePath:          "/tmp/boards.json",
+		ClearDelay:        time.Minute,
+		MaxTextBytes:      2048,
+		PersistInterval:   time.Second,
+		HeartbeatInterval: 5 * time.Second,
+	}
+	if got := custom.WithDefaults(); got != custom {
+		t.Errorf("WithDefaults() changed a fully configured value: %+v", got)
+	}
+}
+
+func TestConfig_Validate_InvalidGhostboard(t *testing.T) {
+	base := func() *Config {
+		return &Config{
+			Server: ServerConfig{
+				Port:            8080,
+				ReadTimeout:     10 * time.Second,
+				WriteTimeout:    10 * time.Second,
+				IdleTimeout:     120 * time.Second,
+				ShutDownTimeout: 5 * time.Second,
+				RequestTimeout:  1000 * time.Millisecond,
+			},
+			Data: DataConfig{
+				FilePath:                 "/tmp/config.json",
+				PersistInterval:          5 * time.Second,
+				SchedulingPoll:           30 * time.Second,
+				RefreshIntervalSecs:      60,
+				StatsRefreshIntervalSecs: 120,
+				ActionsTimeoutSeconds:    30,
+			},
+			Misc: MiscConfig{
+				SchedulingTZ: "Local",
+			},
+			Ghostboard: DefaultGhostboardConfig(),
+		}
+	}
+
+	tests := []struct {
+		mutate func(*GhostboardConfig)
+		name   string
+	}{
+		{name: "clear delay", mutate: func(g *GhostboardConfig) { g.ClearDelay = 0 }},
+		{name: "max text bytes", mutate: func(g *GhostboardConfig) { g.MaxTextBytes = 0 }},
+		{name: "persist interval", mutate: func(g *GhostboardConfig) { g.PersistInterval = 0 }},
+		{name: "heartbeat interval", mutate: func(g *GhostboardConfig) { g.HeartbeatInterval = 0 }},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := base()
+			tt.mutate(&cfg.Ghostboard)
+			if err := cfg.validate(); err == nil {
+				t.Fatal("expected a validation error, got nil")
+			}
+		})
+	}
+}
+
+func TestLoadConfig_GhostboardDefaults(t *testing.T) {
+	tempDir := t.TempDir()
+	dataFilePath := tempDir + "/data/config.json"
+
+	_ = os.Setenv("GO_SPIN_CONFIG_PATH", tempDir)
+	_ = os.Setenv("GO_SPIN_DATA_FILE_PATH", dataFilePath)
+	defer func() {
+		_ = os.Unsetenv("GO_SPIN_CONFIG_PATH")
+		_ = os.Unsetenv("GO_SPIN_DATA_FILE_PATH")
+	}()
+
+	cfg, err := LoadConfig()
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+
+	defaults := DefaultGhostboardConfig()
+	if cfg.Ghostboard.ClearDelay != defaults.ClearDelay {
+		t.Errorf("ClearDelay = %v, want %v", cfg.Ghostboard.ClearDelay, defaults.ClearDelay)
+	}
+	if cfg.Ghostboard.MaxTextBytes != defaults.MaxTextBytes {
+		t.Errorf("MaxTextBytes = %d, want %d", cfg.Ghostboard.MaxTextBytes, defaults.MaxTextBytes)
+	}
+	if cfg.Ghostboard.PersistInterval != defaults.PersistInterval {
+		t.Errorf("PersistInterval = %v, want %v", cfg.Ghostboard.PersistInterval, defaults.PersistInterval)
+	}
+	if cfg.Ghostboard.HeartbeatInterval != defaults.HeartbeatInterval {
+		t.Errorf("HeartbeatInterval = %v, want %v", cfg.Ghostboard.HeartbeatInterval, defaults.HeartbeatInterval)
+	}
+	if want := tempDir + "/data/ghostboard.json"; cfg.Ghostboard.FilePath != want {
+		t.Errorf("FilePath = %q, want %q", cfg.Ghostboard.FilePath, want)
+	}
+}
+
+func TestLoadConfig_GhostboardEnvOverrides(t *testing.T) {
+	tempDir := t.TempDir()
+	dataFilePath := tempDir + "/data/config.json"
+	boardFilePath := tempDir + "/boards/custom.json"
+
+	_ = os.Setenv("GO_SPIN_CONFIG_PATH", tempDir)
+	_ = os.Setenv("GO_SPIN_DATA_FILE_PATH", dataFilePath)
+	_ = os.Setenv("GO_SPIN_GHOSTBOARD_FILE_PATH", boardFilePath)
+	_ = os.Setenv("GO_SPIN_GHOSTBOARD_MAX_TEXT_BYTES", "2048")
+	defer func() {
+		_ = os.Unsetenv("GO_SPIN_CONFIG_PATH")
+		_ = os.Unsetenv("GO_SPIN_DATA_FILE_PATH")
+		_ = os.Unsetenv("GO_SPIN_GHOSTBOARD_FILE_PATH")
+		_ = os.Unsetenv("GO_SPIN_GHOSTBOARD_MAX_TEXT_BYTES")
+	}()
+
+	cfg, err := LoadConfig()
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+	if cfg.Ghostboard.FilePath != boardFilePath {
+		t.Errorf("FilePath = %q, want %q", cfg.Ghostboard.FilePath, boardFilePath)
+	}
+	if cfg.Ghostboard.MaxTextBytes != 2048 {
+		t.Errorf("MaxTextBytes = %d, want 2048", cfg.Ghostboard.MaxTextBytes)
 	}
 }

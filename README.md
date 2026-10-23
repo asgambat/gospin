@@ -14,7 +14,7 @@ I have decided to rewrite the project in Go to leverage its performance, concurr
 
 - **Container Management**: Register and manage Docker containers with friendly names and URLs
 - **Groups**: Organize containers into logical groups for batch operations
-- **Schedules**: Define time-based schedules with multiple timers per target
+- **Schedules**: Define time-based schedules with multiple timers per target, each able to start, stop or do both
 - **Automatic Start/Stop**: Containers are automatically started/stopped based on schedules
 - **Web UI**: Modern SPA interface built with Alpine.js for visual management
 - **REST API**: Full JSON API for programmatic access
@@ -67,12 +67,12 @@ The version string rendered in the bottom-right of the dashboard is **not** read
 
 | Variable | Source (Makefile default) | Example value |
 |----------|---------------------------|---------------|
-| `Version` | `git describe --tags --always --dirty` (fallback `0.0.11`) | `v1.2.3`, `v1.2.3-4-gabc1234`, `v1.2.3-dirty` |
+| `Version` | `git describe --tags --always --dirty` (fallback `0.0.12`) | `v1.2.3`, `v1.2.3-4-gabc1234`, `v1.2.3-dirty` |
 | `BuildTime` | `date -u '+%Y-%m-%d_%H:%M:%S'` | `2026-06-22 14:30:00` |
 | `GitCommit` | `git rev-parse --short HEAD` (fallback `unknown`) | `abc1234` |
 | `GoVersion` | `go version \| awk '{print $3}'` | `go1.25.6` |
 
-The same four `-X` flags are baked into `Dockerfile` via `--build-arg VERSION=… BUILD_TIME=… GIT_COMMIT=… GO_VERSION=…`, so multi-arch CI builds (`.github/workflows/docker_build_push.yml`) embed the same metadata into the published image. There is no environment variable that can override these at runtime — they are part of the compiled binary.
+The same four `-X` flags are baked into `Dockerfile` via `--build-arg VERSION=… BUILD_TIME=… GIT_COMMIT=… GO_VERSION=…`, so multi-arch CI builds embed the same metadata into the published image. Version tags (`v*.*.*`) are published by `.github/workflows/docker-release.yml` to both `ghcr.io` and Docker Hub; `.github/workflows/docker_build_push.yml` handles `main` pushes, pull requests and manual runs. There is no environment variable that can override these at runtime — they are part of the compiled binary.
 
 ### Access
 
@@ -109,6 +109,13 @@ misc:
   cors_allowed_origins: "*"      # CORS origins, default "*"
   cosmos_base_url: ""            # Cosmos API base URL (e.g., "https://cosmos.example.com")
   cosmos_token: ""               # Cosmos API bearer token for authentication
+
+ghostboard:
+  file_path: ""                  # defaults to <dir of data.file_path>/ghostboard.json
+  clear_delay_secs: 300          # text is kept this long after the last client disconnects
+  max_text_bytes: 16777216       # largest decoded text per board (16 MiB); the body limit derives from it
+  persist_interval_secs: 2       # interval between writes of pending changes
+  heartbeat_interval_secs: 25    # SSE keep-alive comment interval
 ```
 
 ### Environment Variables
@@ -155,6 +162,11 @@ misc:
   cors_allowed_origins: "http://localhost:3000,https://your-domain.com"
 ```
 
+`misc.cors_allowed_origins` is the canonical key. The older `server.cors_allowed_origins` is
+still read as a deprecated alias, but `misc.cors_allowed_origins` wins when both are set; a
+conflicting pair is reported with a startup warning that names both values, so an upgrade cannot
+change the allow-list silently.
+
 ### Docker Socket Security
 
 GoSpin requires access to the Docker socket (`/var/run/docker.sock`). This grants significant privileges:
@@ -191,9 +203,9 @@ The web interface provides visual management for:
 
 | Tab | Features |
 |-----|----------|
-| **Containers** | List, Add, Edit, Delete, Start/Stop |
+| **Containers** | List, Add, Edit, Delete, Start/Stop, Pin, Favorite |
 | **Groups** | List, Add, Edit, Delete, Multi-select containers |
-| **Schedules** | List, Add, Edit, Delete, Full timer editor with day selection |
+| **Schedules** | List, Add, Edit, Delete, Full timer editor with day selection and optional start/stop times |
 
 Access the UI at `http://localhost:8084/ui`
 
@@ -202,6 +214,9 @@ Access the UI at `http://localhost:8084/ui`
 - **Real-time Status**: Container running status updates automatically
 - **Bulk Operations**: Select multiple containers for group operations
 - **Schedule Visualization**: Visual day selector for timer configuration
+- **Missing Containers Cleanup**: Preview and confirm removal of registry entries whose Docker container no longer exists
+- **Ghostboard**: Per-path shared text board with live Server-Sent Events sync, dark mode and `.txt` download
+- **Pinned Containers**: Pinned containers stay at the top of the list, sorted alphabetically, regardless of the selected sort column; a 📌 toggle filters the list to pinned containers only
 - **URL Generation**: Auto-generates container URLs based on `base_url` configuration
 - **Responsive Design**: Works on desktop and mobile devices
 - **Error Handling**: User-friendly error messages for failed operations
@@ -305,6 +320,10 @@ Two files work together:
 | `config/homepage.yaml` → `actions:` section | Visual definition: name, icon, description, and a **reference key** |
 | `config/actions.yml` | Technical definition: HTTP method, target URL, headers, and body |
 
+`config/actions.yml` is optional. When it is missing or defines no action, the dashboard simply has
+no action buttons and the startup dangling-reference check is skipped instead of warning about every
+reference in `homepage.yaml`.
+
 #### `config/actions.yml` — Technical configuration (server-side only)
 
 ```yaml
@@ -340,10 +359,29 @@ Configured via `data.actions_mode` in `config/config.yaml`:
 
 | Mode | Server returns | Modal shows |
 |------|---------------|-------------|
-| `sync` | `{statusCode, body}` | Status code + full response body |
-| `async` (default) | `{statusCode}` | ✅ OK (2xx) or ❌ KO (otherwise) |
+| `sync` | `{mode, statusCode, body}` | Status code + response body (up to 1 MB) |
+| `async` (default) | `{mode, statusCode}` | ✅ OK (2xx) or ❌ KO (otherwise) |
 
 The action timeout is configured globally via `data.actions_timeout_seconds` (default: 30s).
+
+#### Responses and errors
+
+Every response is JSON and carries `mode` (`sync` or `async`), errors included, so the frontend
+never has to infer the layout from the presence of a body.
+
+| Status | Cause | Body |
+| --- | --- | --- |
+| `200` | The target answered. Its own status is reported in `statusCode`, so a target `500` is still an HTTP `200` here. | `{mode, statusCode, body?}` |
+| `400` | `actionName` missing/empty, or a request body that is not valid JSON. | `{error, mode}` |
+| `404` | `actionName` is not defined in `actions.yml`, including when the file does not exist: it is optional and then yields an empty action set. | `{error, mode}` |
+| `500` | `actions.yml` exists but cannot be used: invalid YAML, an action without `method` or `url`, or a URL whose scheme is not `http`/`https`. The file is re-read on the next request, so fixing it needs no restart. | `{error, mode}` |
+| `502` | The outbound request failed: unreachable host, connection refused, TLS error, or the action exceeded `data.actions_timeout_seconds`. | `{error, mode}` |
+
+In `sync` mode the target's body is read up to 1 MB and the rest is dropped: the response is
+returned truncated and carries no truncation flag. `async` mode never reads the target body.
+The route is also wrapped by the generic request-timeout middleware, which can answer
+`504 {"error": "request timeout"}` without `mode` if a handler finishes after the deadline
+without writing anything; the action controller normally writes the `502` itself first.
 
 #### Security
 
@@ -373,9 +411,51 @@ The action timeout is configured globally via `data.actions_timeout_seconds` (de
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | GET | `/containers` | List all containers |
+| GET | `/containers/orphans` | Preview registry containers missing from the runtime |
+| POST | `/containers/orphans/remove` | Remove the confirmed missing containers |
 | POST | `/containers/import` | Import containers from Cosmos API |
 | POST | `/container` | Create/update container |
 | DELETE | `/container/:name` | Delete container |
+
+#### Cleaning up missing containers
+
+When a container is removed outside GoSpin (for example `docker rm`), its registry entry stays
+behind. The **Cleanup** button in the Containers tab runs a check against the container runtime
+(`docker ps -a` through the Docker SDK) and shows the entries that no longer exist:
+
+1. `GET /containers/orphans` returns the candidates and **deletes nothing**. It compares the
+   registry with `ListContainers` of the runtime, so stopped containers still count as existing.
+2. The UI lists them in a confirmation modal. **Cancel** discards the list and nothing is removed.
+3. `POST /containers/orphans/remove` with `{"names":["a","b"]}` performs the deletion. Every
+   name is re-checked against the runtime first: containers that reappeared (or are not in the
+   registry) are reported under `skipped` instead of being deleted. The response is
+   `{"removed":[...],"skipped":[...]}`.
+
+Removing a container also deletes the schedules that target it and drops its references from
+groups. A runtime failure returns `500` and leaves the registry untouched. With
+`misc.runtime_type: memory` the runtime has no container daemon and mirrors the registry, so no
+container is ever reported as missing.
+
+#### Pinning containers
+
+A container can be pinned with the 📌 toggle in the Containers tab (or the **Pin to top**
+checkbox of the edit form). The flag is stored in the registry as the optional boolean
+`pinned` field of `POST /container`:
+
+```json
+{"name":"nginx","friendly_name":"Nginx","url":"http://nginx.local","active":true,"running":false,"favorite":false,"pinned":true}
+```
+
+Pinned containers are always listed before the others and sorted alphabetically by name,
+whatever the selected sort column and direction; the remaining containers keep the chosen
+sort. The 📌 button next to the name filter restricts the list to pinned containers and can
+be combined with the “favorites only” filter, while the container details modal shows the
+current pin state. Both filter toggles are persisted in `localStorage` under the key
+`gosspin.containerFilters` (a `{"favoritesOnly":bool,"pinnedOnly":bool}` object) and
+restored on page load, so they survive a reload; if storage is unavailable the filters
+simply start disabled. Pinning is independent from `favorite`, which only drives the
+“favorites only” filter. Clients that omit `pinned` on an update reset it to `false`, so a
+full container payload is required to preserve the flag.
 
 ### Groups
 | Method | Endpoint | Description |
@@ -391,6 +471,32 @@ The action timeout is configured globally via `data.actions_timeout_seconds` (de
 | POST | `/schedule` | Create/update schedule |
 | DELETE | `/schedule/:id` | Delete schedule |
 
+#### Timer semantics
+
+Each timer is `{startTime, stopTime, days, active}`. `startTime` and `stopTime` are both
+optional, but **at least one of them must be set** (otherwise the API answers `400` with
+`timer <n> must define startTime, stopTime or both`). `active` is required: a timer without it
+is rejected with `400`, because a stored timer always has an explicit state (absent would mean
+"active" to the scheduler and "inactive" after a reload of the data file). Times use `HH:MM`.
+
+| Timer | Behaviour |
+|-------|-----------|
+| `startTime` + `stopTime` | Window: the target is started at `startTime` and stopped at `stopTime` (a window crossing midnight is supported, e.g. `22:00` → `06:00`). |
+| `startTime` only | The target is started at `startTime` on the selected days and left running; nothing stops it automatically until a stop-only timer or a manual stop. |
+| `stopTime` only | The target is stopped at `stopTime` on the selected days, even if GoSpin did not start it (e.g. a container started manually). |
+
+A start-only timer keeps the target up until midnight, so a stop-only timer that is due the same
+day overrides it: the explicit stop wins and the container is not restarted until the next day.
+A start+stop window that contains the current time always wins over a stop-only timer, since the
+window declares its own end.
+
+`days` uses `0`=Sunday ... `6`=Saturday; a timer with an empty `days` array never fires. At most
+one start and one stop are attempted per container per day.
+
+The schedule target must already exist: `POST /schedule` returns `400` with
+`target container "<name>" not found` (or `target group "<name>" not found`) when it does not,
+because the data file loader prunes schedules whose target is missing. Deleting a container or a
+group automatically deletes the schedules that target it.
 
 ### Runtime Control
 | Method | Endpoint | Description |
@@ -410,7 +516,92 @@ The action timeout is configured globally via `data.actions_timeout_seconds` (de
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | GET | `/homepage` | Get homepage configuration (services, bookmarks, actions, settings) |
-| POST | `/homepage/action` | Execute a named HTTP action via server-side proxy. Body: `{"actionName": "..."}` |
+| POST | `/homepage/action` | Execute a named HTTP action via server-side proxy. Body: `{"actionName": "..."}`. Responses: `200`/`400`/`404`/`500`/`502`, all JSON with `mode` (see [Responses and errors](#responses-and-errors)) |
+
+Sections missing from `homepage.yaml` are returned as empty arrays (`services: []`, `bookmarks: []`,
+`actions: []`) instead of `null`, and every group always carries an `items` array. A file without an
+`actions:` section therefore renders no action buttons instead of failing the dashboard template.
+
+### Ghostboard
+| Method | Endpoint | Description |
+| ------ | -------- | ----------- |
+| GET | `/ghostboard/:board` | Read a board's text, revision and last update time |
+| POST | `/ghostboard/:board` | Replace a board's text (JSON, form field or raw body) |
+| GET | `/ghostboard/:board/events` | Server-Sent Events stream with the current text and every change |
+
+#### The Ghostboard page
+
+`/ui/ghostboard` is a shared-text page inspired by
+[Ghostboard](https://github.com/jon6fingrs/ghostboard): type or paste text and every browser
+on the same board sees it live. Each URL path is an independent board, so
+`/ui/ghostboard` is the `default` board while `/ui/ghostboard/lavoro` and
+`/ui/ghostboard/note` hold separate texts. Board names accept 1-64 letters, digits, dots,
+dashes and underscores (they must start with a letter or digit).
+
+How it behaves:
+
+- Every open page receives the current snapshot and then live changes over **Server-Sent
+  Events** (`/ghostboard/:board/events`). The handler streams directly from the Go server; the
+  SSE route bypasses the gzip middleware and the 1-second request timeout, and clears the
+  server write deadline so long-lived connections are not cut off.
+- Local edits are sent with a 300 ms debounce. The tab id travels in the `X-Ghostboard-Client`
+  header and comes back on the event, so a tab ignores the echo of its own write and the caret
+  does not jump. Remote changes that arrive while local text is unsaved are queued and applied
+  after the next successful save, only when they are newer than the saved revision.
+- Closing the tab with unsaved text flushes it with `navigator.sendBeacon`.
+- The 🌙/☀️ toggle switches the page theme; the choice is stored in `localStorage` under
+  `gosspin.ghostboard.theme`. **Download .txt** saves the current board as `<board>.txt`.
+- There is **no authentication**: anyone who can reach the server can read and rewrite every
+  board. This matches the upstream project's warning; keep it on a trusted network.
+
+Writing and reading boards from a shell:
+
+```bash
+# Write a JSON payload
+curl -X POST http://localhost:8084/ghostboard/lavoro \
+  -H 'Content-Type: application/json' -d '{"text":"hello"}'
+
+# Send a raw body exactly as-is (newlines included)
+curl -X POST http://localhost:8084/ghostboard/lavoro --data-binary @example.txt
+
+# Send a form field (& and + are encoded correctly this way)
+curl -X POST http://localhost:8084/ghostboard/lavoro --data-urlencode "text=hello & goodbye"
+
+# Clear a board
+curl -X POST http://localhost:8084/ghostboard/lavoro \
+  -H 'Content-Type: application/json' -d '{"text":""}'
+
+# Read the current text
+curl http://localhost:8084/ghostboard/lavoro
+```
+
+A request whose **decoded text** exceeds `ghostboard.max_text_bytes` is rejected with `413`;
+invalid board names return `400`. The body limit is derived from the same value and leaves room
+for the encoding (six bytes per text byte for JSON escapes, three for percent-encoded forms), so
+a payload full of newlines or quotes is not rejected while its text is within the limit. For
+form-encoded bodies, the `text` field wins when present; a body without it (for example a plain
+`curl -d 'hello'`) is stored verbatim, while `text=` clears the board.
+
+Boards are written to a dedicated JSON file, separate from the container registry, every
+`ghostboard.persist_interval_secs`: the tick only writes when something changed. A board keeps
+its text for `ghostboard.clear_delay_secs` after the last browser disconnects, then it is
+emptied; empty boards are pruned from the file, so a restart keeps the boards that are still in
+use. The file survives restarts and is not pruned by the registry watcher.
+
+#### Ghostboard configuration
+
+| Key | Default | Description |
+| --- | ------- | ----------- |
+| `ghostboard.file_path` | `<dir of data.file_path>/ghostboard.json` | JSON file holding the boards |
+| `ghostboard.clear_delay_secs` | `300` | Seconds a board keeps its text after the last client disconnects |
+| `ghostboard.max_text_bytes` | `16777216` | Largest decoded text accepted per board; the request body limit is derived from it |
+| `ghostboard.persist_interval_secs` | `2` | Interval between writes of pending changes (a tick with no changes writes nothing) |
+| `ghostboard.heartbeat_interval_secs` | `25` | Keep-alive comment interval on the SSE stream |
+
+All options can be overridden with the environment variables
+`GO_SPIN_GHOSTBOARD_FILE_PATH`, `GO_SPIN_GHOSTBOARD_CLEAR_DELAY_SECS`,
+`GO_SPIN_GHOSTBOARD_MAX_TEXT_BYTES`, `GO_SPIN_GHOSTBOARD_PERSIST_INTERVAL_SECS` and
+`GO_SPIN_GHOSTBOARD_HEARTBEAT_INTERVAL_SECS`.
 
 ### API Examples
 
@@ -429,7 +620,7 @@ curl -X POST http://localhost:8084/container \
 # Start container
 curl -X POST http://localhost:8084/runtime/nginx/start
 
-# Create schedule
+# Create schedule with a start/stop window
 curl -X POST http://localhost:8084/schedule \
   -H "Content-Type: application/json" \
   -d '{
@@ -437,6 +628,26 @@ curl -X POST http://localhost:8084/schedule \
     "target": "nginx",
     "targetType": "container",
     "timers": [{"startTime":"08:00","stopTime":"18:00","days":[1,2,3,4,5],"active":true}]
+  }'
+
+# Start-only timer (no automatic stop)
+curl -X POST http://localhost:8084/schedule \
+  -H "Content-Type: application/json" \
+  -d '{
+    "id": "nginx-morning",
+    "target": "nginx",
+    "targetType": "container",
+    "timers": [{"startTime":"07:30","days":[1,2,3,4,5],"active":true}]
+  }'
+
+# Stop-only timer (e.g. shut everything down at night)
+curl -X POST http://localhost:8084/schedule \
+  -H "Content-Type: application/json" \
+  -d '{
+    "id": "nginx-night",
+    "target": "nginx",
+    "targetType": "container",
+    "timers": [{"stopTime":"23:00","days":[0,1,2,3,4,5,6],"active":true}]
   }'
 ```
 
@@ -494,9 +705,10 @@ cp config/config.yaml config/config.yaml.bak
 #### Schedule Not Running
 1. Check `misc.scheduling_enabled: true` in configuration
 2. Verify timezone setting: `misc.scheduling_timezone`
-3. Check schedule format: times in HH:MM format
-4. Verify days array: 0=Sunday, 1=Monday, etc.
-5. Check logs for scheduling errors
+3. Check schedule format: times in HH:MM format, and every timer defines `startTime`, `stopTime` or both
+4. Verify days array: 0=Sunday, 1=Monday, etc. (an empty array never fires)
+5. Check the timer `active` flag
+6. Check logs for scheduling errors
 
 #### Container Won't Start
 1. Verify container name exists in Docker

@@ -2,6 +2,7 @@ package route
 
 import (
 	"net/http"
+	"strings"
 
 	"github.com/gin-contrib/gzip"
 	"github.com/gin-gonic/gin"
@@ -11,12 +12,27 @@ import (
 	"github.com/bassista/go_spin/internal/app"
 )
 
+// isGhostboardEventStream reports whether path targets the ghostboard SSE
+// endpoint, which must not be compressed.
+func isGhostboardEventStream(path string) bool {
+	return strings.HasPrefix(path, "/ghostboard/") && strings.HasSuffix(path, "/events")
+}
+
 func SetupRoutes(appCtx *app.App, logger *logrus.Logger) *gin.Engine {
 	r := gin.New()
 	r.Use(middleware.HoneybadgerMiddleware(logger))
 	r.Use(gin.Recovery())
-	r.Use(gzip.Gzip(gzip.DefaultCompression))
-	r.Use(middleware.HoneybadgerMiddleware(logger))
+	gzipHandler := gzip.Gzip(gzip.DefaultCompression)
+	r.Use(func(c *gin.Context) {
+		if isGhostboardEventStream(c.Request.URL.Path) {
+			// Compression buffers the response and hides the underlying
+			// http.ResponseWriter, so the stream handler could not clear the
+			// server write timeout for the long-lived connection.
+			c.Next()
+			return
+		}
+		gzipHandler(c)
+	})
 	r.Use(middleware.CORSMiddleware(appCtx.Config.Server.CORSAllowedOrigins))
 
 	r.GET("/health", func(c *gin.Context) {
@@ -34,6 +50,7 @@ func SetupRoutes(appCtx *app.App, logger *logrus.Logger) *gin.Engine {
 	NewRuntimeRouter(appCtx, publicRouter)
 	NewConfigurationRouter(appCtx, publicRouter)
 	NewHomepageRouter(appCtx, publicRouter)
+	NewGhostboardRouter(appCtx, publicRouter)
 
 	// UI static files
 	NewUIRouter(r)

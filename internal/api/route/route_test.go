@@ -12,6 +12,7 @@ import (
 
 	"github.com/bassista/go_spin/internal/app"
 	"github.com/bassista/go_spin/internal/config"
+	"github.com/bassista/go_spin/internal/ghostboard"
 	"github.com/bassista/go_spin/internal/repository"
 	"github.com/bassista/go_spin/internal/runtime"
 )
@@ -71,11 +72,21 @@ func testApp() *app.App {
 			ActionsTimeoutSeconds: 30,
 		},
 	}
+	ghostboardStore, err := ghostboard.New(ghostboard.Config{
+		ClearDelay:      time.Minute,
+		MaxTextBytes:    1024,
+		PersistInterval: time.Second,
+	})
+	if err != nil {
+		panic(err)
+	}
+
 	return &app.App{
-		Config:  cfg,
-		Cache:   &stubStore{},
-		Runtime: &stubRuntime{},
-		BaseCtx: context.Background(),
+		Config:     cfg,
+		Cache:      &stubStore{},
+		Runtime:    &stubRuntime{},
+		Ghostboard: ghostboardStore,
+		BaseCtx:    context.Background(),
 	}
 }
 

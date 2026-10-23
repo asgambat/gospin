@@ -120,6 +120,62 @@ type HomepageConfig struct {
 	Settings  HomepageSettings `yaml:"settings" json:"settings"`
 }
 
+// normalizeHomepageConfig applies the documented defaults and makes every
+// collection non-nil. The JSON response must carry empty arrays instead of
+// null: the Alpine templates iterate the sections with x-for, which fails on a
+// null value, and a missing YAML key is a normal configuration, not an error.
+func normalizeHomepageConfig(cfg *HomepageConfig) {
+	if cfg.Services == nil {
+		cfg.Services = []ServiceGroup{}
+	}
+	if cfg.Bookmarks == nil {
+		cfg.Bookmarks = []BookmarkGroup{}
+	}
+	if cfg.Actions == nil {
+		cfg.Actions = []ActionGroup{}
+	}
+
+	if cfg.Settings.PollingIntervalSeconds <= 0 {
+		cfg.Settings.PollingIntervalSeconds = DefaultPollingIntervalSeconds
+	}
+	if cfg.Settings.StatsPollingIntervalSeconds <= 0 {
+		cfg.Settings.StatsPollingIntervalSeconds = DefaultStatsPollingIntervalSeconds
+	}
+	if cfg.Settings.FontFamily == "" {
+		cfg.Settings.FontFamily = DefaultFontFamily
+	}
+	if cfg.Settings.FontSize == "" {
+		cfg.Settings.FontSize = DefaultFontSize
+	}
+	if cfg.Settings.TitleFontSize == "" {
+		cfg.Settings.TitleFontSize = DefaultTitleFontSize
+	}
+
+	// Resolve icon URLs and keep the item lists non-nil for the same reason as
+	// the sections above.
+	for i := range cfg.Services {
+		if cfg.Services[i].Items == nil {
+			cfg.Services[i].Items = []ServiceItem{}
+		}
+		for j := range cfg.Services[i].Items {
+			cfg.Services[i].Items[j].Icon = resolveIconURL(cfg.Services[i].Items[j].Icon)
+		}
+	}
+	for i := range cfg.Bookmarks {
+		if cfg.Bookmarks[i].Items == nil {
+			cfg.Bookmarks[i].Items = []BookmarkItem{}
+		}
+	}
+	for i := range cfg.Actions {
+		if cfg.Actions[i].Items == nil {
+			cfg.Actions[i].Items = []ActionItem{}
+		}
+		for j := range cfg.Actions[i].Items {
+			cfg.Actions[i].Items[j].Icon = resolveIconURL(cfg.Actions[i].Items[j].Icon)
+		}
+	}
+}
+
 // LoadHomepageConfig reads the YAML file at the given path and returns a parsed HomepageConfig.
 // If the file does not exist, it returns an empty config with a nil error.
 // It also returns the SHA-256 hash of the raw file content for change detection.
@@ -128,11 +184,7 @@ func LoadHomepageConfig(path string) (*HomepageConfig, string, error) {
 	if err != nil {
 		if os.IsNotExist(err) {
 			cfg := &HomepageConfig{}
-			cfg.Settings.PollingIntervalSeconds = DefaultPollingIntervalSeconds
-			cfg.Settings.StatsPollingIntervalSeconds = DefaultStatsPollingIntervalSeconds
-			cfg.Settings.FontFamily = DefaultFontFamily
-			cfg.Settings.FontSize = DefaultFontSize
-			cfg.Settings.TitleFontSize = DefaultTitleFontSize
+			normalizeHomepageConfig(cfg)
 
 			return cfg, "", nil
 		}
@@ -147,35 +199,7 @@ func LoadHomepageConfig(path string) (*HomepageConfig, string, error) {
 		return nil, "", fmt.Errorf("failed to parse homepage config file: %w", err)
 	}
 
-	// Apply default polling interval if not set
-	if cfg.Settings.PollingIntervalSeconds <= 0 {
-		cfg.Settings.PollingIntervalSeconds = DefaultPollingIntervalSeconds
-	}
-	if cfg.Settings.StatsPollingIntervalSeconds <= 0 {
-		cfg.Settings.StatsPollingIntervalSeconds = DefaultStatsPollingIntervalSeconds
-	}
-	if cfg.Settings.FontFamily == "" {
-		cfg.Settings.FontFamily = DefaultFontFamily
-	}
-	if cfg.Settings.FontSize == "" {
-		cfg.Settings.FontSize = DefaultFontSize
-	}
-
-	if cfg.Settings.TitleFontSize == "" {
-		cfg.Settings.TitleFontSize = DefaultTitleFontSize
-	}
-
-	// Resolve icon URLs
-	for i := range cfg.Services {
-		for j := range cfg.Services[i].Items {
-			cfg.Services[i].Items[j].Icon = resolveIconURL(cfg.Services[i].Items[j].Icon)
-		}
-	}
-	for i := range cfg.Actions {
-		for j := range cfg.Actions[i].Items {
-			cfg.Actions[i].Items[j].Icon = resolveIconURL(cfg.Actions[i].Items[j].Icon)
-		}
-	}
+	normalizeHomepageConfig(&cfg)
 
 	return &cfg, hash, nil
 }

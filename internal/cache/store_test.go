@@ -194,6 +194,47 @@ func TestStore_AddContainer_Update(t *testing.T) {
 	}
 }
 
+func TestStore_AddContainer_PreservesPinned(t *testing.T) {
+	doc := createTestDocument()
+	store := NewStore(doc)
+
+	pinned := repository.Container{
+		Name:         "container1",
+		FriendlyName: "Container 1",
+		URL:          "http://c1.local",
+		Running:      boolPtr(false),
+		Active:       boolPtr(true),
+		Favorite:     boolPtr(true),
+		Pinned:       boolPtr(true),
+	}
+
+	result, err := store.AddContainer(pinned)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if result.Containers[0].Pinned == nil || !*result.Containers[0].Pinned {
+		t.Error("expected pinned flag to be preserved")
+	}
+	if result.Containers[0].Favorite == nil || !*result.Containers[0].Favorite {
+		t.Error("expected favorite flag to be preserved alongside pinned")
+	}
+
+	// Unpinning must be persisted as well, independently from the favorite flag.
+	pinned.Pinned = boolPtr(false)
+	result, err = store.AddContainer(pinned)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if result.Containers[0].Pinned == nil || *result.Containers[0].Pinned {
+		t.Error("expected pinned flag to be cleared")
+	}
+	if result.Containers[0].Favorite == nil || !*result.Containers[0].Favorite {
+		t.Error("expected favorite flag to stay set after unpinning")
+	}
+}
+
 func TestStore_RemoveContainer_Success(t *testing.T) {
 	doc := createTestDocument()
 	store := NewStore(doc)

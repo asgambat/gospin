@@ -12,15 +12,13 @@ const (
 )
 
 // NewRuntimeFromConfig creates a ContainerRuntime based on the runtime type.
-// If runtimeType is "memory", it creates a MemoryRuntime initialized from the document.
+// If runtimeType is "memory", it creates a MemoryRuntime initialized from the
+// document and mirroring registry (which may be nil).
 // If runtimeType is "docker" (default), it creates a DockerRuntime.
-func NewRuntimeFromConfig(runtimeType string, doc *repository.DataDocument) (ContainerRuntime, error) {
+func NewRuntimeFromConfig(runtimeType string, doc *repository.DataDocument, registry ContainerRegistry) (ContainerRuntime, error) {
 	switch runtimeType {
 	case RuntimeTypeMemory:
-		if doc != nil {
-			return NewMemoryRuntimeFromDocument(*doc), nil
-		}
-		return NewMemoryRuntime(), nil
+		return NewMemoryRuntimeWithRegistry(doc, registry), nil
 	case RuntimeTypeDocker, "":
 		return NewDockerRuntime()
 	default:

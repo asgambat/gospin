@@ -42,7 +42,8 @@ This creates a self-documenting system for understanding how AI instructions wor
 ==============================================================================
 -->
 
-**CRITICAL REQUIREMENTS**
+## Critical Requirements
+
 - AI assistants must _never_ remove HTML comments explaining the purpose and design of each section.
 - HTML comments provide essential context for understanding the instructional design and MUST remain intact.
 
@@ -57,12 +58,19 @@ This creates a self-documenting system for understanding how AI instructions wor
 **Audience:** Primarily GitHub Copilot. This file provides Copilot-specific instructions and configuration for this repository.
 
 **Repository Context:**
-This repository is a GitHub Template created by Capgemini's AI & Software Engineering team. It contains practical, portable, and useful examples of Copilot configuration for real-world projects.
+GoSpin is a Go 1.25.6 service (module `github.com/bassista/go_spin`) that manages Docker
+containers and serves a dashboard plus a JSON API. The UI in `ui/` is plain HTML and
+JavaScript served by the binary — there is no `package.json`, no Node toolchain and no
+TypeScript in this repository.
 
 **Copilot Guidance:**
-- Follow the configuration and best practices outlined here when assisting in this repository.
-- Reference `README.md` for general orientation and project goals.
 
+- `AGENTS.md` is the authoritative agent guide; when this file and `AGENTS.md` disagree,
+
+  `AGENTS.md` wins. Keep the two in sync.
+
+- Follow the configuration and best practices outlined here when assisting in this repository.
+- Reference `README.md` for usage, configuration and the API endpoints table.
 
 <!--
 ==============================================================================
@@ -87,6 +95,7 @@ AI assistants MUST follow these coding standards and reference project-specific 
 </CODING_REQUIREMENTS>
 
 **General Principles:**
+
 - **Consistency**: Follow established patterns within the codebase
 - **Readability**: Write code that is self-documenting and easy to understand
 - **Maintainability**: Structure code for long-term maintenance and evolution
@@ -94,34 +103,66 @@ AI assistants MUST follow these coding standards and reference project-specific 
 - **Performance**: Consider performance implications but prioritize readability unless performance is critical
 
 **Project-Specific Standards:**
+
 - **Backend Development**: Follow guidelines in `.github/instructions/backend.instructions.md`
+- **Go Code**: Follow guidelines in `.github/instructions/go.instructions.md` and the
+
+  conventions in `AGENTS.md` (idiomatic Go, `gofmt`, English comments and log messages)
+
 - **Frontend Development**: Follow guidelines in `.github/instructions/frontend.instructions.md`
+
+  for the plain JavaScript and HTML under `ui/`; its TypeScript/React rules do not apply to
+  this repository
+
 - **Documentation**: Follow guidelines in `.github/instructions/docs.instructions.md`
-- **BDD Testing**: Follow guidelines in `.github/instructions/bdd-tests.instructions.md`
+
+**Go-Specific Standards:**
+
+- ✅ Packages under `internal/`, entrypoint in `cmd/server/`; keep handlers in
+
+  `internal/api/controller/` and route registration in `internal/api/route/`
+
+- ✅ Propagate `context.Context` through request and scheduler paths
+- ✅ Wrap errors with context: `fmt.Errorf("loading actions config: %w", err)`
+- ✅ Log through `internal/logger` (`logger.WithComponent("...")`), levels Debug/Info/Warn/Error
+- ✅ Read every tunable value from `internal/config` (viper, `GO_SPIN_` env prefix) — no magic numbers
+- ❌ Do not add `fmt.Println`, a second logger, or hardcoded ports/timeouts/intervals
+- ❌ Do not add `nolint` directives to silence a genuine finding; fix the cause
 
 **Code Review Guidelines:**
-- Reference: `docs/engineering/code-review-guidelines.md` (when available)
+
+- Reference: `docs/engineering/code-review-guidelines.md`
 - All code MUST pass review before merging
 - Focus on correctness, security, maintainability, and adherence to standards
 
 **Pull Request Guidelines:**
-- Reference: `docs/engineering/pull-request-guidelines.md` (when available)
+
 - Include clear description of changes and rationale
 - Ensure PR size remains manageable (target ≤ 400 lines)
 - Include relevant tests and documentation updates
+- Commit subjects follow Conventional Commits (`feat:`, `fix:`, `chore:`, `docs:`, `test:`,
+
+  `refactor:`), matching recent history
 
 **Language-Specific Standards:**
-- **GO**: Follow Go idiomatic conventions and best practices
-- **Java/Spring Boot**: Follow Spring Boot conventions and best practices
-- **Python/Django**: Follow PEP 8 and Django conventions
-- **C#/.NET**: Follow Microsoft C# coding conventions
-- **JavaScript/TypeScript**: Follow established project linting rules
-- **Documentation**: Use clear, concise language with proper Markdown formatting
+
+- **Go**: This is the only implementation language of the project — Go 1.25.6, idiomatic
+
+  conventions, standard library first
+
+- **JavaScript/HTML (frontend)**: Plain ES modules in `ui/`, no framework, no bundler, no
+
+  transpilation step; Alpine.js, htmx and Tailwind are loaded from CDNs
+
+- **Documentation**: Clear, concise language with proper Markdown formatting; English
+
+  everywhere except `docs/progetto.txt` (Italian)
 
 **Quality Assurance:**
+
 - All code MUST include appropriate unit tests
-- Integration tests for complex workflows
-- Documentation updates for public APIs or significant changes
+- Integration-style tests for HTTP routes and scheduling/runtime workflows
+- Documentation updates for public APIs, configuration options or runtime behaviour
 - Security considerations documented and reviewed
 
 ---
@@ -140,34 +181,44 @@ REINFORCEMENT TECHNIQUES:
 -->
 
 <a name="quality-policy"></a>
+
 ## Quality & Coverage Policy
 
 Principles:
-- Tiered Targets: Apply realistic thresholds by test type and importance.
+
+- Per-Package Floor: Every package must stay at or above 70% coverage.
 - Quality > Percentage: Prefer meaningful assertions and coverage of error/security paths over chasing a numeric score.
 - Transparency: Exceptions must be explicit and justified in the PR.
 
-Tiered Targets:
-- Core domain logic: target ≥ 95% line/branch coverage
-- Integrations/adapters: target ≥ 85%
-- Generated scaffolds and spikes: opportunistic; may be exempt if tagged and justified in PR
+Targets:
+
+- Floor for every package under `internal/` and `cmd/`: **≥ 70%**
+- New or changed code: cover the new branches, including error and edge cases
+- Hot paths (request handling, scheduler loops, persistence) and security-relevant logic
+
+  (input validation, token handling): 100% of the new branches
 
 Enforcement:
-- Global threshold: CI fails if overall repository coverage < 70%
-- Module threshold: CI fails if any core module drops below its target (≥ 80%)
 
-Critical Coverage (must be 100%):
-- Hot paths (performance- or user-critical flows)
-- Error and exception paths (including negative and edge-case handling)
-- Security-relevant logic (authn/authz, input validation, data protection)
+- Agent workflow: `go test ./...` plus `task test:cover` and a per-package coverage check
+
+  before finishing any change; add tests when a package drops below the floor
+
+- CI: `.github/workflows/tests.yml` runs `go vet`, `staticcheck`, `golangci-lint` and
+
+  `go test -race ./...` on pushes and pull requests to `develop` and `main`;
+  `.github/workflows/coverage.yml` measures the same refs but publishes the coverage report
+  and badge on GitHub Pages only from `main`, and does not gate the build on a threshold
 
 Exceptions:
+
 - Use a PR footer section titled "Coverage Exception:" explaining scope, rationale, and risk mitigation
 - Obtain at least one reviewer acknowledgment of the exception in review comments
 
 References:
+
 - Agents (Developer/Tester) MUST reference this section instead of hardcoding numeric targets.
-- Project-specific overrides, if any, MUST be documented here to remain authoritative.
+- `AGENTS.md` carries the same 70% per-package threshold; keep both files aligned.
 
 ---
 
@@ -189,39 +240,102 @@ NOTE: This section may be removed when used as template, hence the disclaimer
 
 ## Repository Overview (This section may be removed if this is used as a template)
 
+**Project Structure:**
+
+- `cmd/server/`: entrypoint (`main.go`)
+- `internal/`: `api/{route,controller,middleware}`, `app`, `cache`, `config`, `cosmos`,
+
+  `logger`, `repository`, `runtime`, `scheduler`, `version`
+
+- `config/`: runtime YAML (`config.yaml`, `homepage.yaml`, `actions.yml`, `*.example`) and
+
+  `config/data/` JSON storage
+
+- `ui/`: embedded static UI (`index.html`, `home.js`, `templates/`, `assets/`, service worker)
+- `docs/`: `ARCHITECTURE.md`, `DEVELOPMENT.md`, ADRs, PRDs, engineering guidelines,
+
+  `progetto.txt` (Italian)
+
+- `Makefile` and `Taskfile.yml`: the two supported build front-ends (keep both working)
+
 **.github Directory Structure & Purpose:**
 
 The `.github` directory contains several subdirectories and files that organize configuration, prompts, and instructions for Copilot and other AI agents:
 
-- `agents/`: Contains agent configuration files (e.g., `Developer.agent.md`) that define custom conversational behaviors for Copilot and other agents. As of October 2025, GitHub renamed "Chat Modes" to "Agents".
+- `agents/`: Contains agent configuration files (`Developer.agent.md`, `Tester.agent.md`,
 
-- `instructions/`: Holds instruction files for backend, frontend, and documentation. These guide Copilot and other agents on best practices and project-specific rules. You must apply these instructions to relevant files in the repository.
+  `CodeReviewer.agent.md`) that define custom conversational behaviors for Copilot and other
+  agents. As of October 2025, GitHub renamed "Chat Modes" to "Agents".
+
+- `instructions/`: Holds instruction files for backend, frontend, Go and documentation. These
+
+  guide Copilot and other agents on best practices and project-specific rules. You must apply
+  these instructions to relevant files in the repository.
   - `backend.instructions.md`
   - `docs.instructions.md`
   - `frontend.instructions.md`
+  - `go.instructions.md`
 
-- `prompts/`: Includes prompt templates (e.g., `write-adr.prompt.md`, `write-docs.prompt.md`, `write-prd.prompt.md`) used to generate architectural decision records, documentation, and product requirements. These help standardize and accelerate content creation.
+- `prompts/`: Includes prompt templates (`write-docs.prompt.md`, `write-adr.prompt.md` when
 
-- `workflows/`: Intended for GitHub Actions workflow files, which automate CI/CD and other repository tasks. (Currently empty, but will be expanded.)
+  present, `testcov.prompt.md`, `copilot-setup-check.prompt.md`) used to generate
+  documentation, tests and setup checks.
 
+- `workflows/`: GitHub Actions workflows: `tests.yml` (vet, staticcheck, golangci-lint,
+
+  `go test -race`), `coverage.yml` (coverage report on GitHub Pages),
+  `docker-release.yml` (sole publisher for `v*.*.*` tags, ghcr.io and Docker Hub) and
+  `docker_build_push.yml` (`main` pushes, pull requests and manual branch builds).
 
 ## Developer Workflows
 
 ### Build & Run
+
 ```bash
-go vet ./...
+# Quality gate first
 go fmt ./...
-golangci-lint run
+go vet ./...
+staticcheck ./...
+golangci-lint run --concurrency=1 ./...
 go mod tidy
 go test ./...
-go build -o .build/main ./cmd/server/main.go
-./.build/main
+
+# Build and run (Makefile → ./.build/main, injects version metadata via -ldflags)
+make build
+make run            # go run with version metadata
+make watch          # air hot reload (.air.toml)
+
+# Same workflows through the Taskfile (→ .build/gospin)
+task build          # runs lint + test first
+task build:fast
+task run
+task watch
+```
+
+### Test & Coverage
+
+```bash
+go test ./...
+task test:race                                   # go test -race ./...
+task test:cover                                  # coverage.out + coverage.html
+task test:package -- ./internal/config           # single package
+```
+
+On a Raspberry Pi 4 the race detector cannot be built; skip `-race` there and say so in the summary.
+
+### Docker & Release
+
+```bash
+task docker:build                  # local image (bassista/gospin:latest)
+task docker:buildx                 # multi-arch build + push
+task docker:run                    # ports 8084/8085, mounts the Docker socket
+task version:show                  # prints .version
+task version:bump -- 0.0.12        # bump .version, commit and tag
 ```
 
 Always execute `go vet ./...` before building, testing, or committing code. Ensure code passes `go fmt ./...` for consistent formatting. Ensure code passes `golangci-lint run` for linting. Ensure all dependencies are properly managed with `go mod tidy`. Ensure all unit tests pass with `go test ./...` before pushing changes. Ensure commit messages follow conventional commit standards. Ensure code is documented with comments where necessary for clarity. Ensure security vulnerabilities are regularly scanned and addressed. Ensure dependencies are kept up to date with regular reviews. Ensure coding standards and best practices are followed throughout the codebase. Ensure proper error handling is implemented consistently. Ensure logging is used effectively for debugging and monitoring. Ensure performance considerations are taken into account during development. Ensure scalability is considered in the architecture and design decisions. Ensure user input is validated and sanitized to prevent security issues. Ensure sensitive information is not hardcoded and is managed securely. Ensure configuration management follows best practices for different environments. Ensure documentation is kept up to date with code changes.
 
-
-Refer to the main README.md for a full overview of repository goals and usage.
-
+Refer to the main README.md for a full overview of repository goals and usage. `AGENTS.md`
+is the authoritative agent guide.
 
 <!-- © Capgemini 2025 -->
