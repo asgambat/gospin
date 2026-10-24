@@ -1,0 +1,25 @@
+{
+  "name": "Ghostboard",
+  "short_name": "Ghostboard",
+  "id": "/ui/ghostboard",
+  "start_url": "/ui/ghostboard",
+  "display": "standalone",
+  "background_color": "#f3f4f6",
+  "theme_color": "#1976d2",
+  "description": "Shared text board: every browser on the same board sees the same text, live.",
+  "scope": "/ui/ghostboard",
+  "icons": [
+    {
+      "src": "/ui/assets/pwa/ghostboard-icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/ui/assets/pwa/ghostboard-icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

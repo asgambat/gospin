@@ -21,6 +21,7 @@ GitHub Copilot; when they disagree with this file, this file wins.
 | `internal/cache/`, `internal/repository/` | In-memory state and persistence |
 | `internal/runtime/` | Container runtime abstraction (Docker / memory) |
 | `internal/scheduler/` | Spin-up/spin-down scheduling loops (goroutines) |
+| `internal/ghostboard/` | Shared text boards behind `/ui/ghostboard` (store, JSON persistence, SSE) |
 | `internal/cosmos/` | Cosmos API client |
 | `internal/version/` | Build metadata injected via `-ldflags` |
 | `config/` | Runtime YAML (`config.yaml`, `homepage.yaml`, `actions.yml`) and `config/data/` |
@@ -163,6 +164,10 @@ time.Sleep(10 * time.Second)
   `GoVersion`) via `-ldflags "-X ..."`. The same flags are duplicated in four places and must
   stay in lockstep: `Makefile` (`LDFLAGS`), `Taskfile.yml` (`build`, `build:fast`, `run`),
   `.air.toml` (`[build].cmd`) and `Dockerfile` (`ARG` + `-ldflags`).
+- Pushing the `vX.Y.Z` tag is what publishes the image (`docker-release.yml`, ghcr + Docker Hub).
+  `latest` follows every `0.x` release and, from `1.0.0` on, only a minor/major tag
+  (`X.Y.0`/`X.0.0`); every release publishes its `X.Y.Z`, `X.Y` and `X` tags, and pushes to `main`
+  publish the `main` tag without touching `latest`.
 - Docker: `task docker:build`, `task docker:buildx` (multi-arch push),
   `task docker:run` (exposes 8084/8085 and mounts `/var/run/docker.sock`).
 

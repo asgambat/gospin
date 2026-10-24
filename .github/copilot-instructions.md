@@ -245,13 +245,13 @@ NOTE: This section may be removed when used as template, hence the disclaimer
 - `cmd/server/`: entrypoint (`main.go`)
 - `internal/`: `api/{route,controller,middleware}`, `app`, `cache`, `config`, `cosmos`,
 
-  `logger`, `repository`, `runtime`, `scheduler`, `version`
+  `ghostboard`, `logger`, `repository`, `runtime`, `scheduler`, `version`
 
 - `config/`: runtime YAML (`config.yaml`, `homepage.yaml`, `actions.yml`, `*.example`) and
 
   `config/data/` JSON storage
 
-- `ui/`: embedded static UI (`index.html`, `home.js`, `templates/`, `assets/`, service worker)
+- `ui/`: embedded static UI (`index.html`, `home.html`, `ghostboard.html`, `home.js`, `templates/`, `assets/`, `service-worker.js`, `sw-register.js`)
 - `docs/`: `ARCHITECTURE.md`, `DEVELOPMENT.md`, ADRs, PRDs, engineering guidelines,
 
   `progetto.txt` (Italian)

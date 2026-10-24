@@ -59,11 +59,12 @@ PROMPTING: Concrete file-to-route mapping so edits land in the right place.
 -->
 ## HTML, PWA and Service Worker
 
-1. **Files and routes**: `ui/index.html` → `/ui` (dashboard), `ui/home.html` → `/ui/home` (homepage dashboard), `ui/templates/waiting.html` → waiting page served on port 8085, `ui/assets/**` → `/ui/assets/**`.
-2. **Cache busting**: Go appends a content hash (`?v=...`) to the `app.js` / `home.js` script tags; keep the script tags pointing at the served paths.
-3. **Service worker**: `ui/service-worker.js` precaches the app shell, both pages, theme backgrounds and icons. Bump `CACHE_NAME` (`gosspin-ui-vN`) on every precache change and keep the list in sync with the files that actually exist.
-4. **Caching contract**: assets are served with `Cache-Control: public, max-age=31536000`, except PWA manifests (`no-cache`). Do not weaken these headers without updating the service worker strategy.
-5. **PWA metadata**: keep `ui/assets/pwa/*.json` manifests, icons and the `/ui` / `/ui/home` scopes consistent when adding pages or themes.
+1. **Files and routes**: `ui/index.html` → `/ui` (dashboard), `ui/home.html` → `/ui/home` (homepage dashboard), `ui/ghostboard.html` → `/ui/ghostboard[/:board]` (shared text board), `ui/templates/waiting.html` → waiting page served on port 8085, `ui/assets/**` → `/ui/assets/**`, `ui/sw-register.js` → `/ui/sw-register.js`.
+2. **Cache busting**: Go appends a content hash (`?v=...`) to the `app.js` / `home.js` / `ghostboard.js` script tags; keep the script tags pointing at the served paths.
+3. **Service worker**: `ui/service-worker.js` precaches the app shell, the pages, theme backgrounds and icons. Bump `CACHE_NAME` (`gosspin-ui-vN`) on every precache change and keep the list in sync with the files that actually exist.
+4. **Service worker registration**: `ui/sw-register.js` registers the worker with `scope: '/'` and is included by every page, so a device that only opens one page still gets it. Do not add inline registrations or per-page variants.
+5. **Caching contract**: assets are served with `Cache-Control: public, max-age=31536000`, except PWA manifests (`no-cache`). Do not weaken these headers without updating the service worker strategy. The worker fetches manifests network-first and keeps the precached copy only as the offline fallback, so a manifest edit does not need a `CACHE_NAME` bump.
+6. **PWA metadata**: keep `ui/assets/pwa/*.json` manifests, icons and the `/ui`, `/ui/home` and `/ui/ghostboard` scopes consistent when adding pages or themes.
 
 <!--
 SECTION PURPOSE: Make testing guidance explicit and link to SSOTs (Tester agent and coverage policy).

@@ -52,8 +52,9 @@ func SetupRoutes(appCtx *app.App, logger *logrus.Logger) *gin.Engine {
 	NewHomepageRouter(appCtx, publicRouter)
 	NewGhostboardRouter(appCtx, publicRouter)
 
-	// UI static files
-	NewUIRouter(r)
+	// UI static files. The Ghostboard page receives the configured board size
+	// so it can refuse oversized files before loading them.
+	NewUIRouter(r, appCtx.Config.Ghostboard.WithDefaults().MaxTextBytes)
 
 	return r
 }

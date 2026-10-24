@@ -99,7 +99,7 @@ go test ./...
 - `data.actions_mode` ("sync"|"async", default "async"): modalità di esecuzione delle azioni HTTP custom
 - `data.actions_timeout_seconds` (default 30): timeout globale per le richieste HTTP delle actions
 - `ghostboard.file_path` (default `<dir di data.file_path>/ghostboard.json`): file JSON delle board condivise
-- `ghostboard.clear_delay_secs` (default 300): secondi di permanenza del testo dopo l'ultimo client disconnesso
+- `ghostboard.clear_delay_secs` (default 300): secondi di permanenza del testo dopo l'ultima scrittura o disconnessione dell'ultimo client (vale l'evento più recente)
 - `ghostboard.max_text_bytes` (default 16777216): dimensione massima del testo decodificato accettato
   per board; il limite del body è derivato da questo valore (6× per gli escape JSON `\u00XX`,
   3× per i form percent-encoded) e lo scarto avviene sul testo decodificato, così un payload con
@@ -132,6 +132,8 @@ DataDocument
 | GET | `/ui/ghostboard[/:board]` | Pagina Ghostboard; ogni path è una board indipendente |
 | GET/POST | `/ghostboard/:board` | Lettura/scrittura del testo di una board condivisa |
 | GET | `/ghostboard/:board/events` | Stream SSE con snapshot iniziale e modifiche della board |
+| GET | `/api/boards/:board` | Testo della board in `text/plain` per CLI/script (board mai scritta → body vuoto, 200) |
+| POST | `/api/boards/:board` | Sostituisce il testo con il body grezzo byte per byte e risponde `204 No Content` |
 | GET | `/homepage` | Configurazione homepage (services, bookmarks, actions, settings) |
 | POST | `/homepage/action` | Esecuzione azione HTTP via proxy server-side |
 
@@ -164,11 +166,14 @@ DataDocument
 ### Ghostboard (ui/ghostboard.html + ui/assets/ghostboard.js)
 - Pagina servita su `/ui/ghostboard` (board `default`) e su `/ui/ghostboard/<board>`: ogni path è una board indipendente, con nome validato lato server (`[A-Za-z0-9][A-Za-z0-9._-]{0,63}`)
 - Stack coerente con il resto della UI (Alpine.js + TailwindCSS CDN); tema chiaro/scuro persistito in `localStorage` (`gosspin.ghostboard.theme`) e download del testo come `<board>.txt`
+- Identità della pagina: titolo `Ghostboard`, favicon dedicata (`ghostboard-icon.svg` con fallback PNG 32×32), apple-touch-icon 180×180 e manifest PWA proprio (`assets/pwa/manifest-ghostboard.json`, nome e icone Ghostboard)
+- Azioni sulla board: **Open .txt** inserisce il testo di un file scelto dal computer nella posizione del caret se la textarea ha il focus (sostituendo l'eventuale selezione), altrimenti lo accoda in fondo, e salva subito; il limite `ghostboard.max_text_bytes` è iniettato nella pagina (`data-max-bytes`) e un file che supera il limite viene rifiutato prima della lettura, mentre un file non UTF-8 valido viene rifiutato con un messaggio; se l'inserimento porta la board oltre il limite il salvataggio fallisce con un errore che spiega di accorciare il testo, mentre gli altri device mantengono il testo precedente; **Copy** copia tutto il testo negli appunti (con fallback alla copia tramite selezione se l'API Clipboard non è disponibile); **Clear** svuota la board per tutti i device dopo una conferma
 - Sincronizzazione: `EventSource` su `/ghostboard/:board/events` riceve lo snapshot e ogni modifica; le scritture locali usano `POST /ghostboard/:board` con debounce di 300 ms
 - Ogni tab genera un id casuale inviato nell'header `X-Ghostboard-Client`: gli eventi con lo stesso id sono ignorati, così il caret non salta durante la digitazione
 - Le modifiche remote che arrivano mentre ci sono modifiche locali non salvate vengono accodate e applicate dopo il salvataggio riuscito, solo se la revisione è più recente di quella appena scritta
 - Alla chiusura della tab il testo non salvato viene inviato con `navigator.sendBeacon`
-- Server: `internal/ghostboard` mantiene le board in memoria con revisione e timestamp, fan-out verso i sottoscrittori e timer di pulizia quando l'ultimo client si disconnette; `internal/api/controller/ghostboard_controller.go` espone GET/POST/SSE
+- API testuale per CLI (il nome board è obbligatorio; la board principale è `default`): `GET /api/boards/:board` risponde `text/plain; charset=utf-8` con il testo della board e `200` con body vuoto per una board mai scritta; `POST /api/boards/:board` salva il body grezzo così com'è (nessuna decodifica JSON/form, newline finale compreso) e risponde `204 No Content`. Il body deve essere UTF-8 valido: i byte non validi sono rifiutati con `400` senza toccare la board, perché la persistenza JSON li convertirebbe in U+FFFD. Stessi nomi board e stesso limite `ghostboard.max_text_bytes`; gli errori mantengono l'envelope JSON (400 nome/body/UTF-8 non valido, 413 testo troppo grande)
+- Server: `internal/ghostboard` mantiene le board in memoria con revisione e timestamp, fan-out verso i sottoscrittori e timer di pulizia quando l'ultimo client si disconnette o l'ultima scrittura è più vecchia del delay; ogni scrittura accettata riarma il timer, quindi anche una board scritta solo dalla CLI viene svuotata dopo `clear_delay_secs`; `internal/api/controller/ghostboard_controller.go` espone GET/POST/SSE; ogni scrittura rifiuta con `400` un testo che non sia UTF-8 valido, perché la persistenza JSON lo convertirebbe in U+FFFD
 - Persistenza: file JSON dedicato (default `config/data/ghostboard.json`), separato dal registry dei container, scritto ogni `ghostboard.persist_interval_secs` solo quando ci sono modifiche pendenti, con prune delle board vuote; un riavvio conserva i testi
 - Lo stream SSE non passa dal middleware gzip, non usa il `RequestTimeout` per-request e azzera il write deadline della connessione, così resta aperto oltre il timeout globale del server
 - Nessuna autenticazione: chi raggiunge il server può leggere e riscrivere qualsiasi board (da usare solo su reti fidate)

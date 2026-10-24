@@ -112,7 +112,7 @@ misc:
 
 ghostboard:
   file_path: ""                  # defaults to <dir of data.file_path>/ghostboard.json
-  clear_delay_secs: 300          # text is kept this long after the last client disconnects
+  clear_delay_secs: 300          # text is kept this long after the last write or client disconnect
   max_text_bytes: 16777216       # largest decoded text per board (16 MiB); the body limit derives from it
   persist_interval_secs: 2       # interval between writes of pending changes
   heartbeat_interval_secs: 25    # SSE keep-alive comment interval
@@ -215,7 +215,7 @@ Access the UI at `http://localhost:8084/ui`
 - **Bulk Operations**: Select multiple containers for group operations
 - **Schedule Visualization**: Visual day selector for timer configuration
 - **Missing Containers Cleanup**: Preview and confirm removal of registry entries whose Docker container no longer exists
-- **Ghostboard**: Per-path shared text board with live Server-Sent Events sync, dark mode and `.txt` download
+- **Ghostboard**: Per-path shared text board with live Server-Sent Events sync, dark mode, `.txt` open/copy/clear actions and `.txt` download
 - **Pinned Containers**: Pinned containers stay at the top of the list, sorted alphabetically, regardless of the selected sort column; a 📌 toggle filters the list to pinned containers only
 - **URL Generation**: Auto-generates container URLs based on `base_url` configuration
 - **Responsive Design**: Works on desktop and mobile devices
@@ -528,6 +528,8 @@ Sections missing from `homepage.yaml` are returned as empty arrays (`services: [
 | GET | `/ghostboard/:board` | Read a board's text, revision and last update time |
 | POST | `/ghostboard/:board` | Replace a board's text (JSON, form field or raw body) |
 | GET | `/ghostboard/:board/events` | Server-Sent Events stream with the current text and every change |
+| GET | `/api/boards/:board` | Read the board text as plain text (unknown boards return an empty `200` body) |
+| POST | `/api/boards/:board` | Replace the board text with the raw request body, byte for byte; `204 No Content` |
 
 #### The Ghostboard page
 
@@ -551,6 +553,19 @@ How it behaves:
 - Closing the tab with unsaved text flushes it with `navigator.sendBeacon`.
 - The 🌙/☀️ toggle switches the page theme; the choice is stored in `localStorage` under
   `gosspin.ghostboard.theme`. **Download .txt** saves the current board as `<board>.txt`.
+- The browser tab is titled **Ghostboard** and shows the dedicated ghost favicon
+  (`ui/assets/ghostboard-icon.svg`, with a 32×32 PNG fallback). The page links its own PWA
+  manifest (`pwa/manifest-ghostboard.json`, name and icons “Ghostboard”) and a 180×180
+  apple-touch-icon, so installing it does not show the GoSpin name and icons.
+- **Open .txt** inserts the text of a file picked from the local computer: at the caret when
+  the board textarea has focus (replacing the selection, if any), otherwise appended at the end
+  of the board, then saves it. The page carries `ghostboard.max_text_bytes`: a file larger than
+  the whole limit is refused before it is read, a file that is not valid UTF-8 is refused with a
+  message (save it as UTF-8), and an empty file is ignored. Inserting into a board that already
+  holds text can still push it over the limit; that save fails with a message telling you to
+  shorten the text, and the other devices keep the previous board text. **Copy** puts the whole board
+  text on the clipboard (falling back to a selection copy where the Clipboard API is
+  unavailable). **Clear** empties the board for every connected device after a confirmation.
 - There is **no authentication**: anyone who can reach the server can read and rewrite every
   board. This matches the upstream project's warning; keep it on a trusted network.
 
@@ -575,25 +590,61 @@ curl -X POST http://localhost:8084/ghostboard/lavoro \
 curl http://localhost:8084/ghostboard/lavoro
 ```
 
+#### Plain-text board API for CLIs
+
+`/api/boards/:board` is the script-friendly surface over the same boards as the UI and the
+JSON API. The board name is always required; the main board is `default`
+(`/api/boards/default`).
+
+```bash
+# Read a board: plain text on stdout (empty body if the board was never written)
+curl -s http://localhost:8084/api/boards/lavoro
+
+# Replace a board with a file, byte for byte
+curl -sS -X POST --data-binary @example.txt http://localhost:8084/api/boards/lavoro
+
+# Pipe stdin into a board
+printf 'hello\n' | curl -sS -X POST --data-binary @- http://localhost:8084/api/boards/lavoro
+
+# Clear a board
+: | curl -sS -X POST --data-binary @- http://localhost:8084/api/boards/lavoro
+```
+
+- GET answers `text/plain; charset=utf-8` with the stored text, or an empty `200` body when the
+  board has never been written, so `curl -s ... | ...` needs no existence check.
+- POST stores the request body exactly as received, whatever the `Content-Type` (no JSON or form
+  decoding, trailing newline kept), and answers `204 No Content` with no body. The body must be
+  valid UTF-8: invalid bytes are rejected with `400` and leave the board untouched.
+- A write re-arms the idle clear, so the text survives `ghostboard.clear_delay_secs` after the
+  last write or browser disconnect, whichever happens last.
+- The endpoints use the same board names and the same `ghostboard.max_text_bytes` limit as the
+  other board endpoints; errors keep the JSON envelope (`400` invalid board name, invalid UTF-8
+  or unreadable body, `413` text too large). Use `curl -fsS` (or `--fail-with-body`) in scripts
+  so a failed request exits non-zero instead of feeding the JSON error into the pipe.
+
 A request whose **decoded text** exceeds `ghostboard.max_text_bytes` is rejected with `413`;
 invalid board names return `400`. The body limit is derived from the same value and leaves room
 for the encoding (six bytes per text byte for JSON escapes, three for percent-encoded forms), so
 a payload full of newlines or quotes is not rejected while its text is within the limit. For
 form-encoded bodies, the `text` field wins when present; a body without it (for example a plain
-`curl -d 'hello'`) is stored verbatim, while `text=` clears the board.
+`curl -d 'hello'`) is stored verbatim, while `text=` clears the board. A decoded text that is
+not valid UTF-8 is rejected with `400` and leaves the board untouched, exactly like on
+`/api/boards`: the JSON persistence would otherwise replace the invalid bytes with U+FFFD.
 
 Boards are written to a dedicated JSON file, separate from the container registry, every
 `ghostboard.persist_interval_secs`: the tick only writes when something changed. A board keeps
-its text for `ghostboard.clear_delay_secs` after the last browser disconnects, then it is
-emptied; empty boards are pruned from the file, so a restart keeps the boards that are still in
-use. The file survives restarts and is not pruned by the registry watcher.
+its text for `ghostboard.clear_delay_secs` after the last write or the last browser disconnect,
+whichever happens last, then it is emptied; every accepted write re-arms that timer, so a board
+written only by a script is cleared too. Empty boards are pruned from the file, so a restart
+keeps the boards that are still in use. The file survives restarts and is not pruned by the
+registry watcher.
 
 #### Ghostboard configuration
 
 | Key | Default | Description |
 | --- | ------- | ----------- |
 | `ghostboard.file_path` | `<dir of data.file_path>/ghostboard.json` | JSON file holding the boards |
-| `ghostboard.clear_delay_secs` | `300` | Seconds a board keeps its text after the last client disconnects |
+| `ghostboard.clear_delay_secs` | `300` | Seconds a board keeps its text after the last write or client disconnect |
 | `ghostboard.max_text_bytes` | `16777216` | Largest decoded text accepted per board; the request body limit is derived from it |
 | `ghostboard.persist_interval_secs` | `2` | Interval between writes of pending changes (a tick with no changes writes nothing) |
 | `ghostboard.heartbeat_interval_secs` | `25` | Keep-alive comment interval on the SSE stream |
@@ -912,6 +963,61 @@ services:
       timeout: 10s
       retries: 3
 ```
+
+`latest` follows every release while the project is pre-1.0 (`0.x`), where each version may be
+breaking, and from `1.0.0` on it moves only on a minor/major release (`X.Y.0`). For reproducible
+deployments pin an exact tag such as `bassista/gospin:0.1.0` instead of relying on `latest`.
+
+## 🏷️ Releasing a New Version
+
+A release is a git tag: pushing `vX.Y.Z` is what publishes the image, so the order of the steps
+below matters.
+
+| Image tag | Published by | When |
+| --- | --- | --- |
+| `X.Y.Z`, `X.Y`, `X` | `.github/workflows/docker-release.yml` | Every pushed tag `vX.Y.Z`, to both `ghcr.io` and Docker Hub |
+| `latest` | `.github/workflows/docker-release.yml` | Every `0.x` release; from `1.0.0` only for a minor/major tag (`X.Y.0` or `X.0.0`) |
+| `main` | `.github/workflows/docker_build_push.yml` | Every push to `main`; it never moves `latest` |
+
+### Release checklist
+
+- [ ] Feature work is merged into `develop` and its `Go Tests & Lint` and `Coverage` runs are green.
+- [ ] Documentation is updated in the same PR (`README.md`, `docs/progetto.txt`, …).
+- [ ] `develop` is merged into `main` and `main` is pulled locally with a clean working tree —
+      the bump stages only the version files.
+- [ ] The version is bumped once with the task below, never by hand.
+- [ ] `main` and then the tag are pushed, in that order.
+- [ ] The `Docker Multi-Arch Release` run is green and published the image (it needs the
+      `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN` secrets).
+- [ ] `main` is merged back into `develop` so the bump commit is not lost.
+
+### Bump and publish
+
+```bash
+task version:show
+task version:bump -- 0.1.0
+
+git push origin main
+git push origin v0.1.0    # the tag itself, never --tags
+```
+
+The bump script accepts only `MAJOR.MINOR.PATCH`, refuses a version equal to or lower than the
+current `.version`, refuses an existing `v<version>` tag and a `.version` that disagrees with
+`internal/version/version.go`. It rewrites every version-bearing file, commits
+`chore: bump to X.Y.Z` and creates the tag `vX.Y.Z`; it does not push, so the two `git push` calls
+above are what publish the release.
+
+### Release rules
+
+- Tags are immutable: a wrong release is fixed by bumping to a higher version, never by moving or
+  deleting a published tag.
+- `latest` follows every `0.x` release; once the version reaches `1.0.0` it follows minor/major
+  releases only. If a patch has to reach `latest` consumers after 1.0, tag a new minor version
+  instead of re-tagging.
+- The bump script requires a strictly increasing version: with the current `0.0.x` line the next
+  entries are `0.0.13`, `0.0.14`, …, while `0.1.0` starts a new minor line and moves `latest`.
+- Do not edit `.version` or `internal/version/version.go` by hand: the bump script keeps them, and
+  every other version-bearing file, in sync.
 
 ## 📄 License
 

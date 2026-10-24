@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -100,13 +101,91 @@ func TestGhostboardPageRoutes(t *testing.T) {
 			}
 
 			body := w.Body.String()
-			if !strings.Contains(body, "Ghostboard") {
-				t.Error("page does not contain the Ghostboard title")
+			if !strings.Contains(body, "<title>Ghostboard</title>") {
+				t.Error("page does not use the Ghostboard title")
 			}
 			if !strings.Contains(body, `src="/ui/assets/ghostboard.js?v=`) {
 				t.Error("script tag is missing the cache-busting hash")
 			}
+			for _, icon := range []string{
+				`href="/ui/assets/ghostboard-icon.svg?v=`,
+				`href="/ui/assets/ghostboard-icon-32.png?v=`,
+			} {
+				if !strings.Contains(body, icon) {
+					t.Errorf("favicon link %q is missing the cache-busting hash", icon)
+				}
+			}
+			if strings.Contains(body, "?v=dev") {
+				t.Error("cache-busting hash fell back to dev: an asset file is missing")
+			}
+			if !strings.Contains(body, `href="/ui/assets/ghostboard-icon-180.png?v=`) {
+				t.Error("apple-touch-icon is missing the cache-busting hash")
+			}
+
+			maxBytes := testApp().Config.Ghostboard.WithDefaults().MaxTextBytes
+			if want := `data-max-bytes="` + strconv.Itoa(maxBytes) + `"`; !strings.Contains(body, want) {
+				t.Errorf("page does not carry %s", want)
+			}
+
+			// The Open .txt button must not take the focus: only then the picked
+			// file lands at the caret instead of always being appended.
+			if !strings.Contains(body, `@mousedown.prevent`) {
+				t.Error("Open .txt button steals the focus, so the file can only be appended at the end")
+			}
 		})
+	}
+
+	// The rewritten links must point at assets the router actually serves.
+	assets := map[string]string{
+		"/ui/assets/ghostboard-icon.svg":          "image/svg+xml",
+		"/ui/assets/ghostboard-icon-32.png":       "image/png",
+		"/ui/assets/ghostboard-icon-180.png":      "image/png",
+		"/ui/assets/pwa/ghostboard-icon-192.png":  "image/png",
+		"/ui/assets/pwa/ghostboard-icon-512.png":  "image/png",
+		"/ui/assets/pwa/manifest-ghostboard.json": "application/manifest+json",
+	}
+	for path, wantType := range assets {
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, path, nil))
+
+		if w.Code != http.StatusOK {
+			t.Errorf("GET %s status = %d, want 200", path, w.Code)
+			continue
+		}
+		if ct := w.Header().Get("Content-Type"); !strings.HasPrefix(ct, wantType) {
+			t.Errorf("GET %s Content-Type = %q, want %s", path, ct, wantType)
+		}
+		if w.Body.Len() == 0 {
+			t.Errorf("GET %s returned an empty body", path)
+		}
+	}
+}
+
+func TestBoardsAPIRoutes(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	r := testGhostboardRouter(t)
+
+	const text = "line one\nline two\n"
+	req := httptest.NewRequest(http.MethodPost, "/api/boards/note", strings.NewReader(text))
+	req.Header.Set("Content-Type", "text/plain")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("POST status = %d, want 204: %s", w.Code, w.Body.String())
+	}
+
+	w = httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/api/boards/note", nil))
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("GET status = %d, want 200: %s", w.Code, w.Body.String())
+	}
+	if ct := w.Header().Get("Content-Type"); !strings.HasPrefix(ct, "text/plain") {
+		t.Errorf("Content-Type = %q, want text/plain", ct)
+	}
+	if got := w.Body.String(); got != text {
+		t.Errorf("GET body = %q, want %q", got, text)
 	}
 }
 

@@ -318,13 +318,7 @@
         </footer>
     </div>
 
-    <script>
-        if ('serviceWorker' in navigator) {
-            window.addEventListener('load', function() {
-                navigator.serviceWorker.register('/ui/service-worker.js', { scope: '/' });
-            });
-        }
-    </script>
+    <script src="/ui/sw-register.js"></script>
 
     <!-- ===== Action Result Modal ===== -->
     <div x-show="actionModalOpen" x-cloak

@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/gin-gonic/gin"
 
@@ -41,6 +42,10 @@ const (
 
 // errGhostboardInvalidBody marks a payload that could not be decoded.
 var errGhostboardInvalidBody = errors.New("invalid request body")
+
+// errGhostboardInvalidText marks a text body that is not valid UTF-8, which
+// would be mangled by the JSON persistence of the store.
+var errGhostboardInvalidText = errors.New("request body is not valid UTF-8")
 
 // GhostboardController exposes the shared text boards over HTTP.
 type GhostboardController struct {
@@ -90,6 +95,44 @@ func (gc *GhostboardController) Update(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, board)
+}
+
+// GetText returns a board's text as plain text for the CLI API. A board that
+// was never written is served as an empty body with status 200, so a script
+// can treat a missing board exactly like a cleared one.
+func (gc *GhostboardController) GetText(c *gin.Context) {
+	board, err := gc.store.Get(ghostboardBoardName(c))
+	if err != nil {
+		writeGhostboardError(c, err)
+		return
+	}
+
+	c.Header("Cache-Control", "no-store")
+	c.Data(http.StatusOK, "text/plain; charset=utf-8", []byte(board.Text))
+}
+
+// SetText replaces a board's text with the raw request body. The bytes are
+// stored exactly as received: no JSON, form or newline handling. A successful
+// write answers 204 No Content.
+func (gc *GhostboardController) SetText(c *gin.Context) {
+	name := ghostboardBoardName(c)
+	if err := ghostboard.ValidateBoardName(name); err != nil {
+		writeGhostboardError(c, err)
+		return
+	}
+
+	text, err := gc.readRawText(c)
+	if err != nil {
+		writeGhostboardError(c, err)
+		return
+	}
+
+	if _, err := gc.store.Update(name, text, ghostboardClientID(c)); err != nil {
+		writeGhostboardError(c, err)
+		return
+	}
+
+	c.Status(http.StatusNoContent)
 }
 
 // Events streams board changes as Server-Sent Events. The first event carries
@@ -200,7 +243,33 @@ func (gc *GhostboardController) readText(c *gin.Context) (string, error) {
 	if len(text) > gc.maxTextBytes {
 		return "", ghostboard.ErrTextTooLarge
 	}
+
+	// Boards hold text: invalid UTF-8 would be replaced by U+FFFD when the
+	// store marshals the board to its JSON file, silently rewriting what the
+	// client sent. JSON decoding already yields valid strings, so this rejects
+	// raw and percent-decoded bodies.
+	if !utf8.ValidString(text) {
+		return "", errGhostboardInvalidText
+	}
+
 	return text, nil
+}
+
+// readRawText reads the whole request body verbatim, enforcing the configured
+// board size on the bytes received. Boards hold text, so a body that is not
+// valid UTF-8 is rejected instead of being stored and later mangled by the
+// JSON persistence.
+func (gc *GhostboardController) readRawText(c *gin.Context) (string, error) {
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, int64(gc.maxTextBytes))
+
+	body, err := io.ReadAll(c.Request.Body)
+	if err != nil {
+		return "", ghostboardBodyError(err)
+	}
+	if !utf8.Valid(body) {
+		return "", errGhostboardInvalidText
+	}
+	return string(body), nil
 }
 
 func writeGhostboardEvent(controller *http.ResponseController, c *gin.Context, event ghostboard.Event) bool {
@@ -250,6 +319,8 @@ func writeGhostboardError(c *gin.Context, err error) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid board name: use 1-64 letters, digits, dots, dashes or underscores"})
 	case errors.Is(err, ghostboard.ErrTextTooLarge):
 		c.JSON(http.StatusRequestEntityTooLarge, gin.H{"error": err.Error()})
+	case errors.Is(err, errGhostboardInvalidText):
+		c.JSON(http.StatusBadRequest, gin.H{"error": "request body is not valid UTF-8: boards hold text only"})
 	case errors.Is(err, errGhostboardInvalidBody):
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
 	default:

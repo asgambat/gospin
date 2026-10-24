@@ -79,31 +79,47 @@ func fileHash(path string) string {
 	return fmt.Sprintf("%x", h[:4])
 }
 
-// serveGhostboardPage serves the ghostboard page with the script tag rewritten
-// to carry the content hash of ghostboard.js, so deployments are picked up
-// immediately even when the service worker cache is still warm.
-func serveGhostboardPage(c *gin.Context) {
-	c.Header("Cache-Control", "no-cache, must-revalidate")
-	html, err := os.ReadFile(uiPath("ghostboard.html"))
-	if err != nil {
-		logger.WithComponent("ui_router").Errorf("cannot read ghostboard page: %v", err)
-		c.Status(http.StatusInternalServerError)
-		return
+// cacheBustTag appends the content hash of an asset to the attribute that
+// references it, turning href="/ui/assets/icon.svg" into
+// href="/ui/assets/icon.svg?v=<hash>". The assets are served with a one-year
+// cache lifetime, so the hash is what makes a deployment pick up a new file
+// even when the service worker cache is still warm. The files are small, so
+// hashing them on every page request keeps a deploy live without a restart.
+func cacheBustTag(html, attr, asset string) string {
+	target := attr + `="/ui/` + asset + `"`
+	busted := attr + `="/ui/` + asset + "?v=" + assetVersion(asset) + `"`
+	return strings.Replace(html, target, busted, 1)
+}
+
+// serveGhostboardPage serves the ghostboard page with the script and icon tags
+// rewritten to carry the content hash of their assets. The configured board
+// size is injected as data-max-bytes, so the file picker can reject an
+// oversized file before reading it into memory.
+func serveGhostboardPage(maxTextBytes int) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		c.Header("Cache-Control", "no-cache, must-revalidate")
+		html, err := os.ReadFile(uiPath("ghostboard.html"))
+		if err != nil {
+			logger.WithComponent("ui_router").Errorf("cannot read ghostboard page: %v", err)
+			c.Status(http.StatusInternalServerError)
+			return
+		}
+
+		rewritten := string(html)
+		rewritten = cacheBustTag(rewritten, "src", "assets/ghostboard.js")
+		rewritten = cacheBustTag(rewritten, "href", "assets/ghostboard-icon.svg")
+		rewritten = cacheBustTag(rewritten, "href", "assets/ghostboard-icon-32.png")
+		rewritten = cacheBustTag(rewritten, "href", "assets/ghostboard-icon-180.png")
+		rewritten = strings.Replace(rewritten, `data-max-bytes=""`,
+			fmt.Sprintf(`data-max-bytes="%d"`, maxTextBytes), 1)
+
+		c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(rewritten))
 	}
-
-	rewritten := strings.Replace(
-		string(html),
-		`src="/ui/assets/ghostboard.js"`,
-		fmt.Sprintf(`src="/ui/assets/ghostboard.js?v=%s"`, assetVersion("assets/ghostboard.js")),
-		1,
-	)
-
-	c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(rewritten))
 }
 
 // NewUIRouter sets up routes to serve the UI static files under /ui.
 // It serves index.html for the root and any sub-paths (SPA routing).
-func NewUIRouter(r *gin.Engine) {
+func NewUIRouter(r *gin.Engine, ghostboardMaxTextBytes int) {
 	// Serve static assets (JS, CSS, images) with long-term caching.
 	// Manifests are excluded from long-term caching so icon/scope changes
 	// are picked up immediately by browsers.
@@ -140,6 +156,15 @@ func NewUIRouter(r *gin.Engine) {
 		c.Header("Service-Worker-Allowed", "/")
 		c.Header("Cache-Control", "public, max-age=3600")
 		c.File(uiPath("service-worker.js"))
+	})
+
+	// Serve the shared service-worker registration script. It sits next to
+	// service-worker.js rather than under /ui/assets so it gets a short cache
+	// lifetime without colliding with the static asset wildcard.
+	r.GET("/ui/sw-register.js", func(c *gin.Context) {
+		c.Header("Content-Type", "application/javascript; charset=utf-8")
+		c.Header("Cache-Control", "public, max-age=3600")
+		c.File(uiPath("sw-register.js"))
 	})
 
 	// Serve index.html for the /ui root (no caching for HTML).
@@ -197,8 +222,9 @@ func NewUIRouter(r *gin.Engine) {
 	// Serve the shared text board. The board name is part of the path
 	// (/ui/ghostboard/lavoro) and is resolved client-side, so every sub-path
 	// returns the same page.
-	r.GET("/ui/ghostboard", serveGhostboardPage)
-	r.GET("/ui/ghostboard/*board", serveGhostboardPage)
+	ghostboardPage := serveGhostboardPage(ghostboardMaxTextBytes)
+	r.GET("/ui/ghostboard", ghostboardPage)
+	r.GET("/ui/ghostboard/*board", ghostboardPage)
 
 	// Serve index.html for any sub-path under /ui (SPA client-side routing)
 	r.NoRoute(func(c *gin.Context) {

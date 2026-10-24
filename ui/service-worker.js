@@ -2,7 +2,7 @@
 // new install overwrites instead of layering on top of the old cache,
 // and so the activate handler below can deterministically prune stale
 // entries left over from previous versions.
-const CACHE_NAME = 'gosspin-ui-v6';
+const CACHE_NAME = 'gosspin-ui-v7';
 
 self.addEventListener('install', event => {
   // Take control of all clients immediately so the new caching strategy
@@ -20,6 +20,12 @@ self.addEventListener('install', event => {
         '/ui/assets/app.js',
         '/ui/assets/pwa/app-icon-192.png',
         '/ui/assets/pwa/app-icon-512.png',
+        // Ghostboard PWA manifest and icons. The manifest is fetched
+        // network-first (see the fetch handler), so this entry is only the
+        // offline fallback for it.
+        '/ui/assets/pwa/manifest-ghostboard.json',
+        '/ui/assets/pwa/ghostboard-icon-192.png',
+        '/ui/assets/pwa/ghostboard-icon-512.png',
         // Homepage theme background images (locally bundled, served by
         // the static asset router r.Static("/ui/assets", "./ui/assets")
         // in internal/api/route/ui_route.go). Pre-cached so each theme's
@@ -102,6 +108,23 @@ self.addEventListener('fetch', event => {
           // /ui/home.js, and serve nothing.
           return caches.match(event.request, { ignoreSearch: true });
         })
+    );
+    return;
+  }
+
+  // Manifests change with the app (name, icons, scope) and the router serves
+  // them with no-cache on purpose, so they are fetched network-first: the
+  // pre-cached copy is only the offline fallback.
+  if (url.pathname.includes('manifest')) {
+    event.respondWith(
+      fetch(event.request)
+        .then(response => {
+          const cloned = response.clone();
+          return caches.open(CACHE_NAME)
+            .then(cache => cache.put(event.request, cloned))
+            .then(() => response);
+        })
+        .catch(() => caches.match(event.request, { ignoreSearch: true }))
     );
     return;
   }

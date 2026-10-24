@@ -5,6 +5,7 @@ const GHOSTBOARD_SAVE_DEBOUNCE_MS = 300;
 const GHOSTBOARD_BOARD_PREFIX = '/ui/ghostboard';
 const GHOSTBOARD_BOARD_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
 const GHOSTBOARD_THEME_KEY = 'gosspin.ghostboard.theme';
+const GHOSTBOARD_COPIED_MS = 1500;
 const GHOSTBOARD_CLIENT_HEADER = 'X-Ghostboard-Client';
 
 function ghostboard() {
@@ -20,6 +21,8 @@ function ghostboard() {
     theme: 'light',
     dirty: false,
     saving: false,
+    copied: false,
+    copiedTimer: null,
     pendingRemote: null,
     saveTimer: null,
     clientId: '',
@@ -219,6 +222,16 @@ function ghostboard() {
     },
 
     async errorMessage(response) {
+      // An insert can push the board over its limit. The text is kept, so say
+      // what to do about it instead of only repeating the server text. Checked
+      // before parsing the body so an unreadable error body cannot hide it.
+      if (response.status === 413) {
+        const limit = this.boardLimit();
+        const size = limit > 0 ? ' of ' + limit + ' bytes' : '';
+        return 'This board is over its size limit' + size +
+          ': shorten the text, for example undo the last insert, and it will save again.';
+      }
+
       try {
         const payload = await response.json();
         if (payload && payload.error) {
@@ -236,6 +249,149 @@ function ghostboard() {
       }
       const payload = new Blob([JSON.stringify({ text: this.text })], { type: 'application/json' });
       navigator.sendBeacon(this.apiUrl(), payload);
+    },
+
+    async loadFile(event) {
+      const input = event.target;
+      const file = input.files && input.files[0];
+      // Reset the input so picking the same file twice fires `change` again.
+      input.value = '';
+
+      if (!file || !this.boardValid) {
+        return;
+      }
+
+      // The page carries the server-side board size, so an oversized file is
+      // refused before it is read into memory.
+      const maxBytes = this.boardLimit();
+      if (maxBytes > 0 && file.size > maxBytes) {
+        this.error = '"' + file.name + '" is ' + file.size +
+          ' bytes: this board holds at most ' + maxBytes + ' bytes.';
+        return;
+      }
+
+      let buffer;
+      try {
+        buffer = await file.arrayBuffer();
+      } catch (error) {
+        console.error('Ghostboard: cannot read the selected file', error);
+        this.error = 'Cannot read "' + file.name + '".';
+        return;
+      }
+
+      let content;
+      try {
+        // Boards hold text, so a file that is not valid UTF-8 is refused
+        // instead of inserting replacement characters. TextDecoder drops a
+        // leading BOM, like file.text() would.
+        content = new TextDecoder('utf-8', { fatal: true }).decode(buffer);
+      } catch (error) {
+        console.warn('Ghostboard: the selected file is not valid UTF-8', error);
+        this.error = '"' + file.name + '" is not valid UTF-8 text: save it as UTF-8 and try again.';
+        return;
+      }
+
+      if (content === '') {
+        this.error = '"' + file.name + '" is empty: nothing to insert.';
+        return;
+      }
+
+      this.error = '';
+      this.insertText(content);
+      this.onInput();
+      this.save();
+    },
+
+    insertText(content) {
+      const area = document.getElementById('ghostboard-text');
+      // The toolbar button keeps the focus in the textarea, so the caret (or
+      // selection) is where the user wants the file; a board that never had
+      // the focus gets the text appended at the end.
+      const focused = area !== null && document.activeElement === area;
+      const start = focused && typeof area.selectionStart === 'number' ? area.selectionStart : this.text.length;
+      const end = focused && typeof area.selectionEnd === 'number' ? area.selectionEnd : start;
+
+      this.text = this.text.slice(0, start) + content + this.text.slice(end);
+
+      if (!area) {
+        return;
+      }
+
+      // The caret lands right after the inserted text; wait one frame so the
+      // DOM value already holds the new content.
+      const caret = start + content.length;
+      requestAnimationFrame(() => {
+        area.focus();
+        area.setSelectionRange(caret, caret);
+      });
+    },
+
+    boardLimit() {
+      const area = document.getElementById('ghostboard-text');
+      const maxBytes = area ? Number(area.dataset.maxBytes) : 0;
+      return Number.isFinite(maxBytes) && maxBytes > 0 ? maxBytes : 0;
+    },
+
+    async copy() {
+      if (!this.text) {
+        return;
+      }
+
+      try {
+        await navigator.clipboard.writeText(this.text);
+        this.markCopied();
+        return;
+      } catch (error) {
+        // The clipboard API needs a secure context; fall back to a selection copy.
+        console.warn('Ghostboard: clipboard API unavailable', error);
+      }
+
+      if (this.copyWithSelection()) {
+        this.markCopied();
+        return;
+      }
+      this.error = 'This browser does not allow copying to the clipboard.';
+    },
+
+    copyWithSelection() {
+      const area = document.createElement('textarea');
+      area.value = this.text;
+      area.setAttribute('readonly', '');
+      area.style.position = 'fixed';
+      area.style.top = '0';
+      area.style.left = '-9999px';
+      document.body.appendChild(area);
+      area.select();
+
+      let copied = false;
+      try {
+        copied = document.execCommand('copy');
+      } catch (error) {
+        console.warn('Ghostboard: copy command failed', error);
+      }
+      area.remove();
+      return copied;
+    },
+
+    markCopied() {
+      this.copied = true;
+      clearTimeout(this.copiedTimer);
+      this.copiedTimer = setTimeout(() => {
+        this.copied = false;
+      }, GHOSTBOARD_COPIED_MS);
+    },
+
+    clearBoard() {
+      if (!this.text) {
+        return;
+      }
+      if (!window.confirm('Clear this board? Every connected device will lose its text.')) {
+        return;
+      }
+
+      this.text = '';
+      this.onInput();
+      this.save();
     },
 
     download() {

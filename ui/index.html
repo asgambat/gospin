@@ -708,17 +708,6 @@
 
     <script src="/ui/assets/app.js"></script>
 
-    <script>
-        if ('serviceWorker' in navigator) {
-            window.addEventListener('load', function() {
-                navigator.serviceWorker.register('/ui/service-worker.js', { scope: '/' })
-                    .then(function(registration) {
-                        console.log('ServiceWorker registration successful:', registration.scope);
-                    }, function(err) {
-                        console.log('ServiceWorker registration failed:', err);
-                    });
-            });
-        }
-    </script>
+    <script src="/ui/sw-register.js"></script>
 </body>
 </html>

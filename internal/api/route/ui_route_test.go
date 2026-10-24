@@ -20,7 +20,7 @@ func TestUIRoute_ServiceWorkerServedWithCorrectHeaders(t *testing.T) {
 	t.Chdir("../../..")
 
 	r := gin.New()
-	NewUIRouter(r)
+	NewUIRouter(r, 16777216)
 
 	req, _ := http.NewRequest(http.MethodGet, "/ui/service-worker.js", nil)
 	w := httptest.NewRecorder()
@@ -60,13 +60,74 @@ func TestUIRoute_ServiceWorkerServedWithCorrectHeaders(t *testing.T) {
 	}
 }
 
+func TestUIRoute_ServiceWorkerRegistrationServedWithCorrectHeaders(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	t.Chdir("../../..")
+
+	r := gin.New()
+	NewUIRouter(r, 16777216)
+
+	req, _ := http.NewRequest(http.MethodGet, "/ui/sw-register.js", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", w.Code)
+	}
+	if ct := w.Header().Get("Content-Type"); ct != "application/javascript; charset=utf-8" {
+		t.Errorf("expected Content-Type 'application/javascript; charset=utf-8', got '%s'", ct)
+	}
+	if cc := w.Header().Get("Cache-Control"); !strings.Contains(cc, "max-age=3600") {
+		t.Errorf("expected Cache-Control to contain 'max-age=3600', got '%s'", cc)
+	}
+
+	body := w.Body.String()
+	for _, needle := range []string{"/ui/service-worker.js", "scope: '/'"} {
+		if !strings.Contains(body, needle) {
+			t.Errorf("expected the registration script to contain %q", needle)
+		}
+	}
+}
+
+// TestUIRoute_PagesShareServiceWorkerRegistration pins the single registration
+// point: every page loads the shared script, and none registers inline, so a
+// device that opens only one page still gets the service worker.
+func TestUIRoute_PagesShareServiceWorkerRegistration(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	t.Chdir("../../..")
+
+	r := gin.New()
+	NewUIRouter(r, 16777216)
+
+	for _, path := range []string{"/ui", "/ui/home", "/ui/ghostboard"} {
+		t.Run(path, func(t *testing.T) {
+			w := httptest.NewRecorder()
+			r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, path, nil))
+
+			if w.Code != http.StatusOK {
+				t.Fatalf("expected status 200, got %d", w.Code)
+			}
+
+			body := w.Body.String()
+			if !strings.Contains(body, `src="/ui/sw-register.js"`) {
+				t.Error("page does not load the shared service worker registration script")
+			}
+			if strings.Contains(body, "navigator.serviceWorker.register") {
+				t.Error("page still registers the service worker inline instead of using /ui/sw-register.js")
+			}
+		})
+	}
+}
+
 func TestUIRoute_CacheBusterInjected(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	t.Chdir("../../..")
 
 	r := gin.New()
-	NewUIRouter(r)
+	NewUIRouter(r, 16777216)
 
 	cases := []struct {
 		name   string

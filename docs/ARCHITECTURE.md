@@ -429,6 +429,33 @@ func (m *MemoryRuntime) Start(name string) error {
 }
 ```
 
+### Ghostboard Store
+
+**Design** (`internal/ghostboard`):
+- Boards live in one `Store` guarded by a mutex. Each board keeps its text, a revision
+  counter, the last update time, its open event streams and the pending idle-clear timer.
+- `Update` is a no-op when the text is unchanged, so a typing pause does not bump the revision.
+  Otherwise it stores the text, increments the revision and fans an `Event` out to every
+  subscriber. Subscribers get a buffered channel (16 events): a slow stream drops intermediate
+  events and converges on the next full snapshot, which always carries the whole text.
+- The text is dropped `ghostboard.clear_delay_secs` after the last write **or** the last
+  subscriber leaving, whichever happens last. Every schedule increments a generation counter
+  captured by the timer, so a tick that fires while a write re-arms the clear cannot empty the
+  fresh text.
+- `StartPersistence` flushes dirty boards to a dedicated JSON file every
+  `ghostboard.persist_interval_secs` (empty boards are pruned) and flushes once more on shutdown.
+
+**HTTP surface** (`internal/api/route/ghostboard_route.go` and
+`internal/api/controller/ghostboard_controller.go`):
+- `GET`/`POST /ghostboard/:board` — JSON board state; a write accepts a JSON body, a form field
+  or the raw text.
+- `GET /ghostboard/:board/events` — Server-Sent Events stream with the initial snapshot, every
+  change and a keep-alive comment; it bypasses gzip and the per-request timeout.
+- `GET`/`POST /api/boards/:board` — plain-text surface for CLIs; `POST` stores the raw body byte
+  for byte, rejects invalid UTF-8 with `400` and answers `204 No Content`.
+- `ui/ghostboard.html` and `ui/assets/ghostboard.js` render one independent board per
+  `/ui/ghostboard/<board>` path.
+
 ## 🔌 Extension Points
 
 ### Adding New Runtime Types

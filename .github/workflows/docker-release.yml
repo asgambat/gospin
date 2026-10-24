@@ -71,6 +71,31 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
+      # `latest` is a moving pointer for consumers. While the app is pre-1.0
+      # (major == 0) every release may be breaking, so `latest` follows all of
+      # them; from 1.0.0 on it moves only on a minor/major tag (patch == 0), so
+      # `docker pull ...:latest` does not silently pick up a bug-fix build.
+      # Every release still publishes its immutable `X.Y.Z`, `X.Y` and `X`
+      # tags, whatever happens to `latest`.
+      - name: Classify release
+        id: release
+        run: |
+          set -euo pipefail
+          VERSION="${GITHUB_REF_NAME#v}"
+          if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::tag ${GITHUB_REF_NAME} is not vMAJOR.MINOR.PATCH"
+            exit 1
+          fi
+          MAJOR="${VERSION%%.*}"
+          PATCH="${VERSION##*.}"
+          if [ "$MAJOR" = "0" ] || [ "$PATCH" = "0" ]; then
+            echo "moves_latest=true" >> "$GITHUB_OUTPUT"
+            echo "$VERSION moves latest: pre-1.0 release or minor/major tag"
+          else
+            echo "moves_latest=false" >> "$GITHUB_OUTPUT"
+            echo "$VERSION is a patch release after 1.0: latest stays where it is"
+          fi
+
       - name: Extract metadata (tags, labels)
         id: meta
         uses: docker/metadata-action@v5
@@ -82,7 +107,7 @@ jobs:
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=semver,pattern={{major}}
-            type=raw,value=latest
+            type=raw,value=latest,enable=${{ steps.release.outputs.moves_latest == 'true' }}
           labels: |
             org.opencontainers.image.version=${{ steps.meta-build.outputs.VERSION }}
             org.opencontainers.image.revision=${{ github.sha }}

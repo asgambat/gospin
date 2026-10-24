@@ -18,7 +18,9 @@ import (
 	"github.com/bassista/go_spin/internal/ghostboard"
 )
 
-func newGhostboardTestRouter(t *testing.T, maxTextBytes int) *gin.Engine {
+// newGhostboardTestController builds the controller, its router and the store
+// behind them, so tests can subscribe to the board events.
+func newGhostboardTestController(t *testing.T, maxTextBytes int) (*GhostboardController, *gin.Engine, *ghostboard.Store) {
 	t.Helper()
 
 	store, err := ghostboard.New(ghostboard.Config{
@@ -37,6 +39,15 @@ func newGhostboardTestRouter(t *testing.T, maxTextBytes int) *gin.Engine {
 	r.GET("/ghostboard/:board", gc.Get)
 	r.POST("/ghostboard/:board", gc.Update)
 	r.GET("/ghostboard/:board/events", gc.Events)
+	r.GET("/api/boards/:board", gc.GetText)
+	r.POST("/api/boards/:board", gc.SetText)
+	return gc, r, store
+}
+
+func newGhostboardTestRouter(t *testing.T, maxTextBytes int) *gin.Engine {
+	t.Helper()
+
+	_, r, _ := newGhostboardTestController(t, maxTextBytes)
 	return r
 }
 
@@ -228,6 +239,258 @@ func TestGhostboardUpdateRejectsOversizedRawBody(t *testing.T) {
 
 	if w.Code != http.StatusRequestEntityTooLarge {
 		t.Fatalf("status = %d, want 413: %s", w.Code, w.Body.String())
+	}
+}
+
+// TestGhostboardUpdateRejectsInvalidUTF8 pins the persistence invariant on the
+// legacy endpoint too: a body that is not valid UTF-8 would be rewritten with
+// U+FFFD when the store saves the board, silently changing the text.
+func TestGhostboardUpdateRejectsInvalidUTF8(t *testing.T) {
+	tests := []struct {
+		name        string
+		contentType string
+		body        string
+	}{
+		{name: "raw body", contentType: "text/plain", body: "bad \xff\xfe"},
+		{name: "form field", contentType: "application/x-www-form-urlencoded", body: "text=bad+%FF%FE"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := newGhostboardTestRouter(t, 1024)
+
+			req := httptest.NewRequest(http.MethodPost, "/ghostboard/note", strings.NewReader("valid"))
+			req.Header.Set("Content-Type", "text/plain")
+			r.ServeHTTP(httptest.NewRecorder(), req)
+
+			req = httptest.NewRequest(http.MethodPost, "/ghostboard/note", strings.NewReader(tt.body))
+			req.Header.Set("Content-Type", tt.contentType)
+			w := httptest.NewRecorder()
+			r.ServeHTTP(w, req)
+
+			if w.Code != http.StatusBadRequest {
+				t.Fatalf("status = %d, want 400: %s", w.Code, w.Body.String())
+			}
+
+			w = httptest.NewRecorder()
+			r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/ghostboard/note", nil))
+
+			var board ghostboard.Board
+			if err := json.Unmarshal(w.Body.Bytes(), &board); err != nil {
+				t.Fatalf("Unmarshal() error = %v", err)
+			}
+			if board.Text != "valid" {
+				t.Errorf("Text = %q, want the rejected write to leave the board untouched", board.Text)
+			}
+		})
+	}
+}
+
+func TestBoardsAPIGetUnknownBoardIsEmpty(t *testing.T) {
+	r := newGhostboardTestRouter(t, 1024)
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/api/boards/note", nil))
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", w.Code, w.Body.String())
+	}
+	if ct := w.Header().Get("Content-Type"); !strings.HasPrefix(ct, "text/plain") {
+		t.Errorf("Content-Type = %q, want text/plain", ct)
+	}
+	if w.Body.Len() != 0 {
+		t.Errorf("body = %q, want an empty body", w.Body.String())
+	}
+	if cc := w.Header().Get("Cache-Control"); cc != "no-store" {
+		t.Errorf("Cache-Control = %q, want no-store", cc)
+	}
+}
+
+// TestBoardsAPISetStoresRawBody pins the CLI contract: every body is stored
+// byte for byte, whatever the Content-Type claims, newlines included.
+func TestBoardsAPISetStoresRawBody(t *testing.T) {
+	tests := []struct {
+		name        string
+		contentType string
+		body        string
+	}{
+		{name: "plain text", contentType: "text/plain", body: "# title\nsecond line\n"},
+		{name: "json body is not decoded", contentType: "application/json", body: `{"text":"hello"}`},
+		{name: "form body is not decoded", contentType: "application/x-www-form-urlencoded", body: "text=hello+world"},
+		{name: "trailing newline is kept", contentType: "text/plain", body: "echoed\n"},
+		{name: "multibyte UTF-8", contentType: "text/plain; charset=utf-8", body: "caffè 😀\n"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := newGhostboardTestRouter(t, 1024)
+
+			req := httptest.NewRequest(http.MethodPost, "/api/boards/note", strings.NewReader(tt.body))
+			req.Header.Set("Content-Type", tt.contentType)
+			w := httptest.NewRecorder()
+			r.ServeHTTP(w, req)
+
+			if w.Code != http.StatusNoContent {
+				t.Fatalf("status = %d, want 204: %s", w.Code, w.Body.String())
+			}
+			if w.Body.Len() != 0 {
+				t.Errorf("body = %q, want no body on 204", w.Body.String())
+			}
+
+			w = httptest.NewRecorder()
+			r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/api/boards/note", nil))
+			if w.Code != http.StatusOK {
+				t.Fatalf("GET status = %d, want 200: %s", w.Code, w.Body.String())
+			}
+			if got := w.Body.String(); got != tt.body {
+				t.Errorf("GET body = %q, want %q", got, tt.body)
+			}
+		})
+	}
+}
+
+func TestBoardsAPISetClearsBoardWithEmptyBody(t *testing.T) {
+	r := newGhostboardTestRouter(t, 1024)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/boards/note", strings.NewReader("keep me"))
+	req.Header.Set("Content-Type", "text/plain")
+	r.ServeHTTP(httptest.NewRecorder(), req)
+
+	req = httptest.NewRequest(http.MethodPost, "/api/boards/note", http.NoBody)
+	req.Header.Set("Content-Type", "text/plain")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, want 204: %s", w.Code, w.Body.String())
+	}
+
+	w = httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/api/boards/note", nil))
+	if got := w.Body.String(); got != "" {
+		t.Errorf("GET body = %q, want the board cleared", got)
+	}
+}
+
+func TestBoardsAPIRejectsInvalidUTF8(t *testing.T) {
+	r := newGhostboardTestRouter(t, 1024)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/boards/note", strings.NewReader("valid"))
+	req.Header.Set("Content-Type", "text/plain")
+	r.ServeHTTP(httptest.NewRecorder(), req)
+
+	req = httptest.NewRequest(http.MethodPost, "/api/boards/note", strings.NewReader("bad \xff\xfe"))
+	req.Header.Set("Content-Type", "text/plain")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400: %s", w.Code, w.Body.String())
+	}
+
+	// The rejected body must leave the board untouched.
+	w = httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/api/boards/note", nil))
+	if got := w.Body.String(); got != "valid" {
+		t.Errorf("GET body = %q, want the previous text", got)
+	}
+}
+
+func TestBoardsAPISizeLimit(t *testing.T) {
+	const maxTextBytes = 8
+
+	tests := []struct {
+		name string
+		body string
+		want int
+	}{
+		{name: "at the limit", body: strings.Repeat("x", maxTextBytes), want: http.StatusNoContent},
+		{name: "over the limit", body: strings.Repeat("x", maxTextBytes+1), want: http.StatusRequestEntityTooLarge},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := newGhostboardTestRouter(t, maxTextBytes)
+
+			req := httptest.NewRequest(http.MethodPost, "/api/boards/note", strings.NewReader(tt.body))
+			req.Header.Set("Content-Type", "text/plain")
+			w := httptest.NewRecorder()
+			r.ServeHTTP(w, req)
+
+			if w.Code != tt.want {
+				t.Fatalf("status = %d, want %d: %s", w.Code, tt.want, w.Body.String())
+			}
+		})
+	}
+}
+
+func TestBoardsAPIRejectsOversizedBodyWithoutChangingBoard(t *testing.T) {
+	r := newGhostboardTestRouter(t, 8)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/boards/note", strings.NewReader("keep"))
+	req.Header.Set("Content-Type", "text/plain")
+	r.ServeHTTP(httptest.NewRecorder(), req)
+
+	req = httptest.NewRequest(http.MethodPost, "/api/boards/note", strings.NewReader(strings.Repeat("x", 9)))
+	req.Header.Set("Content-Type", "text/plain")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("status = %d, want 413: %s", w.Code, w.Body.String())
+	}
+
+	w = httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/api/boards/note", nil))
+	if got := w.Body.String(); got != "keep" {
+		t.Errorf("GET body = %q, want the rejected write to leave the board untouched", got)
+	}
+}
+
+func TestBoardsAPIPassesClientID(t *testing.T) {
+	_, r, store := newGhostboardTestController(t, 1024)
+
+	sub, _, err := store.Subscribe("note")
+	if err != nil {
+		t.Fatalf("Subscribe() error = %v", err)
+	}
+	defer sub.Close()
+
+	req := httptest.NewRequest(http.MethodPost, "/api/boards/note", strings.NewReader("x"))
+	req.Header.Set("Content-Type", "text/plain")
+	req.Header.Set("X-Ghostboard-Client", "cli-1")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, want 204: %s", w.Code, w.Body.String())
+	}
+
+	select {
+	case event := <-sub.Events():
+		if event.Text != "x" {
+			t.Errorf("event.Text = %q, want x", event.Text)
+		}
+		if event.ClientID != "cli-1" {
+			t.Errorf("event.ClientID = %q, want the header value", event.ClientID)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("no event received for the CLI write")
+	}
+}
+
+func TestBoardsAPIRejectsInvalidBoardName(t *testing.T) {
+	r := newGhostboardTestRouter(t, 1024)
+
+	methods := []string{http.MethodGet, http.MethodPost}
+	for _, method := range methods {
+		t.Run(method, func(t *testing.T) {
+			req := httptest.NewRequest(method, "/api/boards/.hidden", strings.NewReader("x"))
+			req.Header.Set("Content-Type", "text/plain")
+			w := httptest.NewRecorder()
+			r.ServeHTTP(w, req)
+
+			if w.Code != http.StatusBadRequest {
+				t.Fatalf("status = %d, want 400: %s", w.Code, w.Body.String())
+			}
+		})
 	}
 }
 

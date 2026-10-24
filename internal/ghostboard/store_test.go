@@ -263,6 +263,114 @@ func TestSubscribeCancelsPendingClear(t *testing.T) {
 	}
 }
 
+func TestUpdateSchedulesIdleClearWithoutSubscribers(t *testing.T) {
+	store := newTestStore(t)
+
+	if _, err := store.Update("note", "scritto dalla CLI", ""); err != nil {
+		t.Fatalf("Update() error = %v", err)
+	}
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		board, err := store.Get("note")
+		if err != nil {
+			t.Fatalf("Get() error = %v", err)
+		}
+		if board.Text == "" {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatal("board written without subscribers was not cleared after the clear delay")
+}
+
+func TestUpdateRearmsPendingIdleClear(t *testing.T) {
+	cfg := testConfig(t.TempDir())
+	// Wide margins on purpose: a slow CI must not turn the timing check into a
+	// failure, so each step keeps a few hundred milliseconds of slack.
+	cfg.ClearDelay = 500 * time.Millisecond
+	store, err := New(cfg)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	if _, err := store.Update("note", "prima", ""); err != nil {
+		t.Fatalf("Update() error = %v", err)
+	}
+
+	// Write again late enough that the original deadline has passed by the
+	// time the next check runs, but the re-armed one has not.
+	time.Sleep(300 * time.Millisecond)
+	if _, err := store.Update("note", "seconda", ""); err != nil {
+		t.Fatalf("Update() error = %v", err)
+	}
+	time.Sleep(300 * time.Millisecond)
+
+	board, err := store.Get("note")
+	if err != nil {
+		t.Fatalf("Get() error = %v", err)
+	}
+	if board.Text != "seconda" {
+		t.Fatalf("board cleared on the original deadline instead of the re-armed one: %+v", board)
+	}
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		board, err := store.Get("note")
+		if err != nil {
+			t.Fatalf("Get() error = %v", err)
+		}
+		if board.Text == "" {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatal("board was not cleared after the re-armed clear delay")
+}
+
+func TestStaleClearTickDoesNotClearBoard(t *testing.T) {
+	store := newTestStore(t)
+
+	if _, err := store.Update("note", "nuovo", ""); err != nil {
+		t.Fatalf("Update() error = %v", err)
+	}
+
+	store.mu.Lock()
+	state := store.boards["note"]
+	seq := state.clearSeq
+	timer := state.clearTimer
+	store.mu.Unlock()
+	if seq == 0 || timer == nil {
+		t.Fatal("Update() did not arm the idle clear")
+	}
+	// The test fires the ticks by hand, so the armed timer is not needed.
+	timer.Stop()
+
+	// A tick that fired just as a write re-armed the clear belongs to the
+	// previous generation and must not empty the board.
+	store.clearIfIdle("note", seq-1)
+
+	board, err := store.Get("note")
+	if err != nil {
+		t.Fatalf("Get() error = %v", err)
+	}
+	if board.Text != "nuovo" {
+		t.Errorf("Text = %q, want the text untouched by the stale tick", board.Text)
+	}
+
+	// The current generation must still clear, so the guard rejects stale
+	// ticks only instead of disabling the idle clear.
+	store.clearIfIdle("note", seq)
+
+	board, err = store.Get("note")
+	if err != nil {
+		t.Fatalf("Get() error = %v", err)
+	}
+	if board.Text != "" {
+		t.Errorf("Text = %q, want the current tick to clear the board", board.Text)
+	}
+}
+
 func TestSubscriptionCloseIsIdempotent(t *testing.T) {
 	store := newTestStore(t)
 

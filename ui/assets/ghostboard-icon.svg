@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="Ghostboard">
+  <rect x="2" y="2" width="60" height="60" rx="14" fill="#2563eb"/>
+  <path fill="#ffffff" d="M14 48V32a18 18 0 0 1 36 0v16l-6-5-6 5-6-5-6 5-6-5-6 5z"/>
+  <ellipse cx="26" cy="30" rx="3.6" ry="4.6" fill="#2563eb"/>
+  <ellipse cx="38" cy="30" rx="3.6" ry="4.6" fill="#2563eb"/>
+</svg>

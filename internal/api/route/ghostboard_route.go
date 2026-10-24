@@ -26,4 +26,9 @@ func NewGhostboardRouter(appCtx *app.App, group *gin.RouterGroup) {
 	group.GET("ghostboard/:board", timeoutMiddleware, gc.Get)
 	group.POST("ghostboard/:board", timeoutMiddleware, gc.Update)
 	group.GET("ghostboard/:board/events", gc.Events)
+
+	// Plain-text board API for CLIs and scripts: GET returns the board text
+	// as-is, POST replaces it with the raw request body and answers 204.
+	group.GET("api/boards/:board", timeoutMiddleware, gc.GetText)
+	group.POST("api/boards/:board", timeoutMiddleware, gc.SetText)
 }

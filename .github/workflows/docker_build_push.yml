@@ -5,15 +5,17 @@
 # 2. Docker Hub (docker.io)
 #
 # TRIGGERS:
-# 1. On a push to the 'main' branch (automatic): publishes the 'main' and
-#    'latest' tags to both registries.
+# 1. On a push to the 'main' branch (automatic): publishes the 'main' tag to
+#    both registries.
 # 2. On a pull request to 'main' (automatic, build-only validation).
 # 3. Manually for any branch, using the 'Run workflow' button (manual):
 #    publishes a tag named after the branch.
 #
 # Version tags ('v*.*.*') are published by .github/workflows/docker-release.yml
 # only. Keeping the tag trigger out of this workflow avoids two concurrent
-# multi-arch builds racing on the same semver tags.
+# multi-arch builds racing on the same semver tags. `latest` is deliberately
+# not produced here either: only docker-release.yml publishes it, so a merge
+# to main cannot re-point it at an unreleased build.
 #
 name: Docker Image CI/CD
 
@@ -112,12 +114,12 @@ jobs:
           } >> "$GITHUB_OUTPUT"
           echo "Computed build metadata: VERSION=${VERSION}, BUILD_TIME=${BUILD_TIME}, BUILD_TIME_RFC3339=${BUILD_TIME_RFC3339}, GIT_COMMIT=${GIT_COMMIT}, GIT_COMMIT_FULL=${GIT_COMMIT_FULL}, GO_VERSION=${GO_VERSION}"
 
-      # Extracts the immutable Docker image tag list (semver, branch, latest)
-      # AND the OCI-standard labels. The `labels:` block forwards the same
-      # four values the Dockerfile receives via `--build-arg`, so the OCI
-      # image manifest carries them — inspectable with `docker inspect`,
-      # `crane manifest`, or any OCI-aware client without ever running the
-      # image. Reference:
+      # Extracts the branch image tag and the OCI-standard labels. A merge to
+      # main therefore publishes `main` and never re-points `latest`.
+      # The `labels:` block forwards the same four values the Dockerfile
+      # receives via `--build-arg`, so the OCI image manifest carries them —
+      # inspectable with `docker inspect`, `crane manifest`, or any OCI-aware
+      # client without ever running the image. Reference:
       # https://github.com/opencontainers/image-spec/blob/main/annotations.md
       - name: Extract metadata (tags and labels) for Docker
         id: meta
@@ -131,8 +133,6 @@ jobs:
             # e.g., a manual run on 'dev' branch will create a 'dev' tag.
             type=ref,event=branch
 
-            # Creates the 'latest' tag when a push is made to the default branch (main).
-            type=raw,value=latest,enable={{is_default_branch}}
           labels: |
             # OCI-standard build-metadata labels. The four values mirror what
             # `internal/version.BuildInfo()` prints at the homepage footer (and

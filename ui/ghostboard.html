@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Gospin - Ghostboard</title>
+    <title>Ghostboard</title>
     <script>
         (function () {
             try {
@@ -17,7 +17,10 @@
             }
         })();
     </script>
-    <link rel="manifest" href="/ui/assets/pwa/manifest.json">
+    <link rel="manifest" href="/ui/assets/pwa/manifest-ghostboard.json">
+    <link rel="icon" type="image/svg+xml" href="/ui/assets/ghostboard-icon.svg">
+    <link rel="icon" type="image/png" sizes="32x32" href="/ui/assets/ghostboard-icon-32.png">
+    <link rel="apple-touch-icon" sizes="180x180" href="/ui/assets/ghostboard-icon-180.png">
     <meta name="theme-color" content="#1976d2">
     <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
     <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
@@ -150,15 +153,33 @@
                     <code class="gb-code" x-text="board"></code>
                     <span class="gb-muted ml-3" x-text="revisionLabel"></span>
                 </div>
-                <div class="flex items-center gap-2">
+                <div class="flex flex-wrap items-center gap-2">
+                    <!-- mousedown.prevent keeps the focus (and the caret) in the textarea,
+                         so the picked file is inserted where the user was typing. -->
+                    <button type="button" @click="$refs.fileInput.click()" @mousedown.prevent :disabled="!boardValid"
+                            class="gb-btn px-3 py-1 rounded text-sm"
+                            title="Insert the text of a .txt file from this computer">
+                        📂 Open .txt
+                    </button>
+                    <button type="button" @click="copy()" :disabled="!text" class="gb-btn px-3 py-1 rounded text-sm"
+                            title="Copy this board text to the clipboard">
+                        <span x-show="!copied">📋 Copy</span>
+                        <span x-show="copied">✓ Copied</span>
+                    </button>
+                    <button type="button" @click="clearBoard()" :disabled="!text" class="gb-btn px-3 py-1 rounded text-sm"
+                            title="Clear this board on every connected device">
+                        🗑 Clear
+                    </button>
                     <button type="button" @click="download()" :disabled="!text" class="gb-btn px-3 py-1 rounded text-sm"
                             title="Download this board as a text file">
                         ⬇ Download .txt
                     </button>
+                    <input type="file" accept=".txt,text/plain" x-ref="fileInput" class="hidden"
+                           @change="loadFile($event)" aria-hidden="true" tabindex="-1">
                 </div>
             </div>
 
-            <textarea x-model="text" @input="onInput()" @blur="onBlur()"
+            <textarea id="ghostboard-text" data-max-bytes="" x-model="text" @input="onInput()" @blur="onBlur()"
                       :disabled="!boardValid"
                       class="gb-textarea w-full font-mono text-sm rounded border p-3"
                       rows="20" spellcheck="false" aria-label="Shared board text"
@@ -177,5 +198,6 @@
     </div>
 
     <script src="/ui/assets/ghostboard.js"></script>
+    <script src="/ui/sw-register.js"></script>
 </body>
 </html>

@@ -4,8 +4,9 @@
 // A board is addressed by name and holds the full text plus a revision counter.
 // Subscribers (one per open event stream) receive every change so connected
 // browsers stay in sync. Boards are kept in memory, optionally mirrored to a
-// dedicated JSON file, and their text is dropped once no client stays connected
-// for the configured clear delay.
+// dedicated JSON file. The text is dropped once the configured clear delay has
+// elapsed since the last write or the last subscriber leaving, whichever comes
+// last, so a board written only by a script is cleared too.
 package ghostboard
 
 import (
@@ -84,6 +85,9 @@ type boardState struct {
 	subs       map[*Subscription]struct{}
 	clearTimer *time.Timer
 	board      Board
+	// clearSeq is the generation of the pending idle clear. It sits after the
+	// pointer fields so the GC pointer prefix stays as small as possible.
+	clearSeq uint64
 }
 
 // Subscription is one open event stream for a board. Close must be called when
@@ -165,7 +169,8 @@ func (s *Store) Get(name string) (Board, error) {
 
 // Update stores a new text for the board and broadcasts it to every subscriber.
 // Updating a board with its current text is a no-op so typing pauses do not
-// bump the revision.
+// bump the revision. Accepted writes count as activity: they re-arm the idle
+// clear, so a board written by a script alone is cleared after clear_delay too.
 func (s *Store) Update(name, text, clientID string) (Board, error) {
 	if err := ValidateBoardName(name); err != nil {
 		return Board{}, err
@@ -178,23 +183,23 @@ func (s *Store) Update(name, text, clientID string) (Board, error) {
 	defer s.mu.Unlock()
 
 	state := s.boardLocked(name)
-	if state.board.Text == text {
-		return state.board, nil
-	}
+	if state.board.Text != text {
+		state.board.Text = text
+		state.board.Revision++
+		state.board.UpdatedAt = time.Now().UTC()
+		s.dirty = true
 
-	state.board.Text = text
-	state.board.Revision++
-	state.board.UpdatedAt = time.Now().UTC()
-	s.dirty = true
-
-	event := Event{Board: state.board, ClientID: clientID}
-	for sub := range state.subs {
-		select {
-		case sub.events <- event:
-		default:
-			logger.WithComponent("ghostboard").Debugf("dropping event for slow subscriber on board %q", name)
+		event := Event{Board: state.board, ClientID: clientID}
+		for sub := range state.subs {
+			select {
+			case sub.events <- event:
+			default:
+				logger.WithComponent("ghostboard").Debugf("dropping event for slow subscriber on board %q", name)
+			}
 		}
 	}
+
+	s.scheduleIdleClearLocked(name, state)
 
 	return state.board, nil
 }
@@ -351,21 +356,45 @@ func (s *Store) unsubscribe(sub *Subscription) {
 	if ok {
 		delete(state.subs, sub)
 		if len(state.subs) == 0 {
-			state.clearTimer = time.AfterFunc(s.cfg.ClearDelay, func() {
-				s.clearIfIdle(sub.board)
-			})
+			s.scheduleIdleClearLocked(sub.board, state)
 		}
 	}
 
 	close(sub.events)
 }
 
-func (s *Store) clearIfIdle(name string) {
+// scheduleIdleClearLocked (re)arms the idle clear of a board. The text survives
+// clear_delay after the last write or the last subscriber leaving, whichever
+// happens last; a board with an open stream or no text is never scheduled.
+func (s *Store) scheduleIdleClearLocked(name string, state *boardState) {
+	if state.clearTimer != nil {
+		state.clearTimer.Stop()
+		state.clearTimer = nil
+	}
+
+	// Every schedule gets its own generation, captured by the timer before it
+	// is started: a tick that fires just as a write re-arms the clear belongs
+	// to a stale generation and must not empty the freshly written text.
+	state.clearSeq++
+	seq := state.clearSeq
+
+	if len(state.subs) > 0 || state.board.Text == "" {
+		return
+	}
+
+	state.clearTimer = time.AfterFunc(s.cfg.ClearDelay, func() {
+		s.clearIfIdle(name, seq)
+	})
+}
+
+func (s *Store) clearIfIdle(name string, seq uint64) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	state, ok := s.boards[name]
-	if !ok {
+	if !ok || state.clearSeq != seq {
+		// The board was written or rescheduled after this tick was armed: the
+		// newer schedule owns the board now, so this stale tick must not clear it.
 		return
 	}
 	state.clearTimer = nil
