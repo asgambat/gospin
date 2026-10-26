@@ -119,6 +119,10 @@ css: ## Build and minify Tailwind CSS
 build: lint test ## Build and compile the application binary (runs lint + test first)
 	go build $(LDFLAGS) -o ./.build/main ./cmd/server
 
+.PHONY: build-cli
+build-cli: ## Build the gb-cli CLI into ./.build/gb-cli (same LDFLAGS as the server)
+	go build $(LDFLAGS) -trimpath -o ./.build/gb-cli ./cmd/board
+
 .PHONY: docker_build
 docker_build: ## Build docker image for current platform (local dev)
 	docker buildx build -f Dockerfile \

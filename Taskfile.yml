@@ -8,6 +8,7 @@ vars:
   # Binary output
   BIN_DIR: .build
   BINARY: gospin
+  BINARY_CLI: gb-cli
 
   # Version metadata — shell-evaluated at task runtime (same logic as Makefile)
   VERSION_PKG: github.com/bassista/go_spin/internal/version
@@ -19,6 +20,14 @@ vars:
     sh: git rev-parse --short HEAD 2>/dev/null || echo "unknown"
   GO_VERSION:
     sh: go version | awk '{print $3}'
+
+  # Build metadata flags, shared by the server and the CLI so the two binaries
+  # never disagree about the version. The Makefile keeps the same block in its
+  # LDFLAGS variable.
+  VERSION_FLAGS: '-X {{.VERSION_PKG}}.Version={{.VERSION}} -X {{.VERSION_PKG}}.BuildTime={{.BUILD_TIME}} -X {{.VERSION_PKG}}.GitCommit={{.GIT_COMMIT}} -X {{.VERSION_PKG}}.GoVersion={{.GO_VERSION}}'
+  VERSION_FLAGS_DEV: '-X {{.VERSION_PKG}}.Version=dev -X {{.VERSION_PKG}}.BuildTime={{.BUILD_TIME}} -X {{.VERSION_PKG}}.GitCommit={{.GIT_COMMIT}} -X {{.VERSION_PKG}}.GoVersion={{.GO_VERSION}}'
+  LDFLAGS: '-s -w {{.VERSION_FLAGS}}'
+  LDFLAGS_DEV: '-s -w {{.VERSION_FLAGS_DEV}}'
 
   # Docker configuration
   DOCKER_IMAGE: bassista/gospin
@@ -45,7 +54,7 @@ tasks:
       - task: lint
       - task: test
       - mkdir -p {{.BIN_DIR}}
-      - '{{.GO_CMD}} build -ldflags="-s -w -X {{.VERSION_PKG}}.Version={{.VERSION}} -X {{.VERSION_PKG}}.BuildTime={{.BUILD_TIME}} -X {{.VERSION_PKG}}.GitCommit={{.GIT_COMMIT}} -X {{.VERSION_PKG}}.GoVersion={{.GO_VERSION}}" -trimpath -o {{.BIN_DIR}}/{{.BINARY}}{{exeExt}} ./cmd/server'
+      - '{{.GO_CMD}} build -ldflags="{{.LDFLAGS}}" -trimpath -o {{.BIN_DIR}}/{{.BINARY}}{{exeExt}} ./cmd/server'
     sources:
       - cmd/server/**/*.go
       - internal/**/*.go
@@ -57,12 +66,23 @@ tasks:
     desc: Build quickly without lint/test
     cmds:
       - mkdir -p {{.BIN_DIR}}
-      - '{{.GO_CMD}} build -ldflags="-s -w -X {{.VERSION_PKG}}.Version=dev -X {{.VERSION_PKG}}.BuildTime={{.BUILD_TIME}} -X {{.VERSION_PKG}}.GitCommit={{.GIT_COMMIT}} -X {{.VERSION_PKG}}.GoVersion={{.GO_VERSION}}" -trimpath -o {{.BIN_DIR}}/{{.BINARY}}{{exeExt}} ./cmd/server'
+      - '{{.GO_CMD}} build -ldflags="{{.LDFLAGS_DEV}}" -trimpath -o {{.BIN_DIR}}/{{.BINARY}}{{exeExt}} ./cmd/server'
     sources:
       - cmd/server/**/*.go
       - internal/**/*.go
     generates:
       - '{{.BIN_DIR}}/{{.BINARY}}{{exeExt}}'
+
+  build:cli:
+    desc: Build the gb-cli CLI (client of the plain-text board API)
+    cmds:
+      - mkdir -p {{.BIN_DIR}}
+      - '{{.GO_CMD}} build -ldflags="{{.LDFLAGS}}" -trimpath -o {{.BIN_DIR}}/{{.BINARY_CLI}}{{exeExt}} ./cmd/board'
+    sources:
+      - cmd/board/**/*.go
+      - internal/boardclient/**/*.go
+    generates:
+      - '{{.BIN_DIR}}/{{.BINARY_CLI}}{{exeExt}}'
 
   # ============================================================
   # Run tasks
@@ -71,7 +91,7 @@ tasks:
   run:
     desc: Run the application (go run with version metadata)
     cmds:
-      - '{{.GO_CMD}} run -ldflags="-X {{.VERSION_PKG}}.Version={{.VERSION}} -X {{.VERSION_PKG}}.BuildTime={{.BUILD_TIME}} -X {{.VERSION_PKG}}.GitCommit={{.GIT_COMMIT}} -X {{.VERSION_PKG}}.GoVersion={{.GO_VERSION}}" ./cmd/server'
+      - '{{.GO_CMD}} run -ldflags="{{.VERSION_FLAGS}}" ./cmd/server'
 
   watch:
     desc: Run with hot-reload via air (requires `go install github.com/air-verse/air@latest`)

@@ -456,6 +456,45 @@ func (m *MemoryRuntime) Start(name string) error {
 - `ui/ghostboard.html` and `ui/assets/ghostboard.js` render one independent board per
   `/ui/ghostboard/<board>` path.
 
+**CLI** (`cmd/board`, client in `internal/boardclient`):
+- `gb-cli` is a thin HTTP client of `/api/boards/:board`, so it works locally, in a
+  container or against a remote host without touching the persistence file. `add` is a read
+  followed by a write; `set`, `read`, `upload` and `download` map to one request each.
+- `follow` consumes `/ghostboard/:board/events` with a client that carries no overall timeout (the
+  stream stays open until Ctrl-C) and prints every revision, so the CLI shows the same live
+  updates as the web page. The stream is read line by line without a fixed buffer: an event carries
+  the whole board, whose size the server already bounds with `ghostboard.max_text_bytes`, so a
+  client-side cap could only disagree with that limit.
+- The configuration is resolved in `internal/boardclient` (defaults, YAML file next to the
+  executable or in `$XDG_CONFIG_HOME/ghostboard/config.yaml` / `~/.config/ghostboard/config.yaml`,
+  `GO_SPIN_BOARD_*` environment) and the command-line flags are applied on top by `cmd/board`.
+  `Config.Validate` runs on the effective values, so a flag always corrects a mistyped file entry;
+  `--no-config` skips every file and `ConfigPaths` lists the candidates.
+- `config` prints the effective configuration, the file that was read and (with `--paths`) every
+  candidate, without contacting the server, which makes a wrong URL or an unused file visible
+  immediately. It also reports the keys the CLI does not understand and the environment variables
+  that replaced a file value, so a mistyped key never looks like a default. `version`, `completion`
+  and `config` deliberately run before the validation and never touch the network.
+- `read --stat` and `read --json` use the JSON board API (`/ghostboard/:board`) because only that
+  route carries the revision and the update time; every other read uses the plain-text route. The
+  CLI turns the zero update time of a board that was never written into an absent field, so a
+  consumer never sees a timestamp in year 1.
+- Text and JSON never share stdout: `download -` and `follow` reject `--json`, `read --json`
+  rejects `--stat`, and `download` rejects `-o` together with a file argument. These are reported
+  as misuse (exit code `2`), the same code the CLI uses for a negative `--retry`, a non-positive
+  `--timeout` or a text given both as an argument and with `-f`.
+- The client retries transient failures (`429`, `502`, `503`, `504` and transport errors) with an
+  exponential backoff and can send extra headers (`--header`, `GO_SPIN_BOARD_TOKEN` as a Bearer
+  token), for a GoSpin instance behind an authenticating proxy.
+- Failures are typed: `EndpointError` (a 404 on a board route), `BoardNameError` and `misuseError`
+  map to the dedicated exit codes `3`, `4` and `2`, so a script can tell a wrong URL, a wrong board
+  name and a command line mistake from a generic error.
+- `edit` round-trips the board through `$VISUAL`/`$EDITOR` and writes only when the temporary file
+  changed; `completion` renders bash, zsh and fish scripts from the command and flag tables in
+  `cmd/board/completion.go`.
+- Board names are validated with `ghostboard.ValidateBoardName` before a request is made, so a
+  malformed name never reaches the server.
+
 ## 🔌 Extension Points
 
 ### Adding New Runtime Types

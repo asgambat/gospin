@@ -310,7 +310,15 @@ CGO_ENABLED=0 go build -ldflags="-w -s" -o .build/main ./cmd/server/main.go
 # Cross-compilation examples
 GOOS=linux GOARCH=amd64 go build -o .build/main-linux ./cmd/server/main.go
 GOOS=windows GOARCH=amd64 go build -o .build/main.exe ./cmd/server/main.go
+
+# gb-cli CLI (client of the ghostboard API)
+task build:cli    # or: make build-cli -> .build/gb-cli
+go run ./cmd/board read
 ```
+
+The CLI build injects the same version metadata as the server (`internal/version`), so
+`gb-cli version` reports the tag, commit, build time and Go toolchain of the binary you are
+running. `go run ./cmd/board version` reports the compiled defaults instead.
 
 ### Docker Development
 

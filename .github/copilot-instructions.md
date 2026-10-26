@@ -243,9 +243,9 @@ NOTE: This section may be removed when used as template, hence the disclaimer
 **Project Structure:**
 
 - `cmd/server/`: entrypoint (`main.go`)
-- `internal/`: `api/{route,controller,middleware}`, `app`, `cache`, `config`, `cosmos`,
-
-  `ghostboard`, `logger`, `repository`, `runtime`, `scheduler`, `version`
+- `cmd/board/`: `gb-cli` CLI entrypoint (client of the plain-text board API)
+- `internal/`: `api/{route,controller,middleware}`, `app`, `boardclient`, `cache`, `config`,
+  `cosmos`, `ghostboard`, `logger`, `repository`, `runtime`, `scheduler`, `version`
 
 - `config/`: runtime YAML (`config.yaml`, `homepage.yaml`, `actions.yml`, `*.example`) and
 

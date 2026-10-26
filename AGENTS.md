@@ -12,6 +12,7 @@ GitHub Copilot; when they disagree with this file, this file wins.
 | Path | Purpose |
 | ---- | ------- |
 | `cmd/server/` | Application entrypoint (`main.go`) |
+| `cmd/board/` | `gb-cli` CLI entrypoint: reads and writes ghostboards from the shell |
 | `internal/api/route/` | HTTP route definitions; one file per feature area |
 | `internal/api/controller/` | HTTP handlers and business logic |
 | `internal/api/middleware/` | CORS, timeout, request logging middleware |
@@ -22,6 +23,7 @@ GitHub Copilot; when they disagree with this file, this file wins.
 | `internal/runtime/` | Container runtime abstraction (Docker / memory) |
 | `internal/scheduler/` | Spin-up/spin-down scheduling loops (goroutines) |
 | `internal/ghostboard/` | Shared text boards behind `/ui/ghostboard` (store, JSON persistence, SSE) |
+| `internal/boardclient/` | HTTP client and configuration resolution of the `gb-cli` CLI |
 | `internal/cosmos/` | Cosmos API client |
 | `internal/version/` | Build metadata injected via `-ldflags` |
 | `config/` | Runtime YAML (`config.yaml`, `homepage.yaml`, `actions.yml`) and `config/data/` |
@@ -49,6 +51,7 @@ make build
 # Build (Taskfile → .build/gospin, runs lint + test first)
 task build
 task build:fast       # build without lint/test
+task build:cli        # build the gb-cli CLI into .build/gb-cli (make build-cli)
 
 # Run / hot reload
 make run
@@ -161,9 +164,12 @@ time.Sleep(10 * time.Second)
   registry tags are never moved backwards, so a rejected bump must be fixed in the files
   first, never by re-tagging.
 - Build metadata is injected into `internal/version` (`Version`, `BuildTime`, `GitCommit`,
-  `GoVersion`) via `-ldflags "-X ..."`. The same flags are duplicated in four places and must
-  stay in lockstep: `Makefile` (`LDFLAGS`), `Taskfile.yml` (`build`, `build:fast`, `run`),
-  `.air.toml` (`[build].cmd`) and `Dockerfile` (`ARG` + `-ldflags`).
+  `GoVersion`) via `-ldflags "-X ..."`. The same flags live in three places and must stay in
+  lockstep: `Makefile` (`LDFLAGS`, shared by `build` and `build-cli`), `Taskfile.yml`
+  (`VERSION_FLAGS`/`LDFLAGS`, used by `build`, `build:fast`, `build:cli` and `run`) and the
+  container/dev entrypoints (`.air.toml` `[build].cmd` and `Dockerfile` `ARG` + `-ldflags`).
+  Both GoSpin and `gb-cli` are built with these flags, so the two binaries always report the
+  same version.
 - Pushing the `vX.Y.Z` tag is what publishes the image (`docker-release.yml`, ghcr + Docker Hub).
   `latest` follows every `0.x` release and, from `1.0.0` on, only a minor/major tag
   (`X.Y.0`/`X.0.0`); every release publishes its `X.Y.Z`, `X.Y` and `X` tags, and pushes to `main`
