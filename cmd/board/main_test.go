@@ -635,6 +635,7 @@ func TestRunConfigPrintsTheEffectiveConfiguration(t *testing.T) {
 	}
 
 	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", "")
 	t.Setenv("GO_SPIN_BOARD_URL", "")
 	t.Setenv("GO_SPIN_BOARD_TIMEOUT_SECS", "")
 
@@ -657,6 +658,7 @@ func TestRunConfigPrintsTheEffectiveConfiguration(t *testing.T) {
 
 func TestRunConfigShowsAFlagOverrideAndAnInvalidURL(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
+	t.Setenv("XDG_CONFIG_HOME", "")
 	t.Setenv("GO_SPIN_BOARD_URL", "")
 	t.Setenv("GO_SPIN_BOARD_TIMEOUT_SECS", "")
 
@@ -810,6 +812,7 @@ func TestRunUsesTheUserConfigFile(t *testing.T) {
 	}
 
 	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", "")
 	t.Setenv("GO_SPIN_BOARD_URL", "")
 	t.Setenv("GO_SPIN_BOARD_TIMEOUT_SECS", "")
 
@@ -836,6 +839,7 @@ func TestRunEnvironmentOverridesTheConfigFile(t *testing.T) {
 	}
 
 	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", "")
 	t.Setenv("GO_SPIN_BOARD_URL", server.URL)
 	t.Setenv("GO_SPIN_BOARD_TIMEOUT_SECS", "")
 
@@ -874,6 +878,7 @@ func TestRunFlagOverridesAConfigValue(t *testing.T) {
 	}
 
 	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", "")
 	t.Setenv("GO_SPIN_BOARD_URL", "")
 	t.Setenv("GO_SPIN_BOARD_TIMEOUT_SECS", "")
 

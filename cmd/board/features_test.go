@@ -198,6 +198,7 @@ func TestRunNoConfigSkipsABrokenFile(t *testing.T) {
 	}
 
 	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", "")
 	t.Setenv("GO_SPIN_BOARD_URL", "")
 	t.Setenv("GO_SPIN_BOARD_TIMEOUT_SECS", "")
 
@@ -256,7 +257,7 @@ func TestRunConfigPaths(t *testing.T) {
 	}
 
 	var result configReport
-	if err := json.Unmarshal([]byte(stdout.String()), &result); err != nil {
+	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
 		t.Fatalf("stdout %q is not JSON: %v", stdout.String(), err)
 	}
 	if len(result.Paths) != 2 {
@@ -743,7 +744,7 @@ func TestRunConfigReportsUnknownKeys(t *testing.T) {
 	}
 
 	var report configReport
-	if err := json.Unmarshal([]byte(stdout.String()), &report); err != nil {
+	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
 		t.Fatalf("stdout %q is not JSON: %v", stdout.String(), err)
 	}
 	if len(report.Warnings) != 1 || !strings.Contains(report.Warnings[0], "timeout_sec") {
@@ -775,7 +776,7 @@ func TestRunConfigShowsTheEnvironmentOverrides(t *testing.T) {
 	}
 
 	var report configReport
-	if err := json.Unmarshal([]byte(stdout.String()), &report); err != nil {
+	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
 		t.Fatalf("stdout %q is not JSON: %v", stdout.String(), err)
 	}
 	if len(report.Environment) != 1 || report.Environment[0] != "GO_SPIN_BOARD_URL" {

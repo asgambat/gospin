@@ -144,9 +144,18 @@ tasks:
     cmds:
       - '{{.GO_CMD}} vet ./...'
 
-  lint:
-    desc: Run golangci-lint
+  staticcheck:
+    desc: Run staticcheck (covers the S1xxx checks golangci-lint does not enable)
     cmds:
+      - staticcheck ./...
+    preconditions:
+      - sh: command -v staticcheck
+        msg: "staticcheck not found. Install with: go install honnef.co/go/tools/cmd/staticcheck@2025.1.1"
+
+  lint:
+    desc: Run staticcheck and golangci-lint
+    cmds:
+      - task: staticcheck
       - golangci-lint run --concurrency=1 ./...
     preconditions:
       - sh: command -v golangci-lint

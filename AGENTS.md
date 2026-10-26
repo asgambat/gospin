@@ -61,7 +61,8 @@ task watch
 
 # Quality gates
 make lint             # go fmt + go vet + staticcheck + golangci-lint
-task check            # go fmt + go vet + golangci-lint + go test
+task lint             # staticcheck + golangci-lint
+task check            # go fmt + go vet + staticcheck + golangci-lint + go test
 task ci               # go mod download/verify + lint + test:race + build:fast
 ```
 
