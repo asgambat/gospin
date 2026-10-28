@@ -5,10 +5,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/bassista/go_spin/internal/cache"
-	"github.com/bassista/go_spin/internal/logger"
-	"github.com/bassista/go_spin/internal/repository"
-	"github.com/bassista/go_spin/internal/runtime"
+	"github.com/asgambat/gospin/internal/cache"
+	"github.com/asgambat/gospin/internal/logger"
+	"github.com/asgambat/gospin/internal/repository"
+	"github.com/asgambat/gospin/internal/runtime"
 )
 
 type DayFlags struct {

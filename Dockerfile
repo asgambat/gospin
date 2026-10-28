@@ -26,10 +26,10 @@ ENV VERSION=${VERSION} \
 RUN go mod tidy \
     && CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH} go build -trimpath \
          -ldflags="-s -w \
-                   -X github.com/bassista/go_spin/internal/version.Version=${VERSION} \
-                   -X github.com/bassista/go_spin/internal/version.BuildTime=${BUILD_TIME} \
-                   -X github.com/bassista/go_spin/internal/version.GitCommit=${GIT_COMMIT} \
-                   -X github.com/bassista/go_spin/internal/version.GoVersion=${GO_VERSION} \
+                   -X github.com/asgambat/gospin/internal/version.Version=${VERSION} \
+                   -X github.com/asgambat/gospin/internal/version.BuildTime=${BUILD_TIME} \
+                   -X github.com/asgambat/gospin/internal/version.GitCommit=${GIT_COMMIT} \
+                   -X github.com/asgambat/gospin/internal/version.GoVersion=${GO_VERSION} \
                    -extldflags '-static'" \
          -o /app/main ./cmd/server/main.go \
     && upx --best --lzma /app/main

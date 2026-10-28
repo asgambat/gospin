@@ -2,9 +2,15 @@ server:
   port: 8080
   waiting_server_port: 8081
   shutdown_timeout_secs: 5
+  read_timeout_secs: 10
+  write_timeout_secs: 10
+  idle_timeout_secs: 120
+  request_timeout_millis: 1000    # per-request timeout applied to the API routes
 data:
   file_path: ./config/data/config.json
   persist_interval_secs: 5
+  scheduling_enabled: true        # Enable/disable automatic container start/stop according to schedules
+  scheduling_poll_interval_secs: 30
   base_url: "http://localhost/"  # Base URL for container URL generation, supports $1 token
   spin_up_url: "http://localhost/"  # Base URL for container lazy startup URL generation, supports $1 token
   refresh_interval_secs: 60       # Interval for UI auto-refresh (seconds)
@@ -14,10 +20,10 @@ data:
   actions_timeout_seconds: 30      # timeout for proxied HTTP action requests
 misc:
   gin_mode: debug
+  scheduling_timezone: Local
   runtime_type: docker  # possible values: memory, docker
   cors_allowed_origins: "*"
   log_level: debug
-  log_format: text
   cosmos_base_url: ""  # Base URL for Cosmos API (e.g., "https://cosmos.example.com")
   cosmos_token: ""     # Bearer token for Cosmos API authentication  
 ghostboard:

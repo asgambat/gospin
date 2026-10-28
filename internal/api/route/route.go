@@ -8,8 +8,8 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/sirupsen/logrus"
 
-	"github.com/bassista/go_spin/internal/api/middleware"
-	"github.com/bassista/go_spin/internal/app"
+	"github.com/asgambat/gospin/internal/api/middleware"
+	"github.com/asgambat/gospin/internal/app"
 )
 
 // isGhostboardEventStream reports whether path targets the ghostboard SSE

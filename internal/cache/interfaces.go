@@ -1,6 +1,6 @@
 package cache
 
-import "github.com/bassista/go_spin/internal/repository"
+import "github.com/asgambat/gospin/internal/repository"
 
 // ReadOnlyStore is the minimal cache API for read-only controllers.
 type ReadOnlyStore interface {

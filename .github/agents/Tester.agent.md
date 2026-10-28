@@ -17,7 +17,7 @@ for HTTP behaviour, and small hand-written stubs behind the existing interfaces.
 is the authoritative agent guide.
 
 <!-- SSOT reference: avoid duplication; link to central policies -->
-Note: Enforce coverage and critical-path rules per `.github/copilot-instructions.md#quality-policy`.
+Note: Enforce coverage and critical-path rules per `AGENTS.md` (Testing Procedures).
 
 ## Core Responsibilities
 
@@ -104,7 +104,7 @@ How to interpret: Always begin with a failing test, then make it pass with minim
 <PROCESS_REQUIREMENTS type="MANDATORY">
 
 - After achieving green locally, execute the full suite. If any test fails, return to Red and resolve before proceeding.
-- Run `go vet ./...`, `staticcheck ./...` and `golangci-lint run --concurrency=1 ./...` (or `make lint`) before requesting review.
+- Run `go vet ./...`, `staticcheck ./...` and `golangci-lint run --concurrency=1 ./...` (or `task lint`) before requesting review.
 
 </PROCESS_REQUIREMENTS>
 
@@ -146,7 +146,9 @@ How to interpret: Treat these as gates before merging; if unmet, iterate until s
 
 - Coverage
 
-  - Floor: **70% per package** (`.github/copilot-instructions.md#quality-policy`); never lower it — add tests.
+  - Target: **70% per package** (`AGENTS.md`, Testing Procedures); recommended,
+      never a CI gate. For new functionality add the tests, re-measure with `task test:cover`,
+      and report any package left below the target instead of lowering it.
   - Measure with `task test:cover` (writes `coverage.out` and `coverage.html`) or
       `go test ./... -coverprofile=coverage.out && go tool cover -func=coverage.out`.
   - Hot paths (handlers, scheduler, persistence) and security-relevant logic must have their
@@ -161,5 +163,3 @@ How to interpret: Treat these as gates before merging; if unmet, iterate until s
 - Independence & idempotence
 
   - Each test sets up and cleans up its own state (`t.TempDir()`, `t.Cleanup`); no package-level mutable fixtures shared across tests.
-
-<!-- © Capgemini 2025 -->

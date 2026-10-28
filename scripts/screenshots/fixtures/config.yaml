@@ -1,0 +1,38 @@
+# Demo configuration used only by scripts/screenshots/capture.sh: the memory
+# runtime, no persistence outside the run directory, and a port that does not
+# clash with a real instance. Every hostname and container in this directory is
+# fictional.
+server:
+  port: 18084
+  waiting_server_port: 18085
+  shutdown_timeout_secs: 5
+  read_timeout_secs: 10
+  write_timeout_secs: 10
+  idle_timeout_secs: 120
+  request_timeout_millis: 5000
+data:
+  file_path: ./config/data/config.json
+  persist_interval_secs: 5
+  scheduling_enabled: false
+  scheduling_poll_interval_secs: 30
+  base_url: "http://$1.home.lan/"
+  spin_up_url: "http://$1.home.lan/"
+  refresh_interval_secs: 60
+  stats_refresh_interval_secs: 120
+  system_monitor_mount_point: "/"
+  actions_mode: "async"
+  actions_timeout_seconds: 30
+misc:
+  gin_mode: release
+  scheduling_timezone: Local
+  runtime_type: memory
+  cors_allowed_origins: "*"
+  log_level: info
+  cosmos_base_url: ""
+  cosmos_token: ""
+ghostboard:
+  file_path: ""
+  clear_delay_secs: 300
+  max_text_bytes: 16777216
+  persist_interval_secs: 2
+  heartbeat_interval_secs: 25

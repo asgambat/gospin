@@ -5,21 +5,22 @@ tmp_dir = ".build"
 
 [build]
   args_bin = []
-  bin = "./.build/main1.exe"
+  bin = "./.build/gospin.exe"
   # Note: cmd.exe has no `$(...)` / `` ` `` shell substitution, so the
-  # -X ldflags from the Makefile's LDFLAGS variable cannot be inlined here
-  # without brittle nested quoting. Run `make run` from a Git-Bash shell on
-  # Windows instead — it uses the same LDFLAGS via Makefile evaluation.
-  cmd = "cmd /c \"templ generate && go build -o ./.build/main1.exe ./cmd/server/main.go\""
+  # version -X ldflags from Taskfile.yml's VERSION_FLAGS cannot be inlined
+  # here without brittle nested quoting. Run `task run` from a Git-Bash shell
+  # on Windows instead — it expands the same flags through Task's own
+  # variable resolution.
+  cmd = "cmd /c \"go build -o ./.build/gospin.exe ./cmd/server/main.go\""
   delay = 1000
   exclude_dir = ["assets", ".build", "vendor", "testdata", "docs"]
   exclude_file = []
-  exclude_regex = ["_test.go", "_templ.go"]
+  exclude_regex = ["_test.go"]
   exclude_unchanged = false
   follow_symlink = false
   full_bin = ""
   include_dir = []
-  include_ext = ["go", "templ"]
+  include_ext = ["go"]
   include_file = []
   kill_delay = "0s"
   log = "build-errors.log"

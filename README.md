@@ -1,4 +1,4 @@
-# 🐳 GoSpin
+# GoSpin
 
 [![Go Tests & Lint](https://github.com/asgambat/gospin/actions/workflows/tests.yml/badge.svg)](https://github.com/asgambat/gospin/actions/workflows/tests.yml) [![Coverage](https://asgambat.github.io/gospin/coverage.png)](https://asgambat.github.io/gospin/)
 
@@ -6,33 +6,67 @@
 
 GoSpin is a Go application for scheduled management of Docker containers. Define containers, groups, and schedules with timers to automatically start/stop containers based on configured times and days.
 
-Thanks to [spinnerr](https://github.com/drgshub/spinnerr) project for the inspiration and design patterns.
-I have decided to rewrite the project in Go to leverage its performance, concurrency model, and strong ecosystem for Docker integration and to create a solution that could be easily integrated with my [Cosmos](https://github.com/azukaar/cosmos-server
-) installation.
+The design is inspired by [spinnerr](https://github.com/drgshub/spinnerr); GoSpin is a Go rewrite
+that keeps the same scheduling model and adds container statistics, a personal homepage and an
+optional [Cosmos](https://github.com/azukaar/cosmos-server) import.
 
-## ✨ Features
+## Features
 
-- **Container Management**: Register and manage Docker containers with friendly names and URLs
-- **Groups**: Organize containers into logical groups for batch operations
-- **Schedules**: Define time-based schedules with multiple timers per target, each able to start, stop or do both
-- **Automatic Start/Stop**: Containers are automatically started/stopped based on schedules
-- **Web UI**: Modern SPA interface built with Alpine.js for visual management
-- **REST API**: Full JSON API for programmatic access
-- **File Watching**: Auto-reload configuration when the JSON file changes externally
-- **Graceful Shutdown**: Proper cleanup on application termination
+- **Container management**: register Docker containers with friendly names and URLs, mark them as
+  favorites or pinned, and clean up entries whose container no longer exists
+- **Groups**: organize containers into logical groups for batch start/stop
+- **Schedules**: several start/stop timers per target, with per-day selection and a configurable
+  timezone
+- **Automatic start/stop**: the polling scheduler applies the schedules, no external cron needed
+- **Runtime control and live stats**: start and stop containers from the UI and watch CPU, memory
+  and disk usage
+- **Web UI**: dashboard for containers, groups and schedules, plus a shared ghostboard page
+- **Personal homepage**: `config/homepage.yaml` drives a themed dashboard of services, bookmarks,
+  server-side HTTP actions and a keyboard-driven search palette
+- **Ghostboard**: one shared text board per URL path, synced over Server-Sent Events and scriptable
+  with the bundled `gb-cli`
+- **Cosmos import**: import the containers already defined in a Cosmos installation
+- **REST API**: JSON API for containers, groups, schedules, runtime, homepage and boards
+- **File watching**: reload the data file when it changes externally
+- **Graceful shutdown** and configuration validation at startup
 
 ## Screenshots
 
-![CONTAINERS](docs/screenshots/containers.png)
-![GROUPS](docs/screenshots/groups.png)
-![SCHEDULES](docs/screenshots/schedules.png)
+Screenshots come from a demo instance with fictional containers, hosts and schedules. They are
+regenerated with `task screenshots`: the script builds the server, starts it on the memory runtime
+with the fixtures in `scripts/screenshots/fixtures/`, and captures the five pages with Playwright's
+Chromium. Node is needed only for that task, and the browser is installed under `.build/` (ignored
+by git) on first use.
 
-## 🚀 Quick Start
+The dashboard, with containers, groups and schedules:
+
+![Containers tab: pinned and favourite filters, running state, CPU and memory per container](docs/screenshots/containers.png)
+![Groups tab: containers per group and group level start/stop actions](docs/screenshots/groups.png)
+![Schedules tab: start and stop windows per container or group](docs/screenshots/schedules.png)
+
+The homepage and the shared text board:
+
+![Homepage: services, bookmarks and proxied actions defined in homepage.yaml](docs/screenshots/home.png)
+![Ghostboard: a shared text board with live updates and no login](docs/screenshots/ghostboard.png)
+
+## Quick Start
 
 ### Prerequisites
 
 - Go 1.25.6+
 - Docker
+- [Task](https://taskfile.dev) — the only build front-end
+- `staticcheck` and `golangci-lint` — `task build` runs `task lint` before compiling
+- `air` — only for `task watch` (`task install` installs it)
+
+Install the tooling once:
+
+```bash
+go install github.com/go-task/task/v3/cmd/task@latest
+go install honnef.co/go/tools/cmd/staticcheck@2025.1.1
+curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(go env GOPATH)/bin v1.64.8
+task install   # air, used by `task watch`
+```
 
 ### Installation
 
@@ -42,7 +76,7 @@ git clone https://github.com/asgambat/gospin.git
 cd gospin
 
 # Build (recommended — injects git tag/commit/build time into the binary)
-make build            # → ./.build/main
+task build            # → .build/gospin
 
 # Or, manually with raw ldflags:
 VERSION=$(git describe --tags --always --dirty 2>/dev/null || cat .version)
@@ -51,21 +85,22 @@ GIT_COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 GO_VERSION=$(go version | awk '{print $3}')
 go build -ldflags "\
   -s -w \
-  -X github.com/bassista/go_spin/internal/version.Version=$VERSION \
-  -X github.com/bassista/go_spin/internal/version.BuildTime=$BUILD_TIME \
-  -X github.com/bassista/go_spin/internal/version.GitCommit=$GIT_COMMIT \
-  -X github.com/bassista/go_spin/internal/version.GoVersion=$GO_VERSION" \
-  -o .build/main ./cmd/server/main.go
+  -X github.com/asgambat/gospin/internal/version.Version=$VERSION \
+  -X github.com/asgambat/gospin/internal/version.BuildTime=$BUILD_TIME \
+  -X github.com/asgambat/gospin/internal/version.GitCommit=$GIT_COMMIT \
+  -X github.com/asgambat/gospin/internal/version.GoVersion=$GO_VERSION" \
+  -o .build/gospin ./cmd/server/main.go
 
 # Run
-./.build/main
+task run              # dev run, version metadata injected
+./.build/gospin       # binary produced by `task build` or by the manual build above
 ```
 
 ### Build-time version metadata
 
 The version string rendered in the bottom-right of the dashboard is **not** read from `config/homepage.yaml`. It is injected into the binary at link time via `-ldflags "-X …/internal/version.<Var>=…"` and survives every release. Four `internal/version` package variables are populated this way:
 
-| Variable | Source (Makefile default) | Example value |
+| Variable | Source (Taskfile default) | Example value |
 |----------|---------------------------|---------------|
 | `Version` | `git describe --tags --always --dirty` (fallback `0.0.13`) | `v1.2.3`, `v1.2.3-4-gabc1234`, `v1.2.3-dirty` |
 | `BuildTime` | `date -u '+%Y-%m-%d_%H:%M:%S'` | `2026-06-22 14:30:00` |
@@ -80,7 +115,7 @@ The same four `-X` flags are baked into `Dockerfile` via `--build-arg VERSION=�
 - **API**: http://localhost:8084/
 - **Health Check**: http://localhost:8084/health
 
-## ⚙️ Configuration
+## Configuration
 
 ### Configuration File
 
@@ -94,18 +129,22 @@ server:
   read_timeout_secs: 10
   write_timeout_secs: 10
   idle_timeout_secs: 120
+  request_timeout_millis: 1000   # per-request timeout applied to the API routes
 
 data:
   file_path: ./config/data/config.json
   persist_interval_secs: 5 #how often to persist data to file
+  scheduling_enabled: true       # Enable/disable automatic containers starting/stopping based on schedules
+  scheduling_poll_interval_secs: 30
   base_url: "http://localhost/"  # Base URL for container URL generation, supports $1 token
   spin_up_url: "http://localhost/"  # Base URL for container lazy startup URL generation supports $1 token
+  refresh_interval_secs: 60      # UI auto-refresh interval (seconds)
+  stats_refresh_interval_secs: 120  # container stats refresh interval (seconds)
+  system_monitor_mount_point: "/"   # mount point reported by /runtime/stats
   actions_mode: "async"             # "sync" or "async" — how actions return results to the frontend
   actions_timeout_seconds: 30       # timeout for proxied HTTP action requests
 
 misc:
-  scheduling_enabled: true       # Enable/disable automatic containers starting/stopping based on schedules
-  scheduling_poll_interval_secs: 30
   cors_allowed_origins: "*"      # CORS origins, default "*"
   cosmos_base_url: ""            # Cosmos API base URL (e.g., "https://cosmos.example.com")
   cosmos_token: ""               # Cosmos API bearer token for authentication
@@ -118,24 +157,36 @@ ghostboard:
   heartbeat_interval_secs: 25    # SSE keep-alive comment interval
 ```
 
+The directory holding `data.file_path` is created at startup when it does not exist, so a fresh
+clone (or a new `GO_SPIN_CONFIG_PATH`) needs no manual `mkdir` for `config/data/`.
+
 ### Environment Variables
 
-All settings can be overridden via environment variables with prefix `GO_SPIN_`:
+Every setting can be overridden with an environment variable. The prefix is `GO_SPIN_` and the dots
+of the configuration key become underscores, so `misc.log_level` maps to
+`GO_SPIN_MISC_LOG_LEVEL`. Two bootstrap variables keep their bare names:
 
 ```bash
-# Server port
+# Listening port of the main server (default 8084)
 PORT=8084
+# Port of the auxiliary waiting server (default 8085)
+WAITING_SERVER_PORT=8085
+
 # Log level
 GO_SPIN_MISC_LOG_LEVEL=debug
 # CORS allowed origins
 GO_SPIN_MISC_CORS_ALLOWED_ORIGINS=*
-# Config path
+# Path of the configuration directory
 GO_SPIN_CONFIG_PATH=./config
 # Cosmos API base URL
 GO_SPIN_MISC_COSMOS_BASE_URL=https://cosmos.example.com
 # Cosmos API bearer token
 GO_SPIN_MISC_COSMOS_TOKEN=your-token-here
 ```
+
+`PORT` and `WAITING_SERVER_PORT` are also accepted as `GO_SPIN_SERVER_PORT` and
+`GO_SPIN_SERVER_WAITING_SERVER_PORT`; the bare form wins when both are set.
+
 ### Base URL for Container Links
 
 The `baseUrl` field is used by the Web UI to auto-generate container URLs when selecting a container name:
@@ -143,15 +194,14 @@ The `baseUrl` field is used by the Web UI to auto-generate container URLs when s
 - If `baseUrl` does not contain `$1` → `{baseUrl}/{name}` (removes double slashes)
 - If `baseUrl` contains `$1` → replaces `$1` with the container name (e.g., `https://$1.my.domain.com` → `https://Deluge.my.domain.com`)
 
-# Waiting server port
-You can configure an auxiliary "waiting" HTTP server used by the `/runtime/:name/waiting` endpoint. This server serves only the waiting HTML page (spinner + redirect) endpoint while a container or group is being started in background.
+### Waiting Server
 
-```bash
-# Port used by the waiting server (default 8085)
-WAITING_SERVER_PORT=8085
-```
+GoSpin can run an auxiliary "waiting" HTTP server that serves only the waiting HTML page
+(spinner + redirect) used by the `/runtime/:name/waiting` endpoint while a container or group is
+being started in the background. It listens on `server.waiting_server_port`
+(`WAITING_SERVER_PORT`), default `8085`, and must differ from `server.port`.
 
-## 🔒 Security
+## Security
 
 ### CORS Configuration
 
@@ -191,13 +241,14 @@ chmod 660 config/data/config.json
 
 ---
 
-## 🖥️ Web UI
+## Web UI
 
-#### GET `/ui`
-Single Page Application interface.
-
-#### GET `/ui/assets/*`
-Static assets (CSS, JS, images).
+The pages are served by the Go binary: `/ui` (dashboard), `/ui/home` (the homepage driven by
+`config/homepage.yaml`, and the SPA fallback for unhandled `/ui/*` paths), `/ui/ghostboard[/:board]`
+(one shared board per path), the scripts and assets under `/ui/assets/**`, and `/` redirecting to
+`/ui`. Those routes are the plumbing of the pages, not a public API, and their paths can change
+between releases: the file-to-route map, the cache headers and the frontend rules are in
+[docs/FRONTEND.md](docs/FRONTEND.md).
 
 The web interface provides visual management for:
 
@@ -221,7 +272,7 @@ Access the UI at `http://localhost:8084/ui`
 - **Responsive Design**: Works on desktop and mobile devices
 - **Error Handling**: User-friendly error messages for failed operations
 
-## 🏠 Homepage Configuration
+## Homepage Configuration
 
 GoSpin ships with a personal dashboard page rendered by `ui/home.html`. Its content and appearance are driven by a separate YAML file, **`config/homepage.yaml`**, which defines three top-level sections:
 
@@ -237,7 +288,7 @@ All `settings` fields are **optional**. If a field is omitted or left empty, the
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `theme` | string | `auto` | One of `auto`, `tokyo-night`, `catppuccin-latte`, `nord`, `dracula`, `gruvbox`, `night-stars`. With `auto`, the page follows the OS `prefers-color-scheme`. The on-page theme selector overrides this and persists the choice in `localStorage`. |
+| `theme` | string | `auto` | One of `auto`, `tokyo-night`, `catppuccin-latte`, `nord`, `dracula`, `gruvbox`, `night-stars`. With `auto`, the page follows the OS `prefers-color-scheme`. An unrecognised value falls back to `auto`, so a typo never leaves the page unstyled. The on-page theme selector overrides this and persists the choice in `localStorage` under the key `homepage-theme`. |
 | `title` | string | `Dashboard` | Plain-text title rendered as the page `<h1>`. |
 | `title_font_size` | CSS size | `1.25rem` | Font-size of the title (e.g. `1.5rem`, `20px`, `1.1em`). Exposed at runtime as the CSS custom property `--title-font-size`. |
 | `font_family` | CSS font stack | `Inter, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif` | Page-wide font family. |
@@ -394,13 +445,18 @@ without writing anything; the action controller normally writes the `502` itself
 
 ### Notes
 
+- The `/homepage` response never contains `null` for `services`, `bookmarks`, `actions` or for the
+  `items` of a group: missing sections and lists are normalized to empty arrays, so the Alpine
+  `x-for` templates can iterate before a section is configured.
+- The open/closed state of the accordion groups is persisted in `localStorage` under the key
+  `homepage-collapsed-groups`.
 - The file is **hot-reloaded**: when the content-hash on the `/homepage` response changes, the page re-fetches and re-applies all visuals (theme, fonts, layout) without a full reload.
 - The **build metadata** rendered in the bottom-right of the page (e.g. `v1.2.3 · abc1234`) is **not** a YAML field. It is sourced from four `internal/version.*` package vars at build time and exposed as top-level JSON fields on the `/homepage` response (`version`, `buildTime`, `gitCommit`, `goVersion`).
-  - `make build` injects them via `-ldflags` from `git describe`, `date`, `git rev-parse`, and `go version`.
+  - `task build` injects them via `-ldflags` from `git describe`, `date`, `git rev-parse`, and `go version`.
   - The Dockerfile injects the same four flags via `--build-arg` so the published image carries the metadata.
   - Users cannot override them via `homepage.yaml` — the server value always wins (a test pins this invariant: even a YAML `version: …` key is silently ignored).
 
-## 📡 API Endpoints
+## API Endpoints
 
 ### Health
 | Method | Endpoint | Description |
@@ -411,6 +467,7 @@ without writing anything; the action controller normally writes the `502` itself
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | GET | `/containers` | List all containers |
+| GET | `/container/:name/ready` | Readiness probe polled by the waiting page; answers `{"ready": true|false}` |
 | GET | `/containers/orphans` | Preview registry containers missing from the runtime |
 | POST | `/containers/orphans/remove` | Remove the confirmed missing containers |
 | POST | `/containers/import` | Import containers from Cosmos API |
@@ -505,6 +562,17 @@ group automatically deletes the schedules that target it.
 | POST | `/runtime/:name/start` | Start container |
 | POST | `/runtime/:name/stop` | Stop container |
 | GET | `/runtime/:name/waiting` | Serve waiting HTML page for a container or group (starts if not running) |
+| GET | `/start/:name` | Lazy spin-up entry point generated from `data.spin_up_url`; serves the same waiting page |
+| POST | `/group/:name/start` | Start every container of a group |
+| POST | `/group/:name/stop` | Stop every container of a group |
+| GET | `/runtime/containers` | Names of the containers the runtime reports, used by the dashboard |
+| GET | `/runtime/stats` | Per-container CPU and memory stats (dashboard tables) |
+| GET | `/runtime/system-stats` | Host CPU, memory and disk stats (dashboard and homepage footer) |
+
+`/runtime/:name/waiting` renders `ui/templates/waiting.html` (spinner + JavaScript redirect) with
+`{{CONTAINER_NAME}}` and `{{REDIRECT_URL}}` replaced, and starts the target in the background when
+it is not running. It answers `404` when the container or group does not exist, `403` when it
+exists but is not active, and `200` otherwise.
 
 ### Configuration
 | Method | Endpoint | Description |
@@ -641,147 +709,25 @@ registry watcher.
 
 #### The `gb-cli` CLI
 
-`gb-cli` (`cmd/board`) is a small Go client of the board API, so it works against a local
-server, a container or a remote host and needs no access to the server files. Build it with
-`task build:cli` (or `make build-cli`), which writes `.build/gb-cli` with the same version
-metadata as the server; during development `go run ./cmd/board` is enough.
-
-The help is inline (`gb-cli -h`, `gb-cli --help` or `gb-cli help`) and always names the executable
-as it was invoked: a copy renamed to `my-board` prints `my-board <command> ...` in the usage and
-in its error messages, so no example refers to a name the binary no longer has.
-
-| Command | Description |
-| ------- | ----------- |
-| `add [text]` | Append text to a board (a newline separates it from the existing text) |
-| `set [text]` | Replace the whole text of a board (an empty text clears it) |
-| `read` | Print the text of a board (`--stat`, `--json`) |
-| `upload <file>` | Load a board from a file (`-` reads stdin), `--append` to append |
-| `download [file]` | Save a board to a file (`<board>.txt` by default, `-` writes stdout, `--force` overwrites) |
-| `follow` | Print the board and every change as it happens (`--diff`, Ctrl-C to stop) |
-| `edit` | Edit a board with `$VISUAL`/`$EDITOR` and write it back |
-| `config` | Print the configuration in use (`--paths`, `--json`); no request is made |
-| `completion <shell>` | Print a completion script for `bash`, `zsh` or `fish` |
-| `version` | Print the build metadata (also `--version`, `--json`) |
+`gb-cli` (`cmd/board`) is a Go client of the board API: it works against a local server, a container
+or a remote host and needs no access to the server files.
 
 ```bash
-# Append to the default board
-gb-cli add "note from the shell"
-
-# Several sources in one call: a pipe, files, or repeated -f
-printf 'build finished\n' | gb-cli add -b lavoro
-gb-cli add -b lavoro -f note.txt -f more.txt
-
-# Replace (and clear) the text, previewing the change first
-gb-cli set -b lavoro "nuovo contenuto"
-gb-cli set -b lavoro "" --dry-run
-gb-cli set -b lavoro ""
-
-# Read it back, with the revision or as JSON
-gb-cli read -b lavoro
-gb-cli read -b lavoro --stat
-gb-cli read -b lavoro --json
-
-# Save it, load it, edit it
-gb-cli download -b lavoro                 # writes lavoro.txt
-gb-cli download -b lavoro -o /tmp/copia.txt --force
-cat note.txt | gb-cli upload - -b lavoro
-gb-cli upload -b lavoro --append ./more.txt
-gb-cli edit -b lavoro
-
-# Watch a board live: the whole text, or only what is appended
-gb-cli follow -b lavoro
-gb-cli follow -b lavoro --diff
-
-# Script-friendly output and quiet mode
-gb-cli --json add -b lavoro "deploy ok"
-gb-cli -q add -b lavoro "deploy ok"
-
-# Diagnostics: what would the CLI use, and which files does it look for?
-gb-cli config
-gb-cli config --paths
-gb-cli version
-
-# Shell completion
-gb-cli completion bash > /etc/bash_completion.d/gb-cli
+task build:cli                                # -> .build/gb-cli
+gb-cli add -b lavoro "note from the shell"    # append to a board
+gb-cli set -b lavoro "nuovo contenuto"        # replace (empty text clears it)
+gb-cli read -b lavoro --stat                  # text on stdout, revision on stderr
+gb-cli follow -b lavoro --diff                # live changes
+printf 'build ok\n' | gb-cli add -b lavoro    # stdin
 ```
 
-`gb-cli config` prints:
+`gb-cli config` prints the effective URL, board, timeout and configuration file; `gb-cli completion
+bash` prints a completion script. Exit codes: `0` success, `1` runtime or server error, `2` misuse of
+the command line, `3` the URL does not expose the board API, `4` invalid board name.
 
-```
-config file:  /home/me/.config/ghostboard/config.yaml
-server url:   https://gospin.lan.asga.uk
-board:        default
-timeout:      30s
-executable:   /usr/local/bin/gb-cli
-```
-
-Behaviours:
-
-- `add` is a read followed by a write: a concurrent writer in between can be overwritten, so use
-  `set` when the board must end up with an exact content.
-- `add` puts a newline before the new text when the board does not already end with one, and joins
-  repeated `-f` files the same way, so neither the last line of the board nor the last line of a
-  file glues onto what follows.
-- `--dry-run` (add, set, upload) reports the bytes that would be written and leaves the board
-  untouched; `add --dry-run` reads the board once to compute the exact result.
-- `follow` prints the whole text on every change; `--diff` prints only what the revision added (a
-  revision that is not an extension of the previous one is printed in full). Ctrl-C exits `0`.
-- `--json` writes one JSON object on stdout and nothing on stderr: the board state for `read`, the
-  configuration for `config`, the build metadata for `version`, and
-  `board`/`action`/`bytes`/`total_bytes`/`source`/`path`/`dry_run` for a mutation. A text stream and
-  a JSON object never share stdout, so `download -` and `follow` refuse `--json` (use `read --json`
-  for one revision) and `read --json` refuses `--stat`, whose summary the object already carries.
-- `-q/--quiet` drops the confirmations on stderr while keeping the errors.
-- `read`, `download -` and `follow` write the board text on stdout; `--stat` adds a one-line
-  revision summary on stderr, so the text stays pipeable. A board that was never written has no
-  update time: `read --stat` prints the revision alone and `read --json` omits `updated_at`, instead
-  of inventing a date in year 1.
-- `download` takes its target either with `-o` or as the argument, never both; a target `-` writes
-  stdout.
-- `upload` refuses a file that is not valid UTF-8 before contacting the server, naming the file.
-- `download` refuses to overwrite an existing file without `--force`.
-- `edit` writes the board to a temporary file, runs `$VISUAL` (then `$EDITOR`) on it and writes the
-  result back; an unchanged file is not written at all. An editor value with arguments (`code -w`)
-  is split on whitespace, so it cannot carry quoted arguments.
-- `--retry <n>` retries a transient failure (`429`, `502`, `503`, `504` and network errors) with an
-  exponential backoff.
-- `--header "Name: Value"` adds an HTTP header (repeatable) and `GO_SPIN_BOARD_TOKEN` is sent as
-  `Authorization: Bearer <token>`, for a board behind an authenticating proxy.
-- A `404 Not Found` on a board route means the URL does not point at a GoSpin server (wrong port,
-  host or path prefix): the CLI names the missing route and the full request URL instead of quoting
-  the web page, and never prints an HTML body as an error.
-- The help (`-h`, `--help`, `help`), `version`, `config` and `completion` never contact the server.
-- Exit codes: `0` success, `1` runtime or server error (including `413`), `2` misuse of the command
-  line (a conflicting source such as an argument plus `-f` or `-o` plus a file argument, `--stat`
-  with `--json`, a negative `--retry`, a non-positive `--timeout`), `3` the URL does not expose the
-  board API, `4` invalid board name.
-- Flags may be written before or after the positional arguments. A text that starts with `-` must
-  follow `--` (`gb-cli add -- "-2 righe"`); `-f` and stdin are the other ways to pass it.
-
-Configuration, lowest precedence first: built-in defaults (`http://localhost:8084`, board
-`default`, 30s timeout), then a YAML file, then the environment, then the flags.
-
-```yaml
-# config.yaml
-url: "http://localhost:8084"   # server root (or reverse-proxy prefix), never a /ui page
-board: "default"               # board used when a command does not name one
-timeout_secs: 30               # per-request timeout
-```
-
-`url` is the base the CLI appends the API paths to (`<url>/api/boards/<board>`,
-`<url>/ghostboard/<board>/events`), so it must be the server root — or the prefix a reverse proxy
-mounts GoSpin on. A UI page such as `https://gospin.lan.asga.uk/ui/dashboard/` is rejected with an
-explanation instead of being used as an API prefix (which would only ever answer `404`).
-
-The file is looked up next to the executable first (portable installs) and then in
-`$XDG_CONFIG_HOME/ghostboard/config.yaml`, falling back to `~/.config/ghostboard/config.yaml`.
-`--config <path>` forces a specific file (and fails when it does not exist; given twice, the last
-one wins); `--no-config` ignores every file for that invocation. `GO_SPIN_BOARD_URL`,
-`GO_SPIN_BOARD_TIMEOUT_SECS` and `GO_SPIN_BOARD_TOKEN` override the file.
-
-A key the CLI does not know (`timeout_sec` instead of `timeout_secs`) is reported by `config` as a
-warning instead of being silently ignored, and `config` also lists the environment variables that
-replaced a file value, so a typo can never look like a default that was never overridden.
+The full reference — every command and flag, output modes, exit codes, configuration resolution,
+the `GO_SPIN_BOARD_*` variables and the server endpoints it uses — is in
+[docs/CLI.md](docs/CLI.md).
 
 #### Ghostboard configuration
 
@@ -846,7 +792,7 @@ curl -X POST http://localhost:8084/schedule \
   }'
 ```
 
-## 🔧 Troubleshooting
+## Troubleshooting
 
 ### Common Issues
 
@@ -898,7 +844,7 @@ cp config/config.yaml config/config.yaml.bak
 ```
 
 #### Schedule Not Running
-1. Check `misc.scheduling_enabled: true` in configuration
+1. Check `data.scheduling_enabled: true` in configuration
 2. Verify timezone setting: `misc.scheduling_timezone`
 3. Check schedule format: times in HH:MM format, and every timer defines `startTime`, `stopTime` or both
 4. Verify days array: 0=Sunday, 1=Monday, etc. (an empty array never fires)
@@ -924,164 +870,117 @@ misc:
 
 Or via environment:
 ```bash
-GO_SPIN_MISC_GIN_MODE=debug ./main
-GO_SPIN_MISC_LOG_LEVEL=debug ./main
+GO_SPIN_MISC_GIN_MODE=debug GO_SPIN_MISC_LOG_LEVEL=debug ./.build/gospin
 ```
 
 ---
 
-## 🛠️ Development
+## Development
 
-### Hot Reload with Air
+### Build, run and test
 
 ```bash
-# Linux/macOS
-air -c .air.toml
+task build        # lint + test, then .build/gospin
+task build:fast   # build without lint/test
+task run          # go run with the version metadata injected
+task watch        # hot reload through air (.air.toml on Linux/macOS, .air_win.toml on Windows)
 
-# Windows
-air -c .air_win.toml
+task test         # go test ./...
+task test:race    # go test -race ./...
+task test:cover   # coverage.out + coverage.html
+task lint         # staticcheck + golangci-lint
+task check        # fmt + vet + lint + test
 ```
+
+See [DEVELOPMENT.md](docs/DEVELOPMENT.md) for the full workflow and [AGENTS.md](AGENTS.md) for the
+quality gates.
 
 ### Docker Development
 
 ```bash
 # Development with hot-reload
-docker-compose -f dev.docker-compose.yml build
-docker-compose -f dev.docker-compose.yml up
+docker compose -f dev.docker-compose.yml up --build
 
-# Production
-docker-compose up
-```
-
-### Testing
-
-```bash
-go test ./...
+# Published image
+docker compose up
 ```
 
 
-## 📊 Coverage Report
+## Coverage Report
 👉 [View the coverage report here](https://asgambat.github.io/gospin/)
 
 [![Coverage](https://asgambat.github.io/gospin/coverage.png)](https://asgambat.github.io/gospin/)
 
 
-## 🏗️ Architecture
+## Architecture
+
+The long form of this section — design principles, patterns, component deep dive, extension points,
+data flow, concurrency, measured performance and the trade-off behind each decision — is in
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). The tree and the pointers below are enough to find your
+way around the repository.
 
 ```
 gospin/
-├── cmd/server/           # Application entrypoint
-├── config/               # Configuration files
-│   └── data/             # JSON data storage
+├── cmd/
+│   ├── server/            # Application entrypoint
+│   └── board/             # gb-cli, the ghostboard CLI
+├── config/                # Runtime configuration
+│   ├── config.yaml        # Server, data and feature settings
+│   ├── homepage.yaml      # Homepage dashboard (services, bookmarks, actions)
+│   ├── actions.yml        # Technical definition of the homepage actions
+│   └── data/              # JSON data storage
 ├── internal/
 │   ├── api/
-│   │   ├── controller/   # HTTP handlers (business logic)
-│   │   ├── middleware/   # CORS, timeout, logging middleware
-│   │   └── route/        # HTTP route definitions
-│   ├── app/              # Application container (DI)
-│   ├── cache/            # In-memory store with dirty tracking
-│   ├── config/           # Configuration loading (Viper + validation)
-│   ├── logger/           # Structured logging (logrus)
-│   ├── repository/       # JSON persistence + file watching
-│   ├── runtime/          # Container runtime abstractions
-│   │   ├── docker/       # Docker API integration
-│   │   └── memory/       # In-memory runtime for testing
-│   └── scheduler/        # Time-based scheduling engine
-├── ui/                   # Web UI (Alpine.js + TailwindCSS)
-│   ├── index.html        # SPA entry point
-│   ├── assets/app.js     # Frontend logic
-│   └── templates/        # HTML templates
-└── docs/                 # Documentation + API collections
+│   │   ├── controller/    # HTTP handlers and business logic
+│   │   ├── middleware/    # CORS, timeout, request logging
+│   │   └── route/         # HTTP route definitions, one file per feature area
+│   ├── app/               # Application container (dependency wiring)
+│   ├── boardclient/       # HTTP client and config resolution of gb-cli
+│   ├── cache/             # In-memory store with dirty tracking
+│   ├── config/            # Configuration loading (Viper + validation)
+│   ├── cosmos/            # Cosmos API client
+│   ├── ghostboard/        # Shared boards: store, JSON persistence, SSE hub
+│   ├── logger/            # Structured logging (logrus)
+│   ├── repository/        # JSON persistence + file watching
+│   ├── runtime/           # Runtime abstraction: docker_runtime.go, memory_runtime.go, system_stats.go
+│   ├── scheduler/         # Polling scheduling engine
+│   └── version/           # Build metadata injected through -ldflags
+├── ui/                    # Web UI (Alpine.js, htmx and Tailwind from CDNs)
+│   ├── index.html         # Dashboard (containers, groups, schedules)
+│   ├── home.html          # Homepage dashboard
+│   ├── home.js            # Homepage logic
+│   ├── ghostboard.html    # Shared board page
+│   ├── service-worker.js  # PWA worker
+│   ├── sw-register.js     # Service worker registration
+│   ├── templates/         # Waiting page
+│   └── assets/            # app.js, ghostboard.js, themes, PWA manifests
+└── docs/                  # Documentation and the Postman collection
 ```
 
-### Architectural Patterns
+### Where the design lives
 
-#### 1. **Hexagonal Architecture (Ports & Adapters)**
-- Core business logic isolated in `controller/` and `cache/`
-- External dependencies abstracted via interfaces
-- Runtime implementations (Docker/Memory) are interchangeable
-- Repository pattern abstracts data persistence
+The patterns and the numbers used to be repeated in this section; they now have a single home in
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md):
 
-#### 2. **Dirty Tracking Pattern**
-- In-memory cache (`internal/cache/store.go`) maintains data state
-- HTTP controllers mark cache as "dirty" instead of direct persistence
-- Asynchronous background process persists only when changes exist
-- **Benefits**: Non-blocking API responses, batched I/O operations
+- **Design principles and patterns** — separation of concerns, dependency inversion, repository,
+  cache-aside, factory, observer and strategy:
+  [Design Principles](docs/ARCHITECTURE.md#design-principles) and
+  [Core Patterns](docs/ARCHITECTURE.md#core-patterns).
+- **Component deep dive** — cache store, scheduler, runtime abstraction, ghostboard, homepage and
+  Cosmos: from [Component Deep Dive](docs/ARCHITECTURE.md#component-deep-dive) down.
+- **Data flow** — request processing and event flow diagrams:
+  [Data Flow Architecture](docs/ARCHITECTURE.md#data-flow-architecture).
+- **Concurrency and shutdown** — the goroutines, what guards the shared state, how the process
+  stops: [Concurrency Model](docs/ARCHITECTURE.md#concurrency-model).
+- **Key design decisions** — benefit, trade-off and ADR for each decision:
+  [Key Design Decisions](docs/ARCHITECTURE.md#key-design-decisions).
+- **Performance and resources** — measured latency and memory, scheduling precision, persistence
+  cost, minimum and recommended footprint:
+  [Performance and Resources](docs/ARCHITECTURE.md#performance-and-resources).
+- **Extension points** — adding a runtime, a storage backend or a middleware:
+  [Extension Points](docs/ARCHITECTURE.md#extension-points).
 
-
-#### 3. **Event-Driven Persistence**
-- `fsnotify` watches configuration file changes
-- Auto-reload on external modifications
-- Optimistic locking with `lastUpdate` timestamps
-- Conflict detection and resolution
-
-
-### Data Flow
-
-```mermaid
-graph TD
-    A[HTTP Request] --> B[Gin Router]
-    B --> C[Controller]
-    C --> D[Cache Store]
-    D --> E[Mark Dirty]
-    E --> F[Background Persister]
-    F --> G[JSON Repository]
-    G --> H[File System]
-
-    I[File Watcher] --> J[Auto Reload]
-    J --> D
-
-    K[Scheduler] --> L[Runtime]
-    L --> M[Docker API]
-
-    N[Web UI] --> O[REST API]
-    O --> C
-```
-
-### Concurrency Model
-
-- **Main Goroutine**: HTTP server and request handling
-- **Persistence Goroutine**: Periodic dirty data saving
-- **File Watch Goroutine**: External configuration changes
-- **Scheduler Goroutine**: Timer-based container management
-- **Graceful Shutdown**: Coordinated cleanup on termination
-
-### Key Design Decisions
-
-| Pattern | Benefit | Trade-off |
-|---------|---------|----------|
-| **Async Persistence** | Fast API responses | Eventual consistency |
-| **Interface Abstraction** | Testability without Docker | Additional complexity |
-| **In-Memory Cache** | High performance | Memory usage |
-| **File Watching** | External integration | File system dependency |
-| **Polling Scheduler** | Simple implementation | Not event-driven |
-
-
-### Performance Characteristics
-
-- **API Response Time**: < 50ms for data operations (cached)
-- **Container Start Time**: 1-10 seconds (depends on Docker image)
-- **File Persistence**: Async, does not block API calls
-- **Memory Usage**: ~20-60MB (depends on container count)
-- **Scheduling Precision**: ±30 seconds (configurable poll interval)
-
-
-### Resource Requirements
-
-#### Minimum
-- **CPU**: 1 core (shared)
-- **RAM**: 32MB
-- **Disk**: 100MB
-- **Network**: 1 Mbps
-
-#### Recommended Production
-- **CPU**: 2 cores
-- **RAM**: 64MB
-- **Disk**: 200MB (for logs)
-- **Network**: 10 Mbps
-
-
-## 🚀 Production Deployment
+## Production Deployment
 
 ### Docker Deployment
 
@@ -1112,7 +1011,7 @@ services:
 breaking, and from `1.0.0` on it moves only on a minor/major release (`X.Y.0`). For reproducible
 deployments pin an exact tag such as `bassista/gospin:0.1.0` instead of relying on `latest`.
 
-## 🏷️ Releasing a New Version
+## Releasing a New Version
 
 A release is a git tag: pushing `vX.Y.Z` is what publishes the image, so the order of the steps
 below matters.
@@ -1126,7 +1025,7 @@ below matters.
 ### Release checklist
 
 - [ ] Feature work is merged into `develop` and its `Go Tests & Lint` and `Coverage` runs are green.
-- [ ] Documentation is updated in the same PR (`README.md`, `docs/progetto.txt`, …).
+- [ ] Documentation is updated in the same PR (`README.md`, `docs/ARCHITECTURE.md`, …).
 - [ ] `develop` is merged into `main` and `main` is pulled locally with a clean working tree —
       the bump stages only the version files.
 - [ ] The version is bumped once with the task below, never by hand.
@@ -1163,11 +1062,11 @@ above are what publish the release.
 - Do not edit `.version` or `internal/version/version.go` by hand: the bump script keeps them, and
   every other version-bearing file, in sync.
 
-## 📄 License
+## License
 
 MIT License
 
-## 🤝 Contributing
+## Contributing
 
 1. Fork the repository
 2. Create a feature branch (`git checkout -b feature/amazing`)
@@ -1178,7 +1077,7 @@ MIT License
 ### Development Guidelines
 
 - **Code Style**: Follow `gofmt` and `golangci-lint` standards
-- **Testing**: Maintain >80% test coverage
+- **Testing**: Keep the 70% per-package coverage target in mind (`AGENTS.md`, Testing Procedures); it is recommended, never a CI gate
 - **Documentation**: Update docs for new features
 - **Commit Messages**: Use [Conventional Commits](https://conventionalcommits.org/)
 - **Security**: No hardcoded credentials or secrets

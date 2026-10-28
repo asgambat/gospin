@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/bassista/go_spin/internal/boardclient"
+	"github.com/asgambat/gospin/internal/boardclient"
 )
 
 // writeMessage writes a human-readable message to w. A failure is deliberately

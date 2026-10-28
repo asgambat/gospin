@@ -21,7 +21,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/bassista/go_spin/internal/logger"
+	"github.com/asgambat/gospin/internal/logger"
 )
 
 const (

@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/bassista/go_spin/internal/repository"
-	"github.com/bassista/go_spin/internal/runtime"
+	"github.com/asgambat/gospin/internal/repository"
+	"github.com/asgambat/gospin/internal/runtime"
 )
 
 func boolPtr(b bool) *bool {

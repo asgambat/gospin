@@ -13,8 +13,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"github.com/bassista/go_spin/internal/ghostboard"
-	"github.com/bassista/go_spin/internal/logger"
+	"github.com/asgambat/gospin/internal/ghostboard"
+	"github.com/asgambat/gospin/internal/logger"
 )
 
 const (

@@ -10,8 +10,8 @@ vars:
   BINARY: gospin
   BINARY_CLI: gb-cli
 
-  # Version metadata — shell-evaluated at task runtime (same logic as Makefile)
-  VERSION_PKG: github.com/bassista/go_spin/internal/version
+  # Version metadata — shell-evaluated at task runtime
+  VERSION_PKG: github.com/asgambat/gospin/internal/version
   VERSION:
     sh: git describe --tags --always --dirty 2>/dev/null || cat .version
   BUILD_TIME:
@@ -22,8 +22,14 @@ vars:
     sh: go version | awk '{print $3}'
 
   # Build metadata flags, shared by the server and the CLI so the two binaries
-  # never disagree about the version. The Makefile keeps the same block in its
-  # LDFLAGS variable.
+  # never disagree about the version.
+  #
+  # IMPORTANT: this is ONE of three duplicated sources for the same build
+  # metadata. Keep all three in lockstep whenever you add/remove a flag:
+  #   1. This block                            (consumed by build, build:fast,
+  #                                             build:cli and run)
+  #   2. .air.toml [build].cmd                  (consumed by `task watch`)
+  #   3. Dockerfile `ARG` + `-X -ldflags` block (consumed by the docker tasks)
   VERSION_FLAGS: '-X {{.VERSION_PKG}}.Version={{.VERSION}} -X {{.VERSION_PKG}}.BuildTime={{.BUILD_TIME}} -X {{.VERSION_PKG}}.GitCommit={{.GIT_COMMIT}} -X {{.VERSION_PKG}}.GoVersion={{.GO_VERSION}}'
   VERSION_FLAGS_DEV: '-X {{.VERSION_PKG}}.Version=dev -X {{.VERSION_PKG}}.BuildTime={{.BUILD_TIME}} -X {{.VERSION_PKG}}.GitCommit={{.GIT_COMMIT}} -X {{.VERSION_PKG}}.GoVersion={{.GO_VERSION}}'
   LDFLAGS: '-s -w {{.VERSION_FLAGS}}'
@@ -43,6 +49,15 @@ tasks:
     cmds:
       - task --list-all
     silent: true
+
+  # ============================================================
+  # Setup tasks
+  # ============================================================
+
+  install:
+    desc: Install dev tooling (air, used by `task watch`)
+    cmds:
+      - '{{.GO_CMD}} install github.com/air-verse/air@latest'
 
   # ============================================================
   # Build tasks
@@ -129,6 +144,18 @@ tasks:
     desc: 'Run tests for a specific package (usage: task test:package -- ./internal/config)'
     cmds:
       - '{{.GO_CMD}} test -v {{.GO_TEST_FLAGS}} {{.CLI_ARGS}}'
+
+  # ============================================================
+  # Documentation tasks
+  # ============================================================
+
+  screenshots:
+    desc: Regenerate docs/screenshots from a demo instance (needs node; installs Playwright into .build on first run)
+    cmds:
+      - ./scripts/screenshots/capture.sh
+    preconditions:
+      - sh: command -v node
+        msg: "node not found. Install Node.js from https://nodejs.org to drive the browser"
 
   # ============================================================
   # Code quality tasks

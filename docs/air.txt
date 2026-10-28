@@ -1,3 +1,0 @@
-install air: go install github.com/air-verse/air@latest
-
-for windows use: air -c .\.air_win.toml

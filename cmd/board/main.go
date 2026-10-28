@@ -19,8 +19,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/bassista/go_spin/internal/boardclient"
-	"github.com/bassista/go_spin/internal/version"
+	"github.com/asgambat/gospin/internal/boardclient"
+	"github.com/asgambat/gospin/internal/version"
 )
 
 const (

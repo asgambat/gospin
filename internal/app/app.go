@@ -5,13 +5,13 @@ import (
 	"errors"
 	"time"
 
-	"github.com/bassista/go_spin/internal/cache"
-	"github.com/bassista/go_spin/internal/config"
-	"github.com/bassista/go_spin/internal/ghostboard"
-	"github.com/bassista/go_spin/internal/logger"
-	"github.com/bassista/go_spin/internal/repository"
-	"github.com/bassista/go_spin/internal/runtime"
-	"github.com/bassista/go_spin/internal/scheduler"
+	"github.com/asgambat/gospin/internal/cache"
+	"github.com/asgambat/gospin/internal/config"
+	"github.com/asgambat/gospin/internal/ghostboard"
+	"github.com/asgambat/gospin/internal/logger"
+	"github.com/asgambat/gospin/internal/repository"
+	"github.com/asgambat/gospin/internal/runtime"
+	"github.com/asgambat/gospin/internal/scheduler"
 )
 
 // App is the application container (immutable dependencies + lifecycle context).

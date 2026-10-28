@@ -4,15 +4,15 @@
 // variables, or runtime configuration.
 //
 // The variables below are mutable (not const) so they can be overridden at
-// build time via -ldflags. The Makefile (and the multi-arch Docker workflow)
-// injects four values from the surrounding toolchain:
+// build time via -ldflags. `task build` / `task build:cli` (and the multi-arch
+// Docker workflow) inject four values from the surrounding toolchain:
 //
 //	go build -ldflags "\
 //	  -s -w \
-//	  -X github.com/bassista/go_spin/internal/version.Version=$(git describe ...) \
-//	  -X github.com/bassista/go_spin/internal/version.BuildTime=$(date ...) \
-//	  -X github.com/bassista/go_spin/internal/version.GitCommit=$(git rev-parse ...) \
-//	  -X github.com/bassista/go_spin/internal/version.GoVersion=$(go version ...)"
+//	  -X github.com/asgambat/gospin/internal/version.Version=$(git describe ...) \
+//	  -X github.com/asgambat/gospin/internal/version.BuildTime=$(date ...) \
+//	  -X github.com/asgambat/gospin/internal/version.GitCommit=$(git rev-parse ...) \
+//	  -X github.com/asgambat/gospin/internal/version.GoVersion=$(go version ...)"
 //
 // At runtime the values flow into the homepage JSON response (top-level
 // fields, never under "settings" — see internal/api/controller/homepage_controller.go)
@@ -24,7 +24,8 @@ package version
 // "version" field and surfaced to the UI.
 //
 // At build time this is normally populated by `git describe --tags --always --dirty`
-// via the Makefile (e.g. "v1.2.3", "v1.2.3-4-gabc1234", or "v1.2.3-dirty").
+// via the build flags in Taskfile.yml (e.g. "v1.2.3", "v1.2.3-4-gabc1234", or
+// "v1.2.3-dirty").
 var Version = "0.0.13"
 
 // BuildTime is the UTC timestamp at which the binary was produced. Populated

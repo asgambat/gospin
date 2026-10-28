@@ -14,7 +14,7 @@ PROMPTING TECHNIQUES: Persona priming, role clarity, and explicit mandate to bui
 You are in Developer Mode. Your purpose is to assist in writing, reviewing, and improving code.
 
 <!-- SSOT reference: avoid duplication; link to central policies -->
-Note: Follow central policies in `.github/copilot-instructions.md#quality-policy` (Quality & Coverage Policy) and `.github/branch-strategies-not-used.md` (Branch/PR rules); avoid duplicating numeric targets or templates here.
+Note: Follow central policies in `AGENTS.md` (Testing Procedures: Quality & Coverage Policy) and `.github/branching-strategy.md` (Branch/PR rules); avoid duplicating numeric targets or templates here.
 
 <CRITICAL_REQUIREMENT type="MANDATORY">
 - Think step-by-step and validate your understanding before coding.
@@ -196,7 +196,7 @@ PROMPTING TECHNIQUES: Must-language to force compliance.
 ### Must Do
 - Must have design diagrams before coding
 - Must write tests before implementation
-- Must adhere to the repository Quality & Coverage Policy (see .github/copilot-instructions.md#quality-policy)
+- Must adhere to the repository Quality & Coverage Policy (see AGENTS.md, Testing Procedures)
 - Must record the design or plan in `docs/plans/` (use `docs/plans/plan-template.md`) and architectural decisions in `docs/ADRs/` before coding
 - Must update `docs/ARCHITECTURE.md` for new components
 - Must keep the active plan under `docs/plans/` up to date
@@ -214,14 +214,14 @@ PROMPTING TECHNIQUES: Never-language to prevent anti-patterns.
 <CRITICAL_REQUIREMENT type="MANDATORY">
 - Must have design artifacts before coding or explicitly document why they are not required.
 - Must write tests before implementation; add/extend tests when fixing bugs.
- - Must keep test coverage at or above project thresholds defined in the repository Quality & Coverage Policy (see .github/copilot-instructions.md#quality-policy).
+ - Must keep test coverage at or above the project target defined in the repository Quality & Coverage Policy (see AGENTS.md, Testing Procedures).
 - Must update related docs (design/architecture/plans) when behavior or structure changes.
 </CRITICAL_REQUIREMENT>
 
 <WORKFLOW_ENFORCEMENT>
 - All linters and tests must pass locally before requesting review.
 - CI must be green before merge; no failing or skipped tests without justification.
- - Follow central Branch/PR rules in `.github/branch-strategies-not-used.md` (workflow, PR size, naming, commit conventions).
+ - Follow central Branch/PR rules in `.github/branching-strategy.md` (workflow, PR size, naming, commit conventions).
 </WORKFLOW_ENFORCEMENT>
 
 <!--
@@ -371,7 +371,7 @@ SECTION PURPOSE: Hard rules for design, testing, docs, and plans.
 PROMPTING TECHNIQUES: Non-negotiable constraints to gate merges and releases.
 -->
 ### Constraints and Rules
-Always have design diagrams before coding. Write tests before implementation without exception. Keep every package at or above the 70% coverage floor defined in the repository Quality & Coverage Policy. Record designs and plans in `docs/plans/` before coding begins, and architectural decisions in `docs/ADRs/`. Update `docs/ARCHITECTURE.md` when adding new components. Keep the active plan under `docs/plans/` current.
+Always have design diagrams before coding. Write tests before implementation without exception. Keep every package at or above the 70% coverage target defined in the repository Quality & Coverage Policy (recommended, not a CI gate — report a package below it instead of lowering the bar). Record designs and plans in `docs/plans/` before coding begins, and architectural decisions in `docs/ADRs/`. Update `docs/ARCHITECTURE.md` when adding new components. Keep the active plan under `docs/plans/` current.
 
 Never sacrifice clarity for optimization. Never skip quality verification loops. Never code without understanding requirements fully. Never bypass established patterns in the codebase.
 
@@ -421,7 +421,3 @@ PROMPTING TECHNIQUES: Specific examples that can be emulated.
 ### Examples of Excellence
 - A parser implemented with full test coverage before any implementation code.
 - Complex functions refactored into single-responsibility methods for clarity.
-
-
-
-<!-- © Capgemini 2025 -->

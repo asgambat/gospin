@@ -11,7 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/bassista/go_spin/internal/version"
+	"github.com/asgambat/gospin/internal/version"
 )
 
 func TestRunVersion(t *testing.T) {

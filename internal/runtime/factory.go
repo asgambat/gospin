@@ -3,7 +3,7 @@ package runtime
 import (
 	"fmt"
 
-	"github.com/bassista/go_spin/internal/repository"
+	"github.com/asgambat/gospin/internal/repository"
 )
 
 const (

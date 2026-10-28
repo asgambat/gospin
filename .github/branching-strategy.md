@@ -25,7 +25,7 @@ AI assistants MUST work on a short-lived branch and land changes through a pull 
 - Keep branches short-lived (days, not weeks) and focused on one change.
 - PR size: target ≤ 400 changed lines; split otherwise.
 - Review requirement: at least 1 human approval.
-- CI (`.github/workflows/tests.yml`) runs on pushes and pull requests targeting `develop` and `main`; `coverage.yml` measures both but only publishes the report and badge from `main`. A local `make lint` + `go test ./...` is still mandatory before requesting review.
+- CI (`.github/workflows/tests.yml`) runs on pushes and pull requests targeting `develop` and `main`; `coverage.yml` measures both but only publishes the report and badge from `main`. A local `task lint` + `go test ./...` is still mandatory before requesting review.
 - Releases: merge `develop` into `main`, then `task version:bump -- X.Y.Z` (see below).
 
 </WORKFLOW_ENFORCEMENT>
@@ -177,8 +177,8 @@ AI assistants MUST follow this workflow for all code changes.
 **Pre-Merge Requirements:**
 
 1. **Sync**: rebase or merge `develop` into the branch before opening the PR.
-2. **Verification**: `make lint` (fmt, vet, staticcheck, golangci-lint) and `go test ./...` pass locally; `task test:race` when concurrency is involved.
-3. **Documentation**: update `README.md`, `docs/progetto.txt`, `docs/ARCHITECTURE.md` and the agent docs in the same PR when behaviour or configuration changes.
+2. **Verification**: `task lint` (staticcheck + golangci-lint) and `go test ./...` pass locally; `task test:race` when concurrency is involved.
+3. **Documentation**: update `README.md`, `docs/ARCHITECTURE.md` and the agent docs in the same PR when behaviour or configuration changes.
 4. **Version**: never bump the version by hand — use `task version:bump -- X.Y.Z`.
 
 **Merge Process:**
@@ -195,7 +195,7 @@ flowchart TD
     D --> E{Conflicts?}
     E -->|Yes| F[Resolve conflicts]
     F --> D
-    E -->|No| G[Run make lint + go test]
+    E -->|No| G[Run task check + go test]
     G --> H{Lint and tests green?}
     H -->|No| C
     H -->|Yes| I[Open PR]

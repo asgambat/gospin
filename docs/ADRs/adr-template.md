@@ -2,10 +2,6 @@
 title: "ADR-NNNN: [Decision Title]"
 status: "Proposed"
 date: "YYYY-MM-DD"
-authors: "[Stakeholder Names/Roles]"
-tags: ["architecture", "decision"]
-supersedes: ""
-superseded_by: ""
 ---
 
 # ADR-NNNN: [Decision Title]
@@ -16,48 +12,39 @@ superseded_by: ""
 
 ## Context
 
-[Problem statement, technical constraints, business requirements, and environmental factors requiring this decision.]
+The problem, the constraints that force a decision and the forces pulling in different directions.
+Describe the code or the deployment reality the decision has to live with — not the solution.
 
 ## Decision
 
-[Chosen solution with clear rationale for selection.]
+What was decided, in the present tense, and the reason it won. Name the package or file that carries
+the decision so a reader can check it against the code.
 
 ## Consequences
 
 ### Positive
 
-- **POS-001**: [Beneficial outcomes and advantages]
-- **POS-002**: [Performance, maintainability, scalability improvements]
-- **POS-003**: [Alignment with architectural principles]
+- **POS-001**: What gets simpler, faster or safer.
+- **POS-002**: What the decision unlocks later.
 
 ### Negative
 
-- **NEG-001**: [Trade-offs, limitations, drawbacks]
-- **NEG-002**: [Technical debt or complexity introduced]
-- **NEG-003**: [Risks and future challenges]
+- **NEG-001**: The trade-off accepted, stated plainly.
+- **NEG-002**: The debt or operational cost it creates.
 
 ## Alternatives Considered
 
-### [Alternative 1 Name]
+### [Alternative name]
 
-- **ALT-001**: **Description**: [Brief technical description]
-- **ALT-002**: **Rejection Reason**: [Why this option was not selected]
-
-### [Alternative 2 Name]
-
-- **ALT-003**: **Description**: [Brief technical description]
-- **ALT-004**: **Rejection Reason**: [Why this option was not selected]
+- **ALT-001**: **Description**: What the option would have looked like.
+- **ALT-002**: **Rejection Reason**: Why it lost, in one or two sentences.
 
 ## Implementation Notes
 
-- **IMP-001**: [Key implementation considerations]
-- **IMP-002**: [Migration or rollout strategy if applicable]
-- **IMP-003**: [Monitoring and success criteria]
+- **IMP-001**: Where the decision lives in the code, and which knobs configure it.
+- **IMP-002**: How the behaviour is tested or observed at runtime.
 
 ## References
 
-- **REF-001**: [Related ADRs]
-- **REF-002**: [External documentation]
-- **REF-003**: [Standards or frameworks referenced]
-
-<!-- © Capgemini 2025 -->
+- **REF-001**: Related ADR, architecture section or README anchor.
+- **REF-002**: The files that implement the decision.

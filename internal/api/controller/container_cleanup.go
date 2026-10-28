@@ -8,8 +8,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"github.com/bassista/go_spin/internal/logger"
-	"github.com/bassista/go_spin/internal/repository"
+	"github.com/asgambat/gospin/internal/logger"
+	"github.com/asgambat/gospin/internal/repository"
 )
 
 // removeOrphansRequest carries the names the client wants to delete. The client

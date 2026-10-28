@@ -33,7 +33,7 @@ linters-settings:
     disable:
       - shadow
   goimports:
-    local-prefixes: github.com/bassista/go_spin
+    local-prefixes: github.com/asgambat/gospin
   errcheck:
     check-type-assertions: true
     check-blank: true

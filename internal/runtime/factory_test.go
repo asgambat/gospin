@@ -6,7 +6,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/bassista/go_spin/internal/repository"
+	"github.com/asgambat/gospin/internal/repository"
 )
 
 func TestNewRuntimeFromConfig_Memory(t *testing.T) {

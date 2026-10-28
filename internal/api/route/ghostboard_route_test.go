@@ -13,7 +13,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/sirupsen/logrus"
 
-	"github.com/bassista/go_spin/internal/ghostboard"
+	"github.com/asgambat/gospin/internal/ghostboard"
 )
 
 func testGhostboardRouter(t *testing.T) *gin.Engine {

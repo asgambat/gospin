@@ -114,6 +114,62 @@ actions:
 	}
 }
 
+func TestNormalizeHomepageTheme(t *testing.T) {
+	tests := []struct {
+		name  string
+		theme string
+		want  string
+	}{
+		{name: "empty falls back to auto", theme: "", want: DefaultTheme},
+		{name: "unknown name falls back to auto", theme: "default", want: DefaultTheme},
+		{name: "typo falls back to auto", theme: "drakula", want: DefaultTheme},
+		{name: "known theme is kept", theme: "dracula", want: "dracula"},
+		{name: "mixed case is lowercased", theme: "Dracula", want: "dracula"},
+		{name: "spaces and underscores become dashes", theme: " Tokyo_Night ", want: "tokyo-night"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := NormalizeHomepageTheme(tc.theme); got != tc.want {
+				t.Errorf("NormalizeHomepageTheme(%q) = %q, want %q", tc.theme, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestLoadHomepageConfig_NormalizesTheme(t *testing.T) {
+	tests := []struct {
+		name  string
+		theme string
+		want  string
+	}{
+		{name: "unset theme", theme: "", want: DefaultTheme},
+		{name: "unknown theme", theme: "default", want: DefaultTheme},
+		{name: "configured theme", theme: "gruvbox", want: "gruvbox"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "homepage.yaml")
+			content := "settings:\n"
+			if tc.theme != "" {
+				content += "  theme: " + tc.theme + "\n"
+			}
+			if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+				t.Fatalf("failed to write homepage.yaml: %v", err)
+			}
+
+			cfg, _, err := LoadHomepageConfig(path)
+			if err != nil {
+				t.Fatalf("LoadHomepageConfig() error = %v", err)
+			}
+			if cfg.Settings.Theme != tc.want {
+				t.Errorf("theme = %q, want %q", cfg.Settings.Theme, tc.want)
+			}
+		})
+	}
+}
+
 func TestLoadHomepageConfig_InvalidYAML(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "homepage.yaml")
 	if err := os.WriteFile(path, []byte("services: [broken\n"), 0644); err != nil {

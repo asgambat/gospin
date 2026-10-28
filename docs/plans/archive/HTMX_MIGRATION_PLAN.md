@@ -1,3 +1,11 @@
+<!-- ARCHIVED: historical record, not an active plan. -->
+
+> **Status: archived, never pursued.** This is the February 2026 proposal to rewrite the UI on
+> htmx plus server-side templates. It was not implemented: the UI is still plain HTML + Alpine.js
+> under `ui/`, htmx is loaded only for isolated requests, and the repository has no `.templ` files
+> or templ dependency. The body below is kept as a historical record and is written in Italian;
+> any follow-up must be written in English (see `AGENTS.md`, Language Consistency).
+
 # Piano di Reimplementazione UI con HTMX
 
 **Data**: Febbraio 2026
@@ -284,8 +292,8 @@ DOM swap avviene, UI aggiornata
 - [ ] **10.4** Documentare pattern HTMX usati (GET/POST/swap)
 - [ ] **10.5** Creare guida per aggiungere nuove feature UI
 - [ ] **10.6** Aggiornare `go.mod` se necessario (templ, htmx versioning)
-- [ ] **10.7** Verificare Makefile build/run funziona correttamente
-- [ ] **10.8** Test finale end-to-end: `make run` → UI carica → Tutte le feature funzionano
+- [ ] **10.7** Verificare `task build` / `task run` funzionano correttamente
+- [ ] **10.8** Test finale end-to-end: `task run` → UI carica → Tutte le feature funzionano
 
 ---
 

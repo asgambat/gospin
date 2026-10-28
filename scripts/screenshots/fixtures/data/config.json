@@ -1,0 +1,28 @@
+{
+  "containers": [
+    {"name":"grafana","friendly_name":"grafana","url":"http://grafana.home.lan:3000","active":true,"running":true,"favorite":true,"pinned":true,"activatedAt":1761700000000},
+    {"name":"jellyfin","friendly_name":"jellyfin","url":"http://jellyfin.home.lan:8096","active":true,"running":true,"favorite":true,"pinned":false,"activatedAt":1761700000000},
+    {"name":"nextcloud","friendly_name":"nextcloud","url":"http://cloud.home.lan","active":true,"running":true,"favorite":false,"pinned":true,"activatedAt":1761700000000},
+    {"name":"prometheus","friendly_name":"prometheus","url":"http://prometheus.home.lan:9090","active":true,"running":true,"favorite":false,"pinned":false,"activatedAt":1761700000000},
+    {"name":"immich","friendly_name":"immich","url":"http://photos.home.lan","active":true,"running":false,"favorite":true,"pinned":false,"activatedAt":1761700000000},
+    {"name":"paperless","friendly_name":"paperless","url":"http://docs.home.lan","active":true,"running":false,"favorite":false,"pinned":false,"activatedAt":1761700000000},
+    {"name":"pihole","friendly_name":"pihole","url":"http://dns.home.lan/admin","active":true,"running":true,"favorite":false,"pinned":false,"activatedAt":1761700000000},
+    {"name":"uptime-kuma","friendly_name":"uptime-kuma","url":"http://status.home.lan","active":false,"running":false,"favorite":false,"pinned":false,"activatedAt":1761700000000}
+  ],
+  "order": ["grafana","jellyfin","nextcloud","prometheus","immich","paperless","pihole","uptime-kuma"],
+  "groups": [
+    {"name":"media","active":true,"container":["jellyfin","immich"]},
+    {"name":"infra","active":true,"container":["grafana","prometheus","pihole","uptime-kuma"]}
+  ],
+  "groupOrder": ["media","infra"],
+  "schedules": [
+    {"id":"sched-jellyfin","target":"jellyfin","targetType":"container","timers":[
+      {"active":true,"startTime":"18:00","stopTime":"23:30","days":[0,1,2,3,4,5,6]}
+    ]},
+    {"id":"sched-media","target":"media","targetType":"group","timers":[
+      {"active":true,"startTime":"08:00","stopTime":"","days":[1,2,3,4,5]},
+      {"active":false,"startTime":"","stopTime":"01:00","days":[6,0]}
+    ]}
+  ],
+  "metadata": {"lastUpdate": 1761700000000}
+}

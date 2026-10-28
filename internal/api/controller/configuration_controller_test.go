@@ -8,7 +8,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"github.com/bassista/go_spin/internal/config"
+	"github.com/asgambat/gospin/internal/config"
 )
 
 func TestConfigurationController_GetConfiguration(t *testing.T) {

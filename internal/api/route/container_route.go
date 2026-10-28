@@ -3,9 +3,9 @@ package route
 import (
 	"github.com/gin-gonic/gin"
 
-	"github.com/bassista/go_spin/internal/api/controller"
-	"github.com/bassista/go_spin/internal/api/middleware"
-	"github.com/bassista/go_spin/internal/app"
+	"github.com/asgambat/gospin/internal/api/controller"
+	"github.com/asgambat/gospin/internal/api/middleware"
+	"github.com/asgambat/gospin/internal/app"
 )
 
 func NewContainerRouter(appCtx *app.App, group *gin.RouterGroup) {

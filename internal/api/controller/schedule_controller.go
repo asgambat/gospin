@@ -7,9 +7,9 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/go-playground/validator/v10"
 
-	"github.com/bassista/go_spin/internal/cache"
-	"github.com/bassista/go_spin/internal/logger"
-	"github.com/bassista/go_spin/internal/repository"
+	"github.com/asgambat/gospin/internal/cache"
+	"github.com/asgambat/gospin/internal/logger"
+	"github.com/asgambat/gospin/internal/repository"
 )
 
 // ScheduleController handles schedule-related HTTP endpoints using the generic CRUD controller.

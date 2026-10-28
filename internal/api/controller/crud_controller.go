@@ -6,7 +6,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"github.com/bassista/go_spin/internal/cache"
+	"github.com/asgambat/gospin/internal/cache"
 )
 
 // CrudService defines the minimal interface required for CRUD operations.

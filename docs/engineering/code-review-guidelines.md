@@ -1,6 +1,6 @@
 # Code Review Guidelines
 
-N.B. This file is written for humans and AI. GitHub Copilot consumes it via [VS Code settings](../../settings.json).
+N.B. This file is written for humans and AI agents; `AGENTS.md` links to it as the review reference.
 
 ## Principles
 
@@ -33,7 +33,8 @@ How to use:
 ### 3. Tests and coverage
 
 - Tests cover happy paths, error/exception paths, and edge cases.
-- Coverage meets the repository Quality & Coverage Policy; hot/error/security paths have 100% coverage.
+- Coverage meets the repository target (`AGENTS.md`, Testing Procedures): 70% per package, recommended and never a CI gate; hot/error/security paths have 100% of their new branches covered.
+- A package deliberately left below the target carries a `Coverage Exception:` section in the PR description (scope, rationale, risk mitigation) and one reviewer acknowledgment.
 - Tests are stable, deterministic, and assert behavior (not implementation details).
 
 ### 4. Security
@@ -80,8 +81,6 @@ How to use:
 
 ## References
 
-- Branch/PR workflow, naming, commit conventions, PR size and review SLA: see `.github/copilot-instructions.md`.
-- Coverage targets and hot/error/security path requirements: see `.github/copilot-instructions.md#quality-policy`.
-- Pull request author checklist: see `docs/engineering/pull-request-guidelines.md`.
-
-<!-- © Capgemini 2025 -->
+- Branch/PR workflow, naming, commit conventions, PR size and review SLA: see `.github/branching-strategy.md`.
+- Coverage targets and hot/error/security path requirements: see `AGENTS.md` (Testing Procedures).
+- Pull request author checklist: see `.github/pull_request_template.md`.

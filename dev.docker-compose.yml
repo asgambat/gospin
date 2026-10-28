@@ -3,13 +3,13 @@ services:
     container_name: gospin_dev
     image: gospindev
     environment:
-      - PORT=${PORT:-8083}
+      - PORT=${PORT:-8084}
       - WAITING_SERVER_PORT=${WAITING_SERVER_PORT:-8085}
       - GO_SPIN_MISC_LOG_LEVEL=debug
       - GO_SPIN_CONFIG_PATH=/app/config
       - GID=991
     ports:
-      - "${PORT:-8083}:${PORT:-8083}"
+      - "${PORT:-8084}:${PORT:-8084}"
       - "${WAITING_SERVER_PORT:-8085}:${WAITING_SERVER_PORT:-8085}"
     volumes:
       - ./:/app

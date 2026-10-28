@@ -11,8 +11,8 @@
 
 ## Quality & Policy Checks
 
-- [ ] Branch/PR rules followed (see `.github/copilot-instructions.md`)
-- [ ] Tests added/updated; critical paths & errors at 100% (see Quality Policy)
+- [ ] Branch/PR rules followed (see `.github/branching-strategy.md`)
+- [ ] Tests added/updated; critical paths & errors at 100% (see `AGENTS.md`, Testing Procedures)
 - [ ] Docs updated (if applicable)
 - [ ] Security and privacy considerations noted
 
@@ -24,5 +24,3 @@
 
 ## Copilot review prompt (optional but recommended)
 Copilot: review this PR for correctness, security, missing tests, and backward compatibility. Focus on the diff.
-
-<!-- © Capgemini 2025 -->

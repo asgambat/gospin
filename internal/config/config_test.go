@@ -10,7 +10,7 @@ import (
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 
-	"github.com/bassista/go_spin/internal/logger"
+	"github.com/asgambat/gospin/internal/logger"
 )
 
 func TestConfig_Validate_Valid(t *testing.T) {

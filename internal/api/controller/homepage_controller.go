@@ -5,9 +5,9 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"github.com/bassista/go_spin/internal/config"
-	"github.com/bassista/go_spin/internal/logger"
-	"github.com/bassista/go_spin/internal/version"
+	"github.com/asgambat/gospin/internal/config"
+	"github.com/asgambat/gospin/internal/logger"
+	"github.com/asgambat/gospin/internal/version"
 )
 
 // HomepageController handles homepage-related API endpoints.

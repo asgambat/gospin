@@ -13,7 +13,7 @@ import (
 	"github.com/fsnotify/fsnotify"
 	"github.com/go-playground/validator/v10"
 
-	"github.com/bassista/go_spin/internal/logger"
+	"github.com/asgambat/gospin/internal/logger"
 )
 
 // CacheStore defines the interface for cache operations needed by the watcher callback.

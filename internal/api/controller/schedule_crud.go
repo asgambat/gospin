@@ -5,8 +5,8 @@ import (
 
 	"github.com/go-playground/validator/v10"
 
-	"github.com/bassista/go_spin/internal/cache"
-	"github.com/bassista/go_spin/internal/repository"
+	"github.com/asgambat/gospin/internal/cache"
+	"github.com/asgambat/gospin/internal/repository"
 )
 
 // ScheduleCrudService implements CrudService for schedules.

@@ -72,7 +72,7 @@ jobs:
       # Compute the four values that the Dockerfile ARGs (VERSION /
       # BUILD_TIME / GIT_COMMIT / GO_VERSION) expect via `-X -ldflags` so the
       # resulting binary — and therefore the homepage footer — reports the
-      # exact build identity. Semantics match the Makefile so a `make build`
+      # exact build identity. Semantics match Taskfile.yml so a `task build`
       # locally and a CI publish on the same commit yield the same string.
       # `set -euo pipefail` ensures any failure (missing `go`, broken pipe in
       # `awk`, etc.) aborts the job rather than silently producing empty

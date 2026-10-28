@@ -1,4 +1,4 @@
-## 🔧 Configuration Examples
+## Configuration Examples
 
 ```yaml
 # config/config.yaml
@@ -9,12 +9,12 @@ server:
 data:
   file_path: ./config/data/config.json
   persist_interval_secs: 10
+  scheduling_enabled: true
+  scheduling_poll_interval_secs: 60
   base_url: "https://$1.dev.company.com"
 
 misc:
   gin_mode: release
-  scheduling_enabled: true
-  scheduling_poll_interval_secs: 60
   scheduling_timezone: "America/Los_Angeles"
   runtime_type: docker
   cors_allowed_origins: "https://app.company.com,https://admin.company.com"
@@ -26,13 +26,13 @@ misc:
 # Development environment
 export GO_SPIN_MISC_GIN_MODE=debug
 export GO_SPIN_DATA_PERSIST_INTERVAL_SECS=5
-export GO_SPIN_MISC_SCHEDULING_POLL_INTERVAL_SECS=30
+export GO_SPIN_DATA_SCHEDULING_POLL_INTERVAL_SECS=30
 export GO_SPIN_MISC_CORS_ALLOWED_ORIGINS="*"
 
 # Production environment
 export GO_SPIN_MISC_GIN_MODE=release
 export GO_SPIN_DATA_PERSIST_INTERVAL_SECS=60
-export GO_SPIN_MISC_SCHEDULING_POLL_INTERVAL_SECS=300
+export GO_SPIN_DATA_SCHEDULING_POLL_INTERVAL_SECS=300
 export GO_SPIN_MISC_CORS_ALLOWED_ORIGINS="https://production.company.com"
 ```
 
@@ -52,7 +52,7 @@ misc:
   runtime_type: docker
 ```
 
-## 📊 Monitoring & Automation Examples
+## Monitoring and Automation Examples
 
 ### Health Monitoring Script
 
@@ -143,7 +143,7 @@ cp config/data/config.json "backup-go-spin-$(date +%Y%m%d).json"
 echo "Backup completed"
 ```
 
-## 🌐 Web UI Usage Examples
+## Web UI Usage Examples
 
 ### Bulk Container Management
 
@@ -190,7 +190,7 @@ base_url: "http://localhost"
 # Result: http://localhost/api (or custom URL if specified)
 ```
 
-## 🔍 Troubleshooting Examples
+## Troubleshooting Examples
 
 ### Debug Container Issues
 

@@ -11,8 +11,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"github.com/bassista/go_spin/internal/repository"
-	"github.com/bassista/go_spin/internal/runtime"
+	"github.com/asgambat/gospin/internal/repository"
+	"github.com/asgambat/gospin/internal/runtime"
 )
 
 // cleanupStore is a minimal cache.ContainerStore for the orphan-cleanup tests.

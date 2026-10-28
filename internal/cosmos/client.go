@@ -8,7 +8,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/bassista/go_spin/internal/logger"
+	"github.com/asgambat/gospin/internal/logger"
 )
 
 type RouteResponse struct {

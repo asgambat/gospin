@@ -14,7 +14,7 @@ import (
 	"syscall"
 	"unicode/utf8"
 
-	"github.com/bassista/go_spin/internal/boardclient"
+	"github.com/asgambat/gospin/internal/boardclient"
 )
 
 // downloadPerm is the permission of a board saved with download.

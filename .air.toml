@@ -4,23 +4,23 @@ tmp_dir = ".build"
 
 [build]
   args_bin = []
-  bin = "./.build/main"
-  # The -X -ldflags below MUST stay in sync with the `LDFLAGS` variable in
-  # the Makefile and the `-X -ldflags` block in the Dockerfile: same
-  # Version/BuildTime/GitCommit/GoVersion semantics so a local `make build`
-  # and `make watch` produce matching metadata for the same commit, and so
+  bin = "./.build/gospin"
+  # The -X -ldflags below MUST stay in sync with the `VERSION_FLAGS`/`LDFLAGS`
+  # vars in Taskfile.yml and the `-X -ldflags` block in the Dockerfile: same
+  # Version/BuildTime/GitCommit/GoVersion semantics so a local `task build`
+  # and `task watch` produce matching metadata for the same commit, and so
   # the dev server's homepage footer reports the same string the published
   # image reports. If you add/remove a var to LDFLAGS, mirror the change here.
-  cmd = "templ generate && go build -ldflags \"-s -w -X github.com/bassista/go_spin/internal/version.Version=$(git describe --tags --always --dirty 2>/dev/null || echo '0.0.9') -X github.com/bassista/go_spin/internal/version.BuildTime=$(date -u '+%Y-%m-%d_%H:%M:%S') -X github.com/bassista/go_spin/internal/version.GitCommit=$(git rev-parse --short HEAD 2>/dev/null || echo 'unknown') -X github.com/bassista/go_spin/internal/version.GoVersion=$(go version | awk '{print $3}')\" -o ./.build/main ./cmd/server/main.go"
+  cmd = "go build -ldflags \"-s -w -X github.com/asgambat/gospin/internal/version.Version=$(git describe --tags --always --dirty 2>/dev/null || cat .version) -X github.com/asgambat/gospin/internal/version.BuildTime=$(date -u '+%Y-%m-%d_%H:%M:%S') -X github.com/asgambat/gospin/internal/version.GitCommit=$(git rev-parse --short HEAD 2>/dev/null || echo 'unknown') -X github.com/asgambat/gospin/internal/version.GoVersion=$(go version | awk '{print $3}')\" -o ./.build/gospin ./cmd/server/main.go"
   delay = 1000
   exclude_dir = ["assets", ".build", "vendor", "testdata", "docs"]
   exclude_file = []
-  exclude_regex = ["_test.go", "_templ.go"]
+  exclude_regex = ["_test.go"]
   exclude_unchanged = false
   follow_symlink = false
   full_bin = ""
   include_dir = []
-  include_ext = ["go", "templ"]
+  include_ext = ["go"]
   include_file = []
   kill_delay = "0s"
   log = "build-errors.log"

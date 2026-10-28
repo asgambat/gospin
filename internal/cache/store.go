@@ -6,8 +6,8 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/bassista/go_spin/internal/logger"
-	"github.com/bassista/go_spin/internal/repository"
+	"github.com/asgambat/gospin/internal/logger"
+	"github.com/asgambat/gospin/internal/repository"
 )
 
 var ErrContainerNotFound = errors.New("container not found")

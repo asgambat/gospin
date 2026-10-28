@@ -11,7 +11,7 @@ import (
 	"github.com/joho/godotenv"
 	"github.com/spf13/viper"
 
-	"github.com/bassista/go_spin/internal/logger"
+	"github.com/asgambat/gospin/internal/logger"
 )
 
 const ENV_PREFIX = "GO_SPIN"
@@ -244,8 +244,8 @@ func LoadConfig() (*Config, error) {
 const defaultCORSAllowedOrigins = "*"
 
 // corsAllowedOrigins resolves the CORS allow-list. The canonical key is
-// misc.cors_allowed_origins (the one documented in config/config.yaml,
-// docs/progetto.txt and README.md); server.cors_allowed_origins is still
+// misc.cors_allowed_origins (the one documented in config/config.yaml and
+// README.md); server.cors_allowed_origins is still
 // honoured as a deprecated alias so upgrades never silently widen the
 // allow-list to the permissive default. When both keys are set to different
 // values the canonical one wins, with a warning naming both: an installation that

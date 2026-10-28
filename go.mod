@@ -1,4 +1,4 @@
-module github.com/bassista/go_spin
+module github.com/asgambat/gospin
 
 go 1.25.6
 

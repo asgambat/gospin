@@ -10,10 +10,10 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"github.com/bassista/go_spin/internal/app"
-	"github.com/bassista/go_spin/internal/config"
-	"github.com/bassista/go_spin/internal/repository"
-	"github.com/bassista/go_spin/internal/runtime"
+	"github.com/asgambat/gospin/internal/app"
+	"github.com/asgambat/gospin/internal/config"
+	"github.com/asgambat/gospin/internal/repository"
+	"github.com/asgambat/gospin/internal/runtime"
 )
 
 // mockContainerRuntime implements runtime.ContainerRuntime for testing

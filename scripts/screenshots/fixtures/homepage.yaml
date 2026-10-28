@@ -1,0 +1,86 @@
+# Demo homepage for scripts/screenshots/capture.sh. The theme is pinned so the
+# screenshots do not depend on the colour scheme of the machine that runs the
+# capture. Every service, bookmark and action points at a fictional host.
+services:
+  - group: INFRASTRUCTURE
+    items:
+      - name: Grafana
+        url: http://grafana.home.lan:3000
+        description: Dashboards and alerts
+        icon: grafana.png
+      - name: Prometheus
+        url: http://prometheus.home.lan:9090
+        description: Metrics and queries
+        icon: prometheus.png
+      - name: Pi-hole
+        url: http://dns.home.lan/admin
+        description: DNS and ad blocking
+        icon: pi-hole.png
+      - name: Uptime Kuma
+        url: http://status.home.lan
+        description: Service availability
+        icon: uptime-kuma.png
+
+  - group: MEDIA
+    items:
+      - name: Jellyfin
+        url: http://jellyfin.home.lan:8096
+        description: Films and series
+        icon: jellyfin.png
+      - name: Immich
+        url: http://photos.home.lan
+        description: Photo library
+        icon: immich.png
+      - name: Navidrome
+        url: http://music.home.lan
+        description: Music streaming
+        icon: navidrome.png
+
+  - group: FILES
+    items:
+      - name: Nextcloud
+        url: http://cloud.home.lan
+        description: Files and calendar
+        icon: nextcloud.png
+      - name: Paperless-ngx
+        url: http://docs.home.lan
+        description: Scanned documents
+        icon: paperless-ngx.png
+
+bookmarks:
+  - group: QUICK LINKS
+    items:
+      - name: Router
+        url: http://router.home.lan
+        abbr: RT
+      - name: Switch
+        url: http://switch.home.lan
+        abbr: SW
+      - name: Proxmox
+        url: http://proxmox.home.lan:8006
+        abbr: PX
+      - name: NAS
+        url: http://nas.home.lan
+        abbr: NS
+
+actions:
+  - group: MAINTENANCE
+    items:
+      - name: Restart Grafana
+        action: restart-grafana
+        description: Restart the dashboards container
+        icon: grafana.png
+      - name: Reindex photos
+        action: index-photos
+        description: Trigger a library scan
+        icon: immich.png
+      - name: Health check
+        action: health-check
+        description: Ask the status page for its health
+        icon: uptime-kuma.png
+
+settings:
+  theme: catppuccin-latte
+  title: Home
+  polling_interval_seconds: 10
+  stats_polling_interval_seconds: 3

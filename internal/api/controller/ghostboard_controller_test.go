@@ -15,7 +15,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"github.com/bassista/go_spin/internal/ghostboard"
+	"github.com/asgambat/gospin/internal/ghostboard"
 )
 
 // newGhostboardTestController builds the controller, its router and the store

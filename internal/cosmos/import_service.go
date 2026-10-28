@@ -4,9 +4,9 @@ import (
 	"context"
 	"strings"
 
-	"github.com/bassista/go_spin/internal/cache"
-	"github.com/bassista/go_spin/internal/logger"
-	"github.com/bassista/go_spin/internal/repository"
+	"github.com/asgambat/gospin/internal/cache"
+	"github.com/asgambat/gospin/internal/logger"
+	"github.com/asgambat/gospin/internal/repository"
 )
 
 type ImportResult struct {

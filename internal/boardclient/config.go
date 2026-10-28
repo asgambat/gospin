@@ -14,7 +14,7 @@ import (
 
 	"github.com/spf13/viper"
 
-	"github.com/bassista/go_spin/internal/ghostboard"
+	"github.com/asgambat/gospin/internal/ghostboard"
 )
 
 const (

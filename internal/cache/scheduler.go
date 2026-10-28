@@ -4,8 +4,8 @@ import (
 	"context"
 	"time"
 
-	"github.com/bassista/go_spin/internal/logger"
-	"github.com/bassista/go_spin/internal/repository"
+	"github.com/asgambat/gospin/internal/logger"
+	"github.com/asgambat/gospin/internal/repository"
 )
 
 // StartPersistenceScheduler runs a goroutine that periodically flushes dirty cache to disk.

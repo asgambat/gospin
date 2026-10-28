@@ -1,0 +1,10 @@
+actions:
+  restart-grafana:
+    method: POST
+    url: "http://grafana.home.lan:3000/api/admin/restart"
+  index-photos:
+    method: POST
+    url: "http://photos.home.lan/api/jobs/library-scan"
+  health-check:
+    method: GET
+    url: "http://status.home.lan/api/health"

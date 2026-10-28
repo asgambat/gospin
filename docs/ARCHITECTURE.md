@@ -1,6 +1,6 @@
 # Architecture & Design Patterns
 
-## 🏗️ System Architecture Overview
+## System Architecture Overview
 
 GoSpin follows a modular, interface-driven architecture that prioritizes testability, maintainability, and extensibility.
 
@@ -10,8 +10,10 @@ GoSpin follows a modular, interface-driven architecture that prioritizes testabi
 graph TB
     subgraph "External Layer"
         UI[Web UI - Alpine.js]
+        HOME[Homepage dashboard]
+        GB[Ghostboard page]
+        CLI[gb-cli]
         API[REST API - Gin]
-        CLI[CLI Tools]
     end
     
     subgraph "Application Layer"
@@ -23,6 +25,7 @@ graph TB
     subgraph "Business Layer"
         CACHE[Cache Store]
         SCHED[Scheduler]
+        GBSTORE[Ghostboard Store]
         APP[App Container]
     end
     
@@ -40,8 +43,12 @@ graph TB
     end
     
     UI --> API
+    HOME --> API
+    GB --> API
+    CLI --> API
     API --> CTL
     CTL --> CACHE
+    CTL --> GBSTORE
     CTL --> RUNTIME
     CACHE --> REPO
     SCHED --> CACHE
@@ -56,7 +63,7 @@ graph TB
     style RUNTIME fill:#e8f5e8
 ```
 
-## 🎯 Design Principles
+## Design Principles
 
 ### 1. Separation of Concerns
 Each package has a single, well-defined responsibility:
@@ -107,7 +114,7 @@ Each component has one reason to change:
 - **Runtime**: Container operations
 - **Repository**: File persistence
 
-## 🔄 Core Patterns
+## Core Patterns
 
 ### 1. Repository Pattern
 
@@ -260,7 +267,7 @@ type MemoryRuntime struct {
 }
 ```
 
-## 🧩 Component Deep Dive
+## Component Deep Dive
 
 ### Cache Store Architecture
 
@@ -495,7 +502,46 @@ func (m *MemoryRuntime) Start(name string) error {
 - Board names are validated with `ghostboard.ValidateBoardName` before a request is made, so a
   malformed name never reaches the server.
 
-## 🔌 Extension Points
+### Homepage and Actions
+
+**Design** (`internal/api/controller/homepage_controller.go`):
+- `GET /homepage` reloads `config/homepage.yaml` on every request through
+  `config.LoadHomepageConfig`, which returns the parsed sections plus a hash of the file. The page
+  polls the endpoint, compares the hash with the one it rendered and re-renders only when the file
+  changed, so editing the YAML is enough to publish new services, bookmarks or settings.
+- The response embeds the build metadata (`version`, `buildTime`, `gitCommit`, `goVersion`) as
+  top-level fields taken from `internal/version`. A `version` key written in the YAML is ignored:
+  what the binary was built with always wins.
+- Sections missing from the file are returned as empty arrays, so a minimal `homepage.yaml` still
+  renders and an empty `actions:` list produces no buttons instead of an error.
+
+**Actions** (`internal/api/controller/actions_controller.go`):
+- The controller is a server-side HTTP proxy. `config/actions.yml` holds the technical definition
+  (`method`, `url`, headers, body) and is optional: a missing file yields an empty action set. The
+  parsed file is cached behind a `sync.RWMutex` and re-read on the first request after a failed
+  startup load, so a syntax error fixed at runtime recovers without a restart.
+- `POST /homepage/action` accepts `{"actionName": "..."}`, resolves the name and performs the
+  request server-side with `data.actions_timeout_seconds`. Both modes wait for the target; they
+  differ in what comes back, and `mode` always reports which one ran: `async` (default) returns the
+  upstream status only, `sync` returns the status plus the body, capped at 1 MB.
+- `LogDanglingReferences` runs at startup and warns about actions referenced in `homepage.yaml`
+  but absent from `actions.yml`, which would otherwise only surface as a `404` on click.
+
+### Cosmos Integration
+
+**Design** (`internal/cosmos`):
+- `Client.FetchRoutes` calls the Cosmos routes API with the configured bearer token, and
+  `FilterValidRoutes` drops the entries that do not map to a usable container target.
+- `ImportService.ImportContainers` turns the remaining routes into containers, skips the names that
+  already exist in the store and reports `ImportResult`
+  (`total_fetched`, `filtered`, `imported`, `skipped_existing`, plus the name and error lists).
+- The path is exposed by `POST /containers/import`. When `misc.cosmos_base_url` or
+  `misc.cosmos_token` is empty the handler answers `503` with a JSON error instead of failing
+  silently, so the dashboard can render a usable message.
+- The import is a one-shot reconciliation: it never removes containers that disappeared from
+  Cosmos. Deletions stay an explicit action of the operator.
+
+## Extension Points
 
 ### Adding New Runtime Types
 
@@ -569,7 +615,7 @@ func AuthMiddleware() gin.HandlerFunc {
 r.Use(middleware.AuthMiddleware())
 ```
 
-## 🧪 Testing Architecture
+## Testing Architecture
 
 ### Test Strategy Layers
 
@@ -579,7 +625,7 @@ pyramid TB
     
     subgraph "E2E Tests"
         API["API Integration Tests"]
-        UI["UI Tests (Future)"]
+        UI["UI and route tests (httptest)"]
     end
     
     subgraph "Integration Tests"
@@ -667,7 +713,7 @@ func setupTestApp(t *testing.T) *app.App {
 }
 ```
 
-## 🔄 Data Flow Architecture
+## Data Flow Architecture
 
 ### Request Processing Flow
 
@@ -726,5 +772,97 @@ stateDiagram-v2
     ClearDirty --> Idle: Save Complete
     CheckDirty --> Idle: No Changes
 ```
+
+## Concurrency Model
+
+Boot starts a fixed set of goroutines, and every one of them watches `app.BaseCtx`, the application
+context created by `app.New`, so a single cancellation stops all the background work.
+
+| Goroutine | Started from | Ends when |
+| --------- | ------------ | --------- |
+| Main HTTP server (`httpgrace`) | `cmd/server/main.go` | SIGTERM/SIGINT, drained within `server.shutdown_timeout_secs` |
+| Waiting page server | `createWaitingServer` in `cmd/server/main.go` | SIGTERM/SIGINT through its own `httpgrace` instance |
+| File watcher (`fsnotify`) | `App.StartWatchers` → `Repository.StartWatcher` | `BaseCtx` is cancelled |
+| Data persistence loop | `App.StartWatchers` → `cache.StartPersistenceScheduler` | `BaseCtx` is cancelled, after a final flush |
+| Ghostboard persistence loop | `App.StartWatchers` → `Store.StartPersistence` | `BaseCtx` is cancelled, after a final flush |
+| Polling scheduler | `App.StartWatchers`, only when `data.scheduling_enabled` | `BaseCtx` is cancelled |
+| Request handler | `net/http` | the handler returns |
+| Event stream handler | `/ghostboard/:board/events` | the client disconnects or the context is cancelled |
+
+Shutdown has two stages, and the order matters. The signal first reaches the `httpgrace` servers,
+which stop accepting connections and drain the in-flight requests; `main` then returns and its
+deferred `App.Shutdown` executes. That call cancels `BaseCtx`, flushes the ghostboard synchronously
+(a cancelled persistence goroutine can no longer do it) and finally waits on the `persistDone`
+channel, so the data document reaches disk before the process exits.
+
+Shared state is guarded and copied, not passed around. `cache.Store` keeps the data document behind
+a `sync.RWMutex` and `Snapshot` returns a deep copy, which is why controllers can read a consistent
+document while another request mutates it. `ghostboard.Store` uses a `sync.Mutex` for the boards and
+a separate `persistMu` for the file. Each event stream owns a 16-slot buffered channel, and a
+subscriber that fills it loses the intermediate events instead of blocking the writer; that is safe
+because every event carries the whole board text, so the next one converges to the current state.
+
+## Key Design Decisions
+
+Each row is a trade-off taken deliberately; the ADR column points at the record that carries the
+reasoning.
+
+| Decision | Benefit | Trade-off | Record |
+| -------- | ------- | --------- | ------ |
+| Async persistence behind a dirty flag | API responses never wait for the disk | up to `data.persist_interval_secs` of writes are lost on a hard kill | [ADR-0006](ADRs/0006-json-persistence-dirty-cache.md) |
+| JSON data file with an in-memory cache | nothing to deploy; the file is readable and editable by hand | the whole document is rewritten per flush, and there is a single writer | [ADR-0006](ADRs/0006-json-persistence-dirty-cache.md) |
+| File watching with optimistic locking | external edits apply without a restart | depends on the file system delivering `fsnotify` events (no events on some network mounts) | [ADR-0006](ADRs/0006-json-persistence-dirty-cache.md) |
+| Interfaces at the runtime and data boundaries | tests run without Docker through the memory runtime | one more indirection between a handler and the SDK | [Design Principles](#design-principles) |
+| Polling scheduler | no stored timer state, so a restart needs no reconciliation | an action fires on the first tick after its window, not on the exact second | [ADR-0001](ADRs/0001-polling-scheduler.md) |
+| Server-Sent Events for the ghostboard | live updates over plain HTTP, no login and no polling | one long-lived connection per open page, and the hub lives in the process, so it does not scale out | [ADR-0002](ADRs/0002-ghostboard-sse.md) |
+| Actions executed by the server | the target URL, headers and body never reach the browser | an action can only do what `actions.yml` describes, and the file is parsed on every execution | [ADR-0003](ADRs/0003-homepage-yaml-actions-proxy.md) |
+| `gb-cli` built as a separate binary | the CLI carries no server code | two binaries to build, version and document | [ADR-0005](ADRs/0005-gb-cli-separate-binary.md) |
+| Taskfile as the only build front-end | one file defines build, lint, test and release steps | `task` becomes a prerequisite for building | [ADR-0007](ADRs/0007-taskfile-build-frontend.md) |
+
+## Performance and Resources
+
+### Measured characteristics
+
+The figures below come from the demo instance behind the screenshots: memory runtime, 8 containers,
+2 groups, 2 schedules, on a Raspberry Pi 4 with Go 1.25.6 and loopback HTTP. They show the shape of
+the cost rather than a benchmark — CI does not measure them, so re-measure before quoting them in a
+sizing discussion.
+
+| Measurement | Value |
+| ----------- | ----- |
+| Resident memory, idle 12 s after boot | ≈ 19 MB, 8 OS threads |
+| `GET /containers` (read served from the cache) | 1.5–3.5 ms |
+| `GET /homepage` (re-reads and hashes `homepage.yaml`) | 2.5–6 ms |
+| `GET /runtime/system-stats` (first call, then warm) | ≈ 115 ms, then 1.5–2 ms |
+
+The first `system-stats` call samples the host's disk usage from `data.system_monitor_mount_point`;
+later calls reuse the sampling interval. `GET /homepage` re-reads the YAML file and computes its
+SHA-256 on every request, which is what keeps the hot-reload hash cheap and always correct. Container
+start and stop latency is the Docker daemon's, not GoSpin's: the handler waits for the runtime call.
+
+### Scheduling precision
+
+The scheduler polls, so an action is applied on the first tick after its window opens or closes. With
+the default `data.scheduling_poll_interval_secs: 30` a container can start up to 30 seconds after its
+scheduled time. A shorter interval buys precision at the cost of runtime calls on every tick.
+
+### Persistence cost
+
+Both persistence loops are ticker-driven and skip a tick when nothing changed:
+`data.persist_interval_secs: 5` for the document, `ghostboard.persist_interval_secs: 2` for the
+boards. A flush rewrites the file through a temporary file, an `fsync` and a rename, so its cost
+follows the size of `data/config.json` rather than the number of changes.
+
+### Minimum and recommended footprint
+
+| Resource | Minimum | Recommended |
+| -------- | ------- | ----------- |
+| CPU | 1 shared core | 2 cores |
+| RAM | 32 MB for the process | 64 MB |
+| Disk | 100 MB (binary, UI assets, data file) | 200 MB with logs |
+| Network | 1 Mbps | 10 Mbps |
+
+The container runtime is not included: GoSpin talks to the daemon over `/var/run/docker.sock` and
+does not bundle one, so add the memory of the containers you manage.
 
 This architecture documentation provides a comprehensive view of the system's design patterns, component interactions, and extension points. It serves as a guide for developers to understand the codebase structure and make informed decisions when adding new features or modifications.

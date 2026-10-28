@@ -120,6 +120,41 @@ type HomepageConfig struct {
 	Settings  HomepageSettings `yaml:"settings" json:"settings"`
 }
 
+// DefaultTheme is the theme used when homepage.yaml omits the theme or names
+// one the UI does not ship. "auto" delegates to the dark or light theme of the
+// OS, which is the behaviour of the unconfigured page.
+const DefaultTheme = "auto"
+
+// HomepageThemes lists the body classes styled in ui/home.html. Any other name
+// has no CSS variables, so it would render an unstyled page.
+var HomepageThemes = []string{
+	"auto",
+	"tokyo-night",
+	"catppuccin-latte",
+	"nord",
+	"dracula",
+	"gruvbox",
+	"night-stars",
+}
+
+// NormalizeHomepageTheme lowercases a configured theme name, turns spaces and
+// underscores into dashes and falls back to DefaultTheme when the result is not
+// one of HomepageThemes. Without the fallback a typo or a name from an older
+// release would reach the browser, where it matches no CSS rule and leaves the
+// homepage without colours or layout.
+func NormalizeHomepageTheme(theme string) string {
+	name := strings.Join(strings.Fields(strings.ToLower(theme)), "-")
+	name = strings.ReplaceAll(name, "_", "-")
+
+	for _, known := range HomepageThemes {
+		if name == known {
+			return name
+		}
+	}
+
+	return DefaultTheme
+}
+
 // normalizeHomepageConfig applies the documented defaults and makes every
 // collection non-nil. The JSON response must carry empty arrays instead of
 // null: the Alpine templates iterate the sections with x-for, which fails on a
@@ -150,6 +185,7 @@ func normalizeHomepageConfig(cfg *HomepageConfig) {
 	if cfg.Settings.TitleFontSize == "" {
 		cfg.Settings.TitleFontSize = DefaultTitleFontSize
 	}
+	cfg.Settings.Theme = NormalizeHomepageTheme(cfg.Settings.Theme)
 
 	// Resolve icon URLs and keep the item lists non-nil for the same reason as
 	// the sections above.

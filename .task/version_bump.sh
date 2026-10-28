@@ -61,10 +61,8 @@ fi
 VERSION_FILES=(
   "$VERSION_FILE"
   internal/version/version.go
-  Makefile
   Dockerfile
   README.md
-  docs/progetto.txt
   .github/workflows/docker-release.yml
   .github/workflows/docker_build_push.yml
   Taskfile.yml

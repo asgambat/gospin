@@ -1,6 +1,6 @@
 # Development Guide
 
-## 🛠️ Setup Development Environment
+## Setup Development Environment
 
 ### Prerequisites
 
@@ -9,7 +9,8 @@
    # Check version
    go version
    
-   # Install if needed (Linux/macOS)
+   # Install if needed (Linux/macOS; use linux-arm64 on a Raspberry Pi and
+   # darwin-arm64 on Apple Silicon)
    wget https://go.dev/dl/go1.25.6.linux-amd64.tar.gz
    sudo tar -C /usr/local -xzf go1.25.6.linux-amd64.tar.gz
    export PATH=$PATH:/usr/local/go/bin
@@ -24,13 +25,22 @@
    # Logout and login again
    ```
 
-3. **Development Tools**
+3. **Task** (the build front-end every command below uses)
    ```bash
-   # Install air for hot-reload
+   go install github.com/go-task/task/v3/cmd/task@latest
+   task --version
+   ```
+
+4. **Development Tools**
+   ```bash
+   # Install air for hot-reload (same as `task install`)
    go install github.com/air-verse/air@latest
-   
-   # Install golangci-lint
-   curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(go env GOPATH)/bin v1.55.2
+
+   # Install golangci-lint (CI pins v1.64.8)
+   curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(go env GOPATH)/bin v1.64.8
+
+   # staticcheck (CI pins 2025.1.1)
+   go install honnef.co/go/tools/cmd/staticcheck@2025.1.1
    ```
 
 ### Project Setup
@@ -45,27 +55,27 @@
    
    ```
 
-## 🔄 Development Workflow
+## Development Workflow
 
 ### Daily Development
 
 ```bash
 # 1. Start with clean state
+task fmt
 go vet ./...
-go fmt ./...
 
 # 2. Run tests
-go test ./...
+task test
 
-# 3. Start development server
-air -c .air.toml    # Linux/macOS
-air -c .air_win.toml # Windows
+# 3. Start the development server
+task watch          # air hot reload, configured by .air.toml
+task run            # single run, no file watcher
 
-# 4. Make changes (auto-reload with air)
+# 4. Make changes (the watcher rebuilds and restarts)
 
 # 5. Before commit
-golangci-lint run
-go test ./... -cover
+task lint           # staticcheck + golangci-lint
+task test:cover     # coverage.out + coverage.html
 go mod tidy
 ```
 
@@ -128,7 +138,7 @@ func (m *MockRuntime) Start(name string) error {
 }
 ```
 
-## 📁 Project Structure Deep Dive
+## Project Structure Deep Dive
 
 ### Core Components
 
@@ -251,14 +261,15 @@ func SetupRoutes(app *app.App) *gin.Engine {
 }
 ```
 
-## 🧪 Testing Guidelines
+## Testing Guidelines
 
 ### Test Coverage Requirements
 
-- **Minimum**: 80% overall coverage
-- **Critical paths**: 90%+ coverage (runtime, persistence)
+- **Target**: 70% per package — recommended, never a CI gate (`.github/workflows/coverage.yml` only measures and publishes the report)
+- **Hot paths**: 100% of the new branches in runtime, persistence, scheduler and request handling
 - **Controllers**: Test all HTTP endpoints
 - **Business logic**: Test all edge cases
+- Measure with `task test:cover` and report a package that stays below the target instead of lowering it
 
 ### Mock Strategy
 
@@ -296,23 +307,25 @@ func TestFileWatching(t *testing.T) {
 }
 ```
 
-## 🚀 Build & Deployment
+## Build & Deployment
 
 ### Build Process
 
 ```bash
-# Development build
-go build -o .build/main ./cmd/server/main.go
+# Canonical build (runs lint + test first, injects the version metadata)
+task build          # -> .build/gospin
+task build:fast     # same binary without lint/test while iterating
 
-# Production build (optimized)
-CGO_ENABLED=0 go build -ldflags="-w -s" -o .build/main ./cmd/server/main.go
+# Raw go build, when you do not want to go through the Taskfile
+go build -o .build/gospin ./cmd/server
+CGO_ENABLED=0 go build -ldflags="-w -s" -o .build/gospin ./cmd/server
 
 # Cross-compilation examples
-GOOS=linux GOARCH=amd64 go build -o .build/main-linux ./cmd/server/main.go
-GOOS=windows GOARCH=amd64 go build -o .build/main.exe ./cmd/server/main.go
+GOOS=linux GOARCH=amd64 go build -o .build/gospin-linux ./cmd/server
+GOOS=windows GOARCH=amd64 go build -o .build/gospin.exe ./cmd/server
 
 # gb-cli CLI (client of the ghostboard API)
-task build:cli    # or: make build-cli -> .build/gb-cli
+task build:cli    # -> .build/gb-cli
 go run ./cmd/board read
 ```
 
@@ -329,23 +342,24 @@ docker-compose -f dev.docker-compose.yml up
 
 **Production build:**
 ```bash
-docker build -t go-spin:latest .
-docker run -p 8084:8084 -v /var/run/docker.sock:/var/run/docker.sock go-spin:latest
+task docker:build   # builds bassista/gospin:latest
+docker run -p 8084:8084 -v /var/run/docker.sock:/var/run/docker.sock bassista/gospin:latest
 ```
 
 ### Release Checklist
 
-- [ ] All tests passing: `go test ./...`
-- [ ] Linting clean: `golangci-lint run`
-- [ ] Coverage >80%: `go test -cover ./...`
+- [ ] All tests passing: `task test`
+- [ ] Linting clean: `task lint`
+- [ ] Coverage measured with `task test:cover`; any package still below the 70% target is named in the release notes
 - [ ] Dependencies updated: `go mod tidy`
 - [ ] Version bumped in appropriate files
-- [ ] CHANGELOG.md updated
+- [ ] CHANGELOG.md updated: the entries sit under `## [Unreleased]` and the release commit moves
+      them under the new version heading
 - [ ] Documentation updated
 - [ ] Docker image builds successfully
 - [ ] Manual smoke testing completed
 
-## 🔍 Debugging
+## Debugging
 
 ### Debug Mode
 
@@ -358,7 +372,7 @@ misc:
 
 **Environment variable:**
 ```bash
-GO_SPIN_MISC_GIN_MODE=debug ./main
+GO_SPIN_MISC_GIN_MODE=debug ./.build/gospin
 ```
 
 ### Debugging Tools
@@ -412,7 +426,7 @@ dlv test ./internal/cache -- -test.run TestStore
 - `Warn`: Potential issues, recoverable errors
 - `Error`: Serious problems requiring attention
 
-## 🤝 Contributing Guidelines
+## Contributing Guidelines
 
 ### Code Style
 
@@ -421,8 +435,8 @@ dlv test ./internal/cache -- -test.run TestStore
 # Format code
 go fmt ./...
 
-# Lint code  
-golangci-lint run
+# Lint code
+golangci-lint run --concurrency=1 ./...
 
 # Vet code
 go vet ./...
@@ -475,25 +489,12 @@ refactor(runtime): extract common Docker operations
 
 ### Pull Request Process
 
-1. **Branch Naming:**
-   - `feature/description` - New features
-   - `fix/description` - Bug fixes  
-   - `docs/description` - Documentation
-   - `refactor/description` - Code improvements
+Branch naming, PR size, review requirements and commit conventions live in
+[.github/branching-strategy.md](../.github/branching-strategy.md); the PR checklist itself is
+[.github/pull_request_template.md](../.github/pull_request_template.md). Do not duplicate those
+rules here: change them there and this guide keeps pointing at the same source.
 
-2. **PR Checklist:**
-   - [ ] Tests added/updated
-   - [ ] Documentation updated
-   - [ ] Code formatted and linted
-   - [ ] No breaking changes (or documented)
-   - [ ] Performance implications considered
-
-3. **Review Requirements:**
-   - At least one approving review
-   - All CI checks passing
-   - No merge conflicts
-
-## 📚 Resources
+## Resources
 
 ### Go Resources
 - [Effective Go](https://golang.org/doc/effective_go)
@@ -506,7 +507,7 @@ refactor(runtime): extract common Docker operations
 
 ### Testing
 - [Go Testing Package](https://pkg.go.dev/testing)
-- [Testify Assertions](https://github.com/stretchr/testify)
+- [httptest](https://pkg.go.dev/net/http/httptest) — the standard-library server used by the route tests
 
 ### Tools
 - [Air - Hot Reload](https://github.com/air-verse/air)

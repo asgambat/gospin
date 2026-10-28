@@ -11,12 +11,12 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"github.com/bassista/go_spin/internal/app"
-	"github.com/bassista/go_spin/internal/cache"
-	"github.com/bassista/go_spin/internal/config"
-	"github.com/bassista/go_spin/internal/logger"
-	"github.com/bassista/go_spin/internal/repository"
-	"github.com/bassista/go_spin/internal/runtime"
+	"github.com/asgambat/gospin/internal/app"
+	"github.com/asgambat/gospin/internal/cache"
+	"github.com/asgambat/gospin/internal/config"
+	"github.com/asgambat/gospin/internal/logger"
+	"github.com/asgambat/gospin/internal/repository"
+	"github.com/asgambat/gospin/internal/runtime"
 )
 
 // DefaultWaitingTemplatePath is the default path for the waiting page template.

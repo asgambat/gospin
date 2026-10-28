@@ -7,8 +7,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/bassista/go_spin/internal/cache"
-	"github.com/bassista/go_spin/internal/repository"
+	"github.com/asgambat/gospin/internal/cache"
+	"github.com/asgambat/gospin/internal/repository"
 )
 
 type mockStore struct {

@@ -10,8 +10,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"github.com/bassista/go_spin/internal/config"
-	"github.com/bassista/go_spin/internal/logger"
+	"github.com/asgambat/gospin/internal/config"
+	"github.com/asgambat/gospin/internal/logger"
 )
 
 // DefaultActionsConfigPath is the default path for the actions.yml configuration file.
