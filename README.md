@@ -102,7 +102,7 @@ The version string rendered in the bottom-right of the dashboard is **not** read
 
 | Variable | Source (Taskfile default) | Example value |
 |----------|---------------------------|---------------|
-| `Version` | `git describe --tags --always --dirty` (fallback `0.0.13`) | `v1.2.3`, `v1.2.3-4-gabc1234`, `v1.2.3-dirty` |
+| `Version` | `git describe --tags --always --dirty` (fallback `0.1.0`) | `v1.2.3`, `v1.2.3-4-gabc1234`, `v1.2.3-dirty` |
 | `BuildTime` | `date -u '+%Y-%m-%d_%H:%M:%S'` | `2026-06-22 14:30:00` |
 | `GitCommit` | `git rev-parse --short HEAD` (fallback `unknown`) | `abc1234` |
 | `GoVersion` | `go version \| awk '{print $3}'` | `go1.25.6` |
@@ -1058,7 +1058,7 @@ above are what publish the release.
   releases only. If a patch has to reach `latest` consumers after 1.0, tag a new minor version
   instead of re-tagging.
 - The bump script requires a strictly increasing version: with the current `0.0.x` line the next
-  entries are `0.0.13`, `0.0.14`, …, while `0.1.0` starts a new minor line and moves `latest`.
+  entries are `0.1.0`, `0.0.14`, …, while `0.1.0` starts a new minor line and moves `latest`.
 - Do not edit `.version` or `internal/version/version.go` by hand: the bump script keeps them, and
   every other version-bearing file, in sync.
 

@@ -26,7 +26,7 @@ package version
 // At build time this is normally populated by `git describe --tags --always --dirty`
 // via the build flags in Taskfile.yml (e.g. "v1.2.3", "v1.2.3-4-gabc1234", or
 // "v1.2.3-dirty").
-var Version = "0.0.13"
+var Version = "0.1.0"
 
 // BuildTime is the UTC timestamp at which the binary was produced. Populated
 // at build time from `date -u '+%Y-%m-%d_%H:%M:%S'`. Useful for telling two
