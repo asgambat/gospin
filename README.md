@@ -102,7 +102,7 @@ The version string rendered in the bottom-right of the dashboard is **not** read
 
 | Variable | Source (Taskfile default) | Example value |
 |----------|---------------------------|---------------|
-| `Version` | `git describe --tags --always --dirty` (fallback `0.1.0`) | `v1.2.3`, `v1.2.3-4-gabc1234`, `v1.2.3-dirty` |
+| `Version` | `git describe --tags --always --dirty` (fallback `0.1.1`) | `v1.2.3`, `v1.2.3-4-gabc1234`, `v1.2.3-dirty` |
 | `BuildTime` | `date -u '+%Y-%m-%d_%H:%M:%S'` | `2026-06-22 14:30:00` |
 | `GitCommit` | `git rev-parse --short HEAD` (fallback `unknown`) | `abc1234` |
 | `GoVersion` | `go version \| awk '{print $3}'` | `go1.25.6` |
@@ -1090,7 +1090,7 @@ services:
 
 `latest` follows every release while the project is pre-1.0 (`0.x`), where each version may be
 breaking, and from `1.0.0` on it moves only on a minor/major release (`X.Y.0`). For reproducible
-deployments pin an exact tag such as `bassista/gospin:0.1.0` instead of relying on `latest`.
+deployments pin an exact tag such as `bassista/gospin:0.1.1` instead of relying on `latest`.
 
 ## Releasing a New Version
 
@@ -1119,10 +1119,10 @@ below matters.
 
 ```bash
 task version:show
-task version:bump -- 0.1.0
+task version:bump -- 0.1.1
 
 git push origin main
-git push origin v0.1.0    # the tag itself, never --tags
+git push origin v0.1.1    # the tag itself, never --tags
 ```
 
 The bump script accepts only `MAJOR.MINOR.PATCH`, refuses a version equal to or lower than the
@@ -1139,7 +1139,7 @@ above are what publish the release.
   releases only. If a patch has to reach `latest` consumers after 1.0, tag a new minor version
   instead of re-tagging.
 - The bump script requires a strictly increasing version: with the current `0.0.x` line the next
-  entries are `0.1.0`, `0.0.14`, …, while `0.1.0` starts a new minor line and moves `latest`.
+  entries are `0.1.1`, `0.0.14`, …, while `0.1.1` starts a new minor line and moves `latest`.
 - Do not edit `.version` or `internal/version/version.go` by hand: the bump script keeps them, and
   every other version-bearing file, in sync.
 
