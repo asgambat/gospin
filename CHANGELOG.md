@@ -24,6 +24,11 @@ and their commits.
   installed under `.build/` on first use so the application build stays free of a Node toolchain.
 - `docs/plans/DOCS_REMAINING_WORK.md`: the documentation items that still need a maintainer
   decision.
+- Ghostboard PIN protection: the boards listed in `ghostboard.private_boards` need one shared PIN
+  (4-64 characters) for reading and writing, the page shows a lock form, and the PIN is stored only
+  as an HMAC keyed by `GO_SPIN_GHOSTBOARD_PIN_SECRET`. `POST /ghostboard/:board/unlock` returns a
+  signed session token, failed attempts are throttled per address, and `gb-cli` gains `--pin`,
+  `GO_SPIN_BOARD_PIN` and the `pin-hash` command (ADR-0008).
 
 ### Changed
 

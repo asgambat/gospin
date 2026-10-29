@@ -452,6 +452,25 @@ func (m *MemoryRuntime) Start(name string) error {
 - `StartPersistence` flushes dirty boards to a dedicated JSON file every
   `ghostboard.persist_interval_secs` (empty boards are pruned) and flushes once more on shutdown.
 
+**PIN gate** (`internal/ghostboard/auth.go`):
+- The boards named in `ghostboard.private_boards` are protected by one shared PIN, for reading and
+  writing. The list is configuration, so a board is private before it is ever written and no lock
+  state needs to be persisted; every other board stays public.
+- The PIN itself is never stored: `ghostboard.pin_hmac` holds `HMAC-SHA256(pin_secret, pin)`, which
+  `gb-cli pin-hash` prints. Verification recomputes the digest and compares it with
+  `hmac.Equal`, so a wrong PIN leaks neither its length nor the matched prefix. Without the secret
+  a copy of the configuration file cannot be brute-forced, and changing the secret invalidates
+  every digest and every open session at once.
+- `Authenticator.Unlock` trades a PIN for a stateless session token
+  (`v1.<expiry>.<hmac>`): the session survives a restart because it only carries its expiry and a
+  signature. It throttles failures per client address with a lockout that doubles every further
+  batch of `pin_max_attempts` failures, capped at an hour, keyed on the connection address rather
+  than on `X-Forwarded-For` so a spoofed header cannot bypass it.
+- `middleware.GhostboardPIN` gates the route group: a private board needs the `gb_pin_session`
+  cookie (browsers, `EventSource` and `sendBeacon` cannot set a header) or an
+  `Authorization: Bearer` token (scripts and `gb-cli`). A `nil` authenticator means no PIN is
+  configured and every board is public.
+
 **HTTP surface** (`internal/api/route/ghostboard_route.go` and
 `internal/api/controller/ghostboard_controller.go`):
 - `GET`/`POST /ghostboard/:board` — JSON board state; a write accepts a JSON body, a form field
@@ -460,8 +479,14 @@ func (m *MemoryRuntime) Start(name string) error {
   change and a keep-alive comment; it bypasses gzip and the per-request timeout.
 - `GET`/`POST /api/boards/:board` — plain-text surface for CLIs; `POST` stores the raw body byte
   for byte, rejects invalid UTF-8 with `400` and answers `204 No Content`.
+- `POST`/`DELETE /ghostboard/:board/unlock` — the PIN is traded for a session token, returned in
+  the body and set as an HttpOnly, `SameSite=Strict` cookie (`session_ttl_secs`, `Secure` when the
+  request arrived over HTTPS); `DELETE` expires the cookie. The route is registered without the
+  gate, since it is how a session is obtained.
 - `ui/ghostboard.html` and `ui/assets/ghostboard.js` render one independent board per
-  `/ui/ghostboard/<board>` path.
+  `/ui/ghostboard/<board>` path. The page loads the board state before opening the event stream,
+  so a private board shows the lock form instead of a stream that would retry forever, and a `401`
+  while saving brings the form back without dropping the text typed locally.
 
 **CLI** (`cmd/board`, client in `internal/boardclient`):
 - `gb-cli` is a thin HTTP client of `/api/boards/:board`, so it works locally, in a
@@ -493,6 +518,12 @@ func (m *MemoryRuntime) Start(name string) error {
 - The client retries transient failures (`429`, `502`, `503`, `504` and transport errors) with an
   exponential backoff and can send extra headers (`--header`, `GO_SPIN_BOARD_TOKEN` as a Bearer
   token), for a GoSpin instance behind an authenticating proxy.
+- A private board answers `401` until the client unlocks it: `internal/boardclient` posts the PIN
+  to `/ghostboard/:board/unlock` once per command, keeps the returned token and sends it as a
+  bearer token, so the PIN itself travels once and is never retried after a rejection. The PIN
+  comes from `--pin`, `GO_SPIN_BOARD_PIN` or the `pin` key of the configuration file, which is
+  never printed by `config`. `gb-cli pin-hash` prints the `ghostboard.pin_hmac` value of a PIN,
+  reading the secret from `GO_SPIN_GHOSTBOARD_PIN_SECRET`.
 - Failures are typed: `EndpointError` (a 404 on a board route), `BoardNameError` and `misuseError`
   map to the dedicated exit codes `3`, `4` and `2`, so a script can tell a wrong URL, a wrong board
   name and a command line mistake from a generic error.

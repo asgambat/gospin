@@ -30,6 +30,10 @@ bundler, no transpiler, no `node_modules` and no JavaScript test runner.
 
 - The Go server appends a content hash (`?v=...`) to the `app.js`, `home.js` and `ghostboard.js`
   script tags: keep the script tags pointing at the served paths.
+- `ui/ghostboard.html` renders the board and, for a board listed in `ghostboard.private_boards`,
+  a PIN form in its place. The page loads the board state before opening the `EventSource`, so a
+  locked board never leaves a stream retrying against a `401`; when a save answers `401` the form
+  comes back and the locally typed text is kept until the unlock writes it.
 - `ui/assets/app.js` and `ui/home.js` are served as-is (single-line, minified). Edit them directly,
   keep dead code out, and do not rename them without updating the cache-buster paths in
   `internal/api/route/ui_route.go`.

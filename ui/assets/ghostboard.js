@@ -13,6 +13,11 @@ function ghostboard() {
     board: 'default',
     boardValid: true,
     shareUrl: '',
+    ready: false,
+    locked: false,
+    pin: '',
+    lockError: '',
+    unlocking: false,
     text: '',
     revision: 0,
     updatedAt: '',
@@ -48,7 +53,121 @@ function ghostboard() {
         }
       });
 
+      this.start();
+    },
+
+    // start loads the board state before opening the event stream. A private
+    // board answers 401 without a session, so the page shows the PIN form
+    // instead of a stream that would retry forever.
+    async start() {
+      this.status = 'connecting';
+      this.error = '';
+
+      let response;
+      try {
+        response = await fetch(this.apiUrl(), {
+          headers: { Accept: 'application/json' },
+          cache: 'no-store',
+        });
+      } catch (error) {
+        console.error('Ghostboard: cannot reach the server', error);
+        this.status = 'error';
+        this.error = 'Cannot reach the server. Reload the page to try again.';
+        return;
+      }
+
+      if (response.status === 401) {
+        this.ready = true;
+        this.showLock('');
+        return;
+      }
+      if (!response.ok) {
+        this.status = 'error';
+        this.error = await this.errorMessage(response);
+        return;
+      }
+
+      try {
+        this.applyPayload(await response.json());
+      } catch (error) {
+        console.warn('Ghostboard: invalid board payload', error);
+      }
+
+      this.ready = true;
+      this.locked = false;
+      this.lockError = '';
       this.connect();
+    },
+
+    // showLock reveals the PIN form and drops what the page held, since a
+    // locked page must not keep the text of a session that never started.
+    showLock(message) {
+      this.locked = true;
+      this.status = 'locked';
+      this.lockError = message || '';
+      this.dirty = false;
+      this.text = '';
+      this.revision = 0;
+      this.updatedAt = '';
+      this.pendingRemote = null;
+      this.closeStream();
+      this.focusPIN();
+    },
+
+    focusPIN() {
+      this.$nextTick(() => {
+        if (this.$refs.pinInput) {
+          this.$refs.pinInput.focus();
+        }
+      });
+    },
+
+    async unlock() {
+      if (this.unlocking) {
+        return;
+      }
+
+      const pin = this.pin.trim();
+      if (!pin) {
+        this.lockError = 'Enter the PIN of this board.';
+        return;
+      }
+
+      this.unlocking = true;
+      this.lockError = '';
+
+      try {
+        const response = await fetch(this.apiUrl() + '/unlock', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ pin }),
+        });
+
+        if (!response.ok) {
+          throw new Error(await this.errorMessage(response));
+        }
+
+        this.pin = '';
+        this.locked = false;
+
+        // Text typed before the session expired is kept: it belongs to the
+        // user, so it is written back instead of being replaced by the remote
+        // state.
+        if (this.dirty) {
+          this.connect();
+          this.save();
+          return;
+        }
+
+        await this.start();
+      } catch (error) {
+        console.error('Ghostboard unlock failed:', error);
+        this.lockError = error.message || 'Unlock failed.';
+        this.pin = '';
+        this.focusPIN();
+      } finally {
+        this.unlocking = false;
+      }
     },
 
     get statusLabel() {
@@ -56,6 +175,7 @@ function ghostboard() {
         case 'live': return 'Live';
         case 'connecting': return 'Connecting…';
         case 'reconnecting': return 'Reconnecting…';
+        case 'locked': return 'Locked';
         case 'error': return 'Offline';
         default: return this.status;
       }
@@ -81,6 +201,10 @@ function ghostboard() {
     },
 
     connect() {
+      if (this.locked) {
+        return;
+      }
+
       this.closeStream();
       this.status = 'connecting';
 
@@ -185,6 +309,19 @@ function ghostboard() {
           body: JSON.stringify({ text }),
         });
 
+        // The session expired while the page was open: show the PIN form and
+        // keep the local text, so unlocking writes it back instead of losing
+        // it. The textarea keeps its value while the form is hidden.
+        if (response.status === 401) {
+          this.locked = true;
+          this.status = 'locked';
+          this.lockError = 'Your session expired: enter the PIN again to save this text.';
+          this.pendingRemote = null;
+          this.closeStream();
+          this.focusPIN();
+          return;
+        }
+
         if (!response.ok) {
           throw new Error(await this.errorMessage(response));
         }
@@ -244,7 +381,7 @@ function ghostboard() {
     },
 
     sendBeacon() {
-      if (!navigator.sendBeacon) {
+      if (!navigator.sendBeacon || this.locked) {
         return;
       }
       const payload = new Blob([JSON.stringify({ text: this.text })], { type: 'application/json' });

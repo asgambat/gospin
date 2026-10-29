@@ -22,6 +22,9 @@ type App struct {
 	Cache      cache.AppStore
 	Runtime    runtime.ContainerRuntime
 	Ghostboard *ghostboard.Store
+	// GhostboardAuth is the PIN gate of the private boards, nil when no PIN is
+	// configured and every board is public.
+	GhostboardAuth *ghostboard.Authenticator
 
 	BaseCtx     context.Context
 	Cancel      context.CancelFunc
@@ -62,15 +65,33 @@ func New(cfg *config.Config, repo repository.Repository, store cache.AppStore, r
 		return nil, err
 	}
 
+	var ghostboardAuth *ghostboard.Authenticator
+	if ghostboardCfg.PINHMAC != "" {
+		ghostboardAuth, err = ghostboard.NewAuthenticator(ghostboard.AuthConfig{
+			PINDigest:     ghostboardCfg.PINHMAC,
+			Secret:        ghostboardCfg.PINSecret,
+			PrivateBoards: ghostboardCfg.PrivateBoards,
+			SessionTTL:    ghostboardCfg.SessionTTL,
+			MaxAttempts:   ghostboardCfg.PINMaxAttempts,
+			Lockout:       ghostboardCfg.PINLockout,
+		})
+		if err != nil {
+			logger.WithComponent("app").Errorf("cannot initialize the ghostboard pin gate: %v", err)
+			return nil, err
+		}
+		logger.WithComponent("app").Debugf("ghostboard pin gate enabled for %d private board(s)", len(ghostboardCfg.PrivateBoards))
+	}
+
 	ctx, cancel := context.WithCancel(context.Background())
 	return &App{
-		Config:     cfg,
-		Repo:       repo,
-		Cache:      store,
-		Runtime:    rt,
-		Ghostboard: ghostboardStore,
-		BaseCtx:    ctx,
-		Cancel:     cancel,
+		Config:         cfg,
+		Repo:           repo,
+		Cache:          store,
+		Runtime:        rt,
+		Ghostboard:     ghostboardStore,
+		GhostboardAuth: ghostboardAuth,
+		BaseCtx:        ctx,
+		Cancel:         cancel,
 	}, nil
 }
 

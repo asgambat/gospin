@@ -32,5 +32,11 @@ ghostboard:
   max_text_bytes: 16777216            # largest decoded text per board (16 MiB); the request body limit derives from it
   persist_interval_secs: 2            # write interval for pending changes (a tick with no changes writes nothing)
   heartbeat_interval_secs: 25         # SSE keep-alive comment interval
+  private_boards: []                  # boards that need the PIN for reading and writing; every other board stays public
+  pin_hmac: ""                         # HMAC-SHA256 of the shared PIN: gb-cli pin-hash <pin>
+  pin_secret: ""                       # set GO_SPIN_GHOSTBOARD_PIN_SECRET instead of writing it here
+  session_ttl_secs: 28800             # how long an unlock stays valid (8 hours)
+  pin_max_attempts: 5                 # failed attempts per client address before a lockout
+  pin_lockout_secs: 60                # first lockout; it doubles on every further batch of failures
     
 

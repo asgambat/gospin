@@ -5,8 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -38,6 +40,14 @@ const (
 	// ghostboardFormEscapeFactor bounds the same growth for a form field, where
 	// percent-encoding expands one byte to three ("%0A").
 	ghostboardFormEscapeFactor = 3
+
+	// ghostboardPINBodyLimit bounds the body of an unlock request, which
+	// carries a PIN and nothing else.
+	ghostboardPINBodyLimit = 512
+
+	// ghostboardCookiePath is the path of the session cookie: the board API is
+	// mounted at the root, under /ghostboard and /api/boards.
+	ghostboardCookiePath = "/"
 )
 
 // errGhostboardInvalidBody marks a payload that could not be decoded.
@@ -49,15 +59,18 @@ var errGhostboardInvalidText = errors.New("request body is not valid UTF-8")
 
 // GhostboardController exposes the shared text boards over HTTP.
 type GhostboardController struct {
+	auth         *ghostboard.Authenticator
 	store        *ghostboard.Store
 	maxTextBytes int
 	heartbeat    time.Duration
 }
 
-// NewGhostboardController creates a controller for the given store.
-func NewGhostboardController(store *ghostboard.Store, maxTextBytes int, heartbeat time.Duration) *GhostboardController {
+// NewGhostboardController creates a controller for the given store. auth is the
+// PIN gate of the private boards and may be nil when no PIN is configured.
+func NewGhostboardController(store *ghostboard.Store, auth *ghostboard.Authenticator, maxTextBytes int, heartbeat time.Duration) *GhostboardController {
 	return &GhostboardController{
 		store:        store,
+		auth:         auth,
 		maxTextBytes: maxTextBytes,
 		heartbeat:    heartbeat,
 	}
@@ -190,6 +203,86 @@ func (gc *GhostboardController) Events(c *gin.Context) {
 	}
 }
 
+// Unlock verifies the shared PIN and starts a session. The token is returned in
+// the response body for gb-cli and shell scripts and is also set as an HttpOnly
+// cookie, which is what the browser page sends: EventSource and
+// navigator.sendBeacon cannot attach a header.
+func (gc *GhostboardController) Unlock(c *gin.Context) {
+	if gc.auth == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": ghostboard.ErrPINNotConfigured.Error()})
+		return
+	}
+
+	pin, err := gc.readPIN(c)
+	if err != nil {
+		writeGhostboardError(c, err)
+		return
+	}
+
+	result, err := gc.auth.Unlock(clientAddress(c), pin)
+	if err != nil {
+		gc.writeUnlockError(c, err)
+		return
+	}
+
+	gc.setSessionCookie(c, result.Token)
+	c.Header("Cache-Control", "no-store")
+	c.JSON(http.StatusOK, gin.H{"token": result.Token, "expires_at": result.Expires.UTC()})
+}
+
+// Lock ends the session of the browser by expiring its cookie. A bearer token a
+// script already holds stays valid until it expires, since it is stateless.
+func (gc *GhostboardController) Lock(c *gin.Context) {
+	c.SetSameSite(http.SameSiteStrictMode)
+	c.SetCookie(ghostboard.SessionCookie, "", -1, ghostboardCookiePath, "", requestIsSecure(c), true)
+	c.Status(http.StatusNoContent)
+}
+
+// readPIN reads the PIN of an unlock request, from a JSON object or a form
+// field named "pin". Surrounding spaces are dropped so a PIN copied from a
+// terminal is accepted; gb-cli trims the value before hashing it too.
+func (gc *GhostboardController) readPIN(c *gin.Context) (string, error) {
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, ghostboardPINBodyLimit)
+
+	var payload struct {
+		PIN string `json:"pin" form:"pin"`
+	}
+	if err := c.ShouldBind(&payload); err != nil {
+		return "", ghostboardBodyError(err)
+	}
+	return strings.TrimSpace(payload.PIN), nil
+}
+
+// writeUnlockError maps a failed unlock to a stable status and body.
+func (gc *GhostboardController) writeUnlockError(c *gin.Context, err error) {
+	var attemptsErr *ghostboard.AttemptsError
+	switch {
+	case errors.As(err, &attemptsErr):
+		retryAfter := int(attemptsErr.RetryAfter.Round(time.Second).Seconds())
+		if retryAfter < 1 {
+			retryAfter = 1
+		}
+		c.Header("Retry-After", strconv.Itoa(retryAfter))
+		c.Header("Cache-Control", "no-store")
+		c.JSON(http.StatusTooManyRequests, gin.H{"error": "too many pin attempts", "retry_after_secs": retryAfter})
+	case errors.Is(err, ghostboard.ErrInvalidPIN):
+		c.Header("Cache-Control", "no-store")
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid pin"})
+	default:
+		writeGhostboardError(c, err)
+	}
+}
+
+// setSessionCookie hands the browser its session token.
+func (gc *GhostboardController) setSessionCookie(c *gin.Context, token string) {
+	maxAge := int(gc.auth.SessionTTL().Round(time.Second).Seconds())
+	if maxAge < 1 {
+		maxAge = 1
+	}
+	c.SetSameSite(http.SameSiteStrictMode)
+	c.SetCookie(ghostboard.SessionCookie, token, maxAge, ghostboardCookiePath, "", requestIsSecure(c), true)
+}
+
 // bodyLimit returns the largest body accepted for a content type, derived from
 // the configured board size so escaped payloads are not rejected while the text
 // they decode to is still within max_text_bytes.
@@ -289,6 +382,24 @@ func writeGhostboardEvent(controller *http.ResponseController, c *gin.Context, e
 	return true
 }
 
+// clientAddress is the address the request came from. It deliberately ignores
+// X-Forwarded-For: the header is client-controlled, and trusting it would let a
+// spoofed value bypass the attempt limiter.
+func clientAddress(c *gin.Context) string {
+	host, _, err := net.SplitHostPort(c.Request.RemoteAddr)
+	if err != nil {
+		return c.Request.RemoteAddr
+	}
+	return host
+}
+
+// requestIsSecure reports whether the browser reached the server over HTTPS, so
+// the session cookie can carry the Secure flag. A reverse proxy terminates TLS,
+// so its X-Forwarded-Proto header is honoured.
+func requestIsSecure(c *gin.Context) bool {
+	return c.Request.TLS != nil || strings.EqualFold(c.GetHeader("X-Forwarded-Proto"), "https")
+}
+
 func ghostboardBoardName(c *gin.Context) string {
 	name := strings.TrimSpace(c.Param("board"))
 	if name == "" {
@@ -319,6 +430,8 @@ func writeGhostboardError(c *gin.Context, err error) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid board name: use 1-64 letters, digits, dots, dashes or underscores"})
 	case errors.Is(err, ghostboard.ErrTextTooLarge):
 		c.JSON(http.StatusRequestEntityTooLarge, gin.H{"error": err.Error()})
+	case errors.Is(err, ghostboard.ErrPINLength):
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 	case errors.Is(err, errGhostboardInvalidText):
 		c.JSON(http.StatusBadRequest, gin.H{"error": "request body is not valid UTF-8: boards hold text only"})
 	case errors.Is(err, errGhostboardInvalidBody):

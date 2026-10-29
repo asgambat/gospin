@@ -32,7 +32,7 @@ func newGhostboardTestController(t *testing.T, maxTextBytes int) (*GhostboardCon
 		t.Fatalf("ghostboard.New() error = %v", err)
 	}
 
-	gc := NewGhostboardController(store, maxTextBytes, 20*time.Millisecond)
+	gc := NewGhostboardController(store, nil, maxTextBytes, 20*time.Millisecond)
 
 	gin.SetMode(gin.TestMode)
 	r := gin.New()

@@ -30,6 +30,7 @@ error messages, so no example refers to a name the binary no longer has.
 | `follow` | Print the board and every change as it happens (`--diff`, Ctrl-C to stop) |
 | `edit` | Edit a board with `$VISUAL`/`$EDITOR` and write it back |
 | `config` | Print the configuration in use (`--paths`, `--json`); no request is made |
+| `pin-hash [pin]` | Print the `ghostboard.pin_hmac` value of a PIN (argument or stdin) |
 | `completion <shell>` | Print a completion script for `bash`, `zsh` or `fish` |
 | `version` | Print the build metadata (also `--version`, `--json`) |
 
@@ -86,6 +87,7 @@ config file:  /home/me/.config/ghostboard/config.yaml
 server url:   https://gospin.lan.asga.uk
 board:        default
 timeout:      30s
+pin:          not set (public boards only)
 executable:   /usr/local/bin/gb-cli
 ```
 
@@ -142,8 +144,10 @@ then a YAML file, then the environment, then the flags.
 
 ```yaml
 # config.yaml
+# Prefer GO_SPIN_BOARD_PIN over this key: the file is a file on disk.
 url: "http://localhost:8084"   # server root (or reverse-proxy prefix), never a /ui page
 board: "default"               # board used when a command does not name one
+pin: "1234"                    # PIN of a private board (4-64 characters, optional)
 timeout_secs: 30               # per-request timeout
 ```
 
@@ -163,8 +167,10 @@ The file is looked up next to the executable first (portable installs) and then 
 | Environment variable | Effect |
 | -------------------- | ------ |
 | `GO_SPIN_BOARD_URL` | Overrides `url` |
+| `GO_SPIN_BOARD_PIN` | Overrides `pin`; prefer it to `--pin`, which stays in the shell history and in `ps` |
 | `GO_SPIN_BOARD_TIMEOUT_SECS` | Overrides `timeout_secs` |
 | `GO_SPIN_BOARD_TOKEN` | Sent as `Authorization: Bearer <token>` |
+| `GO_SPIN_GHOSTBOARD_PIN_SECRET` | Secret `pin-hash` uses to compute the digest (never sent anywhere) |
 
 A key the CLI does not know (`timeout_sec` instead of `timeout_secs`) is reported by `config` as a
 warning instead of being silently ignored, and `config` also lists the environment variables that
@@ -178,6 +184,38 @@ replaced a file value, so a typo can never look like a default that was never ov
 | `POST /api/boards/:board` | Replace the text with the raw body, byte for byte; `204 No Content` |
 | `GET /ghostboard/:board` | JSON board state with revision and update time (`read --stat`, `read --json`) |
 | `GET /ghostboard/:board/events` | Server-Sent Events stream consumed by `follow` |
+| `POST /ghostboard/:board/unlock` | Trades the PIN for a session token; called by itself on the first `401` |
+
+## Private boards
+
+A board listed in `ghostboard.private_boards` on the server needs its PIN for reading and writing.
+Give the CLI the PIN and it takes care of the rest: on the first `401` it posts the PIN to
+`/ghostboard/:board/unlock`, keeps the returned session token and sends it as a bearer token for
+the remaining requests of the same command, so the PIN travels once and a rejection is never
+retried.
+
+```bash
+# One command, PIN inline (stays in the shell history: prefer the environment)
+gb-cli read -b lavoro --pin 1234
+
+# Or export it once for the session
+export GO_SPIN_BOARD_PIN=1234
+gb-cli follow -b lavoro
+
+# A server-side digest for ghostboard.pin_hmac, with the same secret the server will use
+export GO_SPIN_GHOSTBOARD_PIN_SECRET="$(openssl rand -hex 32)"
+gb-cli pin-hash 1234
+```
+
+| Situation | Exit code | Message |
+| --------- | --------- | ------- |
+| No PIN configured for a private board | `1` | `board "x" is private: pass its pin with --pin, ...` |
+| Wrong PIN | `1` | `board "x": the pin was rejected` |
+
+A PIN that is not 4-64 characters is rejected before any request is made, like an invalid board
+name. `gb-cli pin-hash` prints the HMAC-SHA256 of the PIN under `GO_SPIN_GHOSTBOARD_PIN_SECRET`,
+which is exactly what `ghostboard.pin_hmac` expects; the secret must stay out of the configuration
+file and match the one the server runs with.
 
 The board rules — name validation, the `ghostboard.max_text_bytes` limit, the idle clear and the JSON
 persistence — are described in [README.md - Ghostboard](../README.md#ghostboard) and in

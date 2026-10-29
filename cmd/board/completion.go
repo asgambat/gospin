@@ -8,10 +8,10 @@ import (
 
 const (
 	// completionCommands are the subcommands offered by every generated script.
-	completionCommands = "add set read upload download follow edit config completion version help"
+	completionCommands = "add set read upload download follow edit config pin-hash completion version help"
 
 	// completionFlags are the flags offered by every generated script.
-	completionFlags = "-b --board -u --url --timeout --config --no-config --retry --header -q --quiet --json -f --append -o --force --stat --diff --dry-run --paths -h --help"
+	completionFlags = "-b --board -u --url --pin --timeout --config --no-config --retry --header -q --quiet --json -f --append -o --force --stat --diff --dry-run --paths -h --help"
 )
 
 // execCompletion prints a completion script for the requested shell. It runs
@@ -87,6 +87,7 @@ func fishCompletion(program string) string {
 complete -c %[1]s -f -n '__fish_use_subcommand' -a '%[2]s'
 complete -c %[1]s -l board -s b -d 'board to use'
 complete -c %[1]s -l url -s u -d 'GoSpin server URL'
+complete -c %[1]s -l pin -d 'PIN of a protected board'
 complete -c %[1]s -l timeout -d 'request timeout'
 complete -c %[1]s -l config -d 'configuration file'
 complete -c %[1]s -l no-config -d 'ignore the configuration files'

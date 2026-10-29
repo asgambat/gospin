@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/asgambat/gospin/internal/ghostboard"
@@ -80,6 +81,22 @@ func (e *EndpointError) Error() string {
 	return fmt.Sprintf("404 Not Found on %s: the server does not expose %s; check --url and the configuration file, and that the server runs a GoSpin release that serves the board API", e.URL, e.Endpoint)
 }
 
+// PINError reports a board that needs the shared PIN. Rejected is true when a
+// PIN was sent and the server refused it, false when no PIN was configured at
+// all.
+type PINError struct {
+	Board    string
+	Rejected bool
+}
+
+// Error explains where the PIN comes from, or that the one in use is wrong.
+func (e *PINError) Error() string {
+	if e.Rejected {
+		return fmt.Sprintf("board %q: the pin was rejected", e.Board)
+	}
+	return fmt.Sprintf("board %q is private: pass its pin with --pin, GO_SPIN_BOARD_PIN or the pin key of the configuration file", e.Board)
+}
+
 // BoardNameError reports a board name that cannot address a board.
 type BoardNameError struct {
 	Name string
@@ -121,6 +138,9 @@ type Options struct {
 	// Headers are sent with every request, for a reverse proxy that requires
 	// authentication.
 	Headers http.Header
+	// PIN unlocks a board protected by the shared ghostboard PIN. It is traded
+	// for a session token on the first 401, so it travels once per command.
+	PIN string
 	// Timeout bounds a single request.
 	Timeout time.Duration
 	// Retries is the number of extra attempts after a transient failure.
@@ -135,9 +155,12 @@ type Client struct {
 	http       *http.Client
 	streamHTTP *http.Client
 	headers    http.Header
+	session    string
 	baseURL    string
+	pin        string
 	retryDelay time.Duration
 	retries    int
+	sessionMu  sync.Mutex
 }
 
 // New creates a client for the given server URL with a plain timeout. The URL
@@ -171,6 +194,7 @@ func NewWithOptions(baseURL string, opts Options) (*Client, error) {
 	return &Client{
 		baseURL:    normalized,
 		headers:    cloneHeader(opts.Headers),
+		pin:        strings.TrimSpace(opts.PIN),
 		retries:    opts.Retries,
 		retryDelay: retryDelay,
 		http:       &http.Client{Timeout: opts.Timeout},
@@ -288,17 +312,9 @@ func (c *Client) Follow(ctx context.Context, board string, handle func(Board)) e
 		return &BoardNameError{Name: board}
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.eventURL(board), nil)
+	resp, err := c.unlockedEventStream(ctx, board)
 	if err != nil {
-		return fmt.Errorf("building the event request for board %q: %w", board, err)
-	}
-	req.Header.Set("Accept", "text/event-stream")
-	req.Header.Set("Cache-Control", "no-cache")
-	c.applyHeaders(req)
-
-	resp, err := c.streamHTTP.Do(req)
-	if err != nil {
-		return fmt.Errorf("contacting the GoSpin server at %s: %w", c.baseURL, err)
+		return err
 	}
 	defer closeBody(resp, board)
 
@@ -350,11 +366,29 @@ func (c *Client) send(ctx context.Context, method, requestURL, board, endpoint s
 		return nil, &BoardNameError{Name: board}
 	}
 
+	unlocked := false
 	for attempt := 0; ; attempt++ {
 		payload, retriable, err := c.attempt(ctx, method, requestURL, board, endpoint, body, action)
 		if err == nil {
 			return payload, nil
 		}
+
+		// A private board answers 401: trade the PIN for a session token once
+		// and repeat the request exactly as it was built.
+		if pinRequired(err) && !unlocked {
+			if c.pin == "" {
+				return nil, &PINError{Board: board}
+			}
+			if unlockErr := c.unlock(ctx, board); unlockErr != nil {
+				return nil, unlockErr
+			}
+			unlocked = true
+			payload, retriable, err = c.attempt(ctx, method, requestURL, board, endpoint, body, action)
+			if err == nil {
+				return payload, nil
+			}
+		}
+
 		if !retriable || attempt >= c.retries {
 			return nil, err
 		}
@@ -362,6 +396,103 @@ func (c *Client) send(ctx context.Context, method, requestURL, board, endpoint s
 			return nil, err
 		}
 	}
+}
+
+// pinRequired reports whether err is the 401 of a board protected by the
+// ghostboard PIN, as opposed to a 401 of a reverse proxy in front of it: only
+// the board API answers with the "pin required" message.
+func pinRequired(err error) bool {
+	var responseErr *ResponseError
+	return errors.As(err, &responseErr) &&
+		responseErr.Status == http.StatusUnauthorized &&
+		responseErr.Message == ghostboard.ErrPINRequired.Error()
+}
+
+// unlockedEventStream opens the event stream of a board, trading the PIN for a
+// session token when the board answers 401, so a private board is followed
+// without the caller doing anything.
+func (c *Client) unlockedEventStream(ctx context.Context, board string) (*http.Response, error) {
+	resp, err := c.openEventStream(ctx, board)
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode != http.StatusUnauthorized || c.pin == "" {
+		return resp, nil
+	}
+
+	closeBody(resp, board)
+	if err := c.unlock(ctx, board); err != nil {
+		return nil, err
+	}
+	return c.openEventStream(ctx, board)
+}
+
+// openEventStream opens the event stream of a board.
+func (c *Client) openEventStream(ctx context.Context, board string) (*http.Response, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.eventURL(board), nil)
+	if err != nil {
+		return nil, fmt.Errorf("building the event request for board %q: %w", board, err)
+	}
+	req.Header.Set("Accept", "text/event-stream")
+	req.Header.Set("Cache-Control", "no-cache")
+	c.applyHeaders(req)
+
+	resp, err := c.streamHTTP.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("contacting the GoSpin server at %s: %w", c.baseURL, err)
+	}
+	return resp, nil
+}
+
+// unlock trades the configured PIN for a session token, stored on the client
+// and sent as a bearer token by every following request. A rejected PIN is an
+// error and is never retried, so a wrong PIN cannot be used to hammer the
+// server.
+func (c *Client) unlock(ctx context.Context, board string) error {
+	c.sessionMu.Lock()
+	defer c.sessionMu.Unlock()
+
+	body, err := json.Marshal(struct {
+		PIN string `json:"pin"`
+	}{PIN: c.pin})
+	if err != nil {
+		return fmt.Errorf("encoding the pin of board %q: %w", board, err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.unlockURL(board), bytes.NewReader(body))
+	if err != nil {
+		return fmt.Errorf("building the unlock request for board %q: %w", board, err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	// Only the headers of the caller: the token of a previous unlock must not
+	// replace the PIN on the way in.
+	c.applyStaticHeaders(req)
+
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return fmt.Errorf("unlocking board %q at %s: %w", board, c.baseURL, err)
+	}
+	defer closeBody(resp, board)
+
+	if resp.StatusCode == http.StatusUnauthorized {
+		return &PINError{Board: board, Rejected: true}
+	}
+	if resp.StatusCode != http.StatusOK {
+		return responseError(resp, board, "unlocking")
+	}
+
+	var payload struct {
+		Token string `json:"token"`
+	}
+	if err := json.NewDecoder(io.LimitReader(resp.Body, errorBodyLimit)).Decode(&payload); err != nil {
+		return fmt.Errorf("decoding the unlock response of board %q: %w", board, err)
+	}
+	if payload.Token == "" {
+		return fmt.Errorf("the server unlocked board %q without a token", board)
+	}
+
+	c.session = payload.Token
+	return nil
 }
 
 // attempt is a single request. It reports whether the failure is worth another
@@ -441,8 +572,23 @@ func waitBeforeRetry(ctx context.Context, delay time.Duration) error {
 	}
 }
 
-// applyHeaders copies the configured headers onto a request.
+// applyHeaders copies the configured headers onto a request and adds the
+// session token of an earlier unlock, unless the caller set an Authorization
+// header of its own.
 func (c *Client) applyHeaders(req *http.Request) {
+	c.applyStaticHeaders(req)
+
+	c.sessionMu.Lock()
+	session := c.session
+	c.sessionMu.Unlock()
+
+	if session != "" && req.Header.Get("Authorization") == "" {
+		req.Header.Set("Authorization", "Bearer "+session)
+	}
+}
+
+// applyStaticHeaders copies the headers of the caller onto a request.
+func (c *Client) applyStaticHeaders(req *http.Request) {
 	for name, values := range c.headers {
 		for _, value := range values {
 			req.Header.Add(name, value)
@@ -464,6 +610,11 @@ func (c *Client) stateURL(board string) string {
 // eventURL builds the Server-Sent Events URL of a board.
 func (c *Client) eventURL(board string) string {
 	return c.baseURL + "/" + statePath + "/" + url.PathEscape(board) + "/events"
+}
+
+// unlockURL builds the URL that trades the PIN for a session token.
+func (c *Client) unlockURL(board string) string {
+	return c.baseURL + "/" + statePath + "/" + url.PathEscape(board) + "/unlock"
 }
 
 // eventPayload extracts the JSON carried by a Server-Sent Event data line. The

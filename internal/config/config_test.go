@@ -3,6 +3,7 @@ package config
 import (
 	"bytes"
 	"os"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -10,6 +11,7 @@ import (
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 
+	"github.com/asgambat/gospin/internal/ghostboard"
 	"github.com/asgambat/gospin/internal/logger"
 )
 
@@ -857,8 +859,20 @@ func TestGhostboardConfig_WithDefaults(t *testing.T) {
 	if empty.HeartbeatInterval != defaults.HeartbeatInterval {
 		t.Errorf("HeartbeatInterval = %v, want %v", empty.HeartbeatInterval, defaults.HeartbeatInterval)
 	}
+	if empty.SessionTTL != defaults.SessionTTL {
+		t.Errorf("SessionTTL = %v, want %v", empty.SessionTTL, defaults.SessionTTL)
+	}
+	if empty.PINMaxAttempts != defaults.PINMaxAttempts {
+		t.Errorf("PINMaxAttempts = %d, want %d", empty.PINMaxAttempts, defaults.PINMaxAttempts)
+	}
+	if empty.PINLockout != defaults.PINLockout {
+		t.Errorf("PINLockout = %v, want %v", empty.PINLockout, defaults.PINLockout)
+	}
 	if empty.FilePath != "" {
 		t.Errorf("FilePath = %q, want empty (persistence disabled)", empty.FilePath)
+	}
+	if len(empty.PrivateBoards) != 0 {
+		t.Errorf("PrivateBoards = %v, want none (every board is public by default)", empty.PrivateBoards)
 	}
 
 	custom := GhostboardConfig{
@@ -867,8 +881,11 @@ func TestGhostboardConfig_WithDefaults(t *testing.T) {
 		MaxTextBytes:      2048,
 		PersistInterval:   time.Second,
 		HeartbeatInterval: 5 * time.Second,
+		SessionTTL:        time.Hour,
+		PINMaxAttempts:    2,
+		PINLockout:        30 * time.Second,
 	}
-	if got := custom.WithDefaults(); got != custom {
+	if got := custom.WithDefaults(); !reflect.DeepEqual(got, custom) {
 		t.Errorf("WithDefaults() changed a fully configured value: %+v", got)
 	}
 }
@@ -907,6 +924,20 @@ func TestConfig_Validate_InvalidGhostboard(t *testing.T) {
 		{name: "max text bytes", mutate: func(g *GhostboardConfig) { g.MaxTextBytes = 0 }},
 		{name: "persist interval", mutate: func(g *GhostboardConfig) { g.PersistInterval = 0 }},
 		{name: "heartbeat interval", mutate: func(g *GhostboardConfig) { g.HeartbeatInterval = 0 }},
+		{name: "session ttl", mutate: func(g *GhostboardConfig) { g.SessionTTL = 0 }},
+		{name: "pin max attempts", mutate: func(g *GhostboardConfig) { g.PINMaxAttempts = 0 }},
+		{name: "pin lockout", mutate: func(g *GhostboardConfig) { g.PINLockout = 0 }},
+		{name: "invalid private board name", mutate: func(g *GhostboardConfig) { g.PrivateBoards = []string{"not a board"} }},
+		{name: "private boards without a pin", mutate: func(g *GhostboardConfig) { g.PrivateBoards = []string{"lavoro"} }},
+		{name: "pin without a secret", mutate: func(g *GhostboardConfig) { g.PINHMAC = strings.Repeat("a", 64) }},
+		{name: "pin with a short secret", mutate: func(g *GhostboardConfig) {
+			g.PINHMAC = strings.Repeat("a", 64)
+			g.PINSecret = "short"
+		}},
+		{name: "pin hmac not hex", mutate: func(g *GhostboardConfig) {
+			g.PINHMAC = "not-hex"
+			g.PINSecret = "0123456789abcdef"
+		}},
 	}
 
 	for _, tt := range tests {
@@ -917,6 +948,49 @@ func TestConfig_Validate_InvalidGhostboard(t *testing.T) {
 				t.Fatal("expected a validation error, got nil")
 			}
 		})
+	}
+}
+
+func TestConfig_Validate_ValidPIN(t *testing.T) {
+	digest, err := ghostboard.PINDigest("0123456789abcdef", "1234")
+	if err != nil {
+		t.Fatalf("PINDigest: %v", err)
+	}
+
+	cfg := &Config{
+		Server: ServerConfig{
+			Port:            8080,
+			ReadTimeout:     10 * time.Second,
+			WriteTimeout:    10 * time.Second,
+			IdleTimeout:     120 * time.Second,
+			ShutDownTimeout: 5 * time.Second,
+			RequestTimeout:  1000 * time.Millisecond,
+		},
+		Data: DataConfig{
+			FilePath:                 "/tmp/config.json",
+			PersistInterval:          5 * time.Second,
+			SchedulingPoll:           30 * time.Second,
+			RefreshIntervalSecs:      60,
+			StatsRefreshIntervalSecs: 120,
+			ActionsTimeoutSeconds:    30,
+		},
+		Misc: MiscConfig{SchedulingTZ: "Local"},
+		Ghostboard: GhostboardConfig{
+			ClearDelay:        time.Minute,
+			MaxTextBytes:      1024,
+			PersistInterval:   time.Second,
+			HeartbeatInterval: 10 * time.Second,
+			PINHMAC:           digest,
+			PINSecret:         "0123456789abcdef",
+			PrivateBoards:     []string{"lavoro", "note"},
+			SessionTTL:        time.Hour,
+			PINMaxAttempts:    3,
+			PINLockout:        time.Minute,
+		},
+	}
+
+	if err := cfg.validate(); err != nil {
+		t.Fatalf("validate() = %v, want nil", err)
 	}
 }
 
@@ -951,6 +1025,18 @@ func TestLoadConfig_GhostboardDefaults(t *testing.T) {
 	}
 	if want := tempDir + "/data/ghostboard.json"; cfg.Ghostboard.FilePath != want {
 		t.Errorf("FilePath = %q, want %q", cfg.Ghostboard.FilePath, want)
+	}
+	if cfg.Ghostboard.SessionTTL != defaults.SessionTTL {
+		t.Errorf("SessionTTL = %v, want %v", cfg.Ghostboard.SessionTTL, defaults.SessionTTL)
+	}
+	if cfg.Ghostboard.PINMaxAttempts != defaults.PINMaxAttempts {
+		t.Errorf("PINMaxAttempts = %d, want %d", cfg.Ghostboard.PINMaxAttempts, defaults.PINMaxAttempts)
+	}
+	if cfg.Ghostboard.PINLockout != defaults.PINLockout {
+		t.Errorf("PINLockout = %v, want %v", cfg.Ghostboard.PINLockout, defaults.PINLockout)
+	}
+	if len(cfg.Ghostboard.PrivateBoards) != 0 {
+		t.Errorf("PrivateBoards = %v, want none", cfg.Ghostboard.PrivateBoards)
 	}
 }
 

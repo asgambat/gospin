@@ -155,6 +155,12 @@ ghostboard:
   max_text_bytes: 16777216       # largest decoded text per board (16 MiB); the body limit derives from it
   persist_interval_secs: 2       # interval between writes of pending changes
   heartbeat_interval_secs: 25    # SSE keep-alive comment interval
+  private_boards: []             # boards that need the PIN; every other board stays public
+  pin_hmac: ""                   # HMAC-SHA256 of the PIN: gb-cli pin-hash <pin>
+  pin_secret: ""                 # set GO_SPIN_GHOSTBOARD_PIN_SECRET instead of writing it here
+  session_ttl_secs: 28800        # how long an unlock stays valid (8 hours)
+  pin_max_attempts: 5            # failed attempts per client address before a lockout
+  pin_lockout_secs: 60           # first lockout; it doubles on every further batch of failures
 ```
 
 The directory holding `data.file_path` is created at startup when it does not exist, so a fresh
@@ -598,6 +604,12 @@ Sections missing from `homepage.yaml` are returned as empty arrays (`services: [
 | GET | `/ghostboard/:board/events` | Server-Sent Events stream with the current text and every change |
 | GET | `/api/boards/:board` | Read the board text as plain text (unknown boards return an empty `200` body) |
 | POST | `/api/boards/:board` | Replace the board text with the raw request body, byte for byte; `204 No Content` |
+| POST | `/ghostboard/:board/unlock` | Trade the PIN of a private board for a session token (body `{"pin":"..."}`); sets the `gb_pin_session` cookie |
+| DELETE | `/ghostboard/:board/unlock` | End the session of the browser by expiring its `gb_pin_session` cookie; `204 No Content` |
+
+A private board answers `401` with `{"error":"pin required"}` on every route above until the
+request carries a valid session, and a wrong PIN answers `401` with `{"error":"invalid pin"}`.
+Too many failures from one address answer `429` with `retry_after_secs` and `Retry-After`.
 
 #### The Ghostboard page
 
@@ -634,8 +646,63 @@ How it behaves:
   shorten the text, and the other devices keep the previous board text. **Copy** puts the whole board
   text on the clipboard (falling back to a selection copy where the Clipboard API is
   unavailable). **Clear** empties the board for every connected device after a confirmation.
-- There is **no authentication**: anyone who can reach the server can read and rewrite every
-  board. This matches the upstream project's warning; keep it on a trusted network.
+- Boards are **public by default**. Naming a board in `ghostboard.private_boards` protects its
+  reads and writes with one shared PIN, and a page for a private board shows a lock form instead of
+  the text until the PIN is entered. Boards that are not listed stay open to anyone who can reach
+  the server, so keep the instance on a trusted network.
+
+#### Private boards
+
+A PIN protects the boards listed in `ghostboard.private_boards`, for reading and writing alike:
+`GET`/`POST /ghostboard/:board`, `GET /ghostboard/:board/events` and `GET`/`POST /api/boards/:board`
+answer `401` until the request carries a session. The PIN is one value shared by every private
+board, and a board becomes private as soon as its name is in the list, before it is ever written.
+
+Store only the HMAC of the PIN, never the PIN itself:
+
+```bash
+# 1. generate the value for ghostboard.pin_hmac (4-64 characters are accepted)
+export GO_SPIN_GHOSTBOARD_PIN_SECRET="$(openssl rand -hex 32)"
+gb-cli pin-hash 1234
+
+# 2. give the same secret to the server, and put the printed value in the config file
+export GO_SPIN_GHOSTBOARD_PIN_SECRET="..."
+```
+
+```yaml
+ghostboard:
+  private_boards: ["lavoro", "note"]
+  pin_hmac: "<the value printed by gb-cli pin-hash>"
+  # pin_secret: leave it out of the file, set GO_SPIN_GHOSTBOARD_PIN_SECRET instead
+```
+
+A configuration that names a private board without a PIN, or a PIN without a secret, stops the
+server at startup instead of leaving the board open while looking protected.
+
+- **Browser**: the page asks for the PIN, `POST /ghostboard/:board/unlock` answers with a signed,
+  HttpOnly, `SameSite=Strict` cookie (`gb_pin_session`, valid for `session_ttl_secs`), and the page
+  reconnects the event stream. The cookie works for Server-Sent Events and for
+  `navigator.sendBeacon`, which cannot carry a header; it is marked `Secure` when the request
+  arrives over HTTPS.
+- **Scripts**: the same endpoint returns the token in its body (`{"token":"..."}`), and every
+  route accepts it as `Authorization: Bearer <token>`. `gb-cli` does the exchange by itself when
+  it gets a `401`, so `--pin`, `GO_SPIN_BOARD_PIN` or `pin:` in its configuration file is all a
+  command needs.
+- **Throttling**: `pin_max_attempts` failures from one address start a `pin_lockout_secs` lockout
+  that doubles on every further batch of failures (up to an hour). The counter is keyed on the
+  address of the connection, never on `X-Forwarded-For`.
+
+```bash
+# Unlock, keep the token, then read and write with it
+TOKEN=$(curl -sS -X POST http://localhost:8084/ghostboard/lavoro/unlock \
+  -H 'Content-Type: application/json' -d '{"pin":"1234"}' | jq -r .token)
+curl -sS -H "Authorization: Bearer $TOKEN" http://localhost:8084/api/boards/lavoro
+printf 'hello' | curl -sS -H "Authorization: Bearer $TOKEN" \
+  --data-binary @- http://localhost:8084/api/boards/lavoro
+```
+
+A 4-digit PIN is a shared secret over the network: put the server behind HTTPS, and remember that
+this is access control, not encryption — the text stays in plain text in `ghostboard.json`.
 
 Writing and reading boards from a shell:
 
@@ -738,11 +805,25 @@ the `GO_SPIN_BOARD_*` variables and the server endpoints it uses — is in
 | `ghostboard.max_text_bytes` | `16777216` | Largest decoded text accepted per board; the request body limit is derived from it |
 | `ghostboard.persist_interval_secs` | `2` | Interval between writes of pending changes (a tick with no changes writes nothing) |
 | `ghostboard.heartbeat_interval_secs` | `25` | Keep-alive comment interval on the SSE stream |
+| `ghostboard.private_boards` | `[]` | Board names that need the PIN for reading and writing; unlisted boards stay public |
+| `ghostboard.pin_hmac` | `""` | Hex HMAC-SHA256 of the shared PIN, printed by `gb-cli pin-hash` |
+| `ghostboard.pin_secret` | `""` | Secret that keys the PIN digest and the session tokens; set `GO_SPIN_GHOSTBOARD_PIN_SECRET` instead of writing it in the file |
+| `ghostboard.session_ttl_secs` | `28800` | Seconds an unlock stays valid |
+| `ghostboard.pin_max_attempts` | `5` | Failed PIN attempts per client address before a lockout |
+| `ghostboard.pin_lockout_secs` | `60` | First lockout; it doubles on every further batch of failures, up to an hour |
 
 All options can be overridden with the environment variables
 `GO_SPIN_GHOSTBOARD_FILE_PATH`, `GO_SPIN_GHOSTBOARD_CLEAR_DELAY_SECS`,
-`GO_SPIN_GHOSTBOARD_MAX_TEXT_BYTES`, `GO_SPIN_GHOSTBOARD_PERSIST_INTERVAL_SECS` and
-`GO_SPIN_GHOSTBOARD_HEARTBEAT_INTERVAL_SECS`.
+`GO_SPIN_GHOSTBOARD_MAX_TEXT_BYTES`, `GO_SPIN_GHOSTBOARD_PERSIST_INTERVAL_SECS`,
+`GO_SPIN_GHOSTBOARD_HEARTBEAT_INTERVAL_SECS`, `GO_SPIN_GHOSTBOARD_PRIVATE_BOARDS`,
+`GO_SPIN_GHOSTBOARD_PIN_HMAC`, `GO_SPIN_GHOSTBOARD_PIN_SECRET`,
+`GO_SPIN_GHOSTBOARD_SESSION_TTL_SECS`, `GO_SPIN_GHOSTBOARD_PIN_MAX_ATTEMPTS` and
+`GO_SPIN_GHOSTBOARD_PIN_LOCKOUT_SECS`.
+
+The PIN digest is computed with HMAC-SHA256 over the PIN and `ghostboard.pin_secret`, so a copy of
+the configuration file alone cannot be brute-forced: the secret is what makes the stored value
+useless on its own. The session tokens are signed with the same secret, which is why changing it
+invalidates every open session and every `pin_hmac` at once.
 
 ### API Examples
 

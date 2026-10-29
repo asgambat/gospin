@@ -15,6 +15,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/asgambat/gospin/internal/boardclient"
+	"github.com/asgambat/gospin/internal/ghostboard"
 )
 
 // downloadPerm is the permission of a board saved with download.
@@ -342,7 +343,8 @@ type configPathReport struct {
 	Exists bool   `json:"exists"`
 }
 
-// configReport is the machine-readable form of the config command.
+// configReport is the machine-readable form of the config command. The PIN
+// itself is never printed, only whether one is configured.
 type configReport struct {
 	ConfigFile     string             `json:"config_file"`
 	ServerURL      string             `json:"server_url"`
@@ -352,6 +354,7 @@ type configReport struct {
 	Environment    []string           `json:"environment,omitempty"`
 	Warnings       []string           `json:"warnings,omitempty"`
 	TimeoutSeconds int                `json:"timeout_secs"`
+	PINSet         bool               `json:"pin_set"`
 }
 
 // execConfig prints the configuration the other commands would use. It never
@@ -395,6 +398,7 @@ func execConfig(opts options, cfg boardclient.Config, candidates []string, posit
 			Paths:          paths,
 			Environment:    cfg.EnvOverrides,
 			Warnings:       cfg.Warnings,
+			PINSet:         opts.pin != "",
 		}
 		if err := json.NewEncoder(stdout).Encode(report); err != nil {
 			return fail(opts.program, stderr, fmt.Errorf("writing the configuration: %w", err))
@@ -404,6 +408,7 @@ func execConfig(opts options, cfg boardclient.Config, candidates []string, posit
 		writeMessage(stdout, "server url:   %s\n", opts.url)
 		writeMessage(stdout, "board:        %s\n", opts.board)
 		writeMessage(stdout, "timeout:      %s\n", opts.timeout)
+		writeMessage(stdout, "pin:          %s\n", pinState(opts.pin))
 		writeMessage(stdout, "executable:   %s\n", executable)
 		if len(cfg.EnvOverrides) > 0 {
 			writeMessage(stdout, "environment:  %s (overrides the file)\n", strings.Join(cfg.EnvOverrides, ", "))
@@ -423,11 +428,70 @@ func execConfig(opts options, cfg boardclient.Config, candidates []string, posit
 		}
 	}
 
-	if err := (boardclient.Config{URL: opts.url, Board: opts.board, Timeout: opts.timeout}).Validate(); err != nil {
+	if err := (boardclient.Config{URL: opts.url, Board: opts.board, PIN: opts.pin, Timeout: opts.timeout}).Validate(); err != nil {
 		return fail(opts.program, stderr, err)
 	}
 
 	return exitOK
+}
+
+// pinState describes the PIN without printing it, so a config report can be
+// pasted into an issue without leaking the secret.
+func pinState(pin string) string {
+	if pin == "" {
+		return "not set (public boards only)"
+	}
+	return "set"
+}
+
+// execPinHash prints the value to put in ghostboard.pin_hmac. The PIN comes
+// from the argument or from stdin, the secret from
+// GO_SPIN_GHOSTBOARD_PIN_SECRET, so neither has to appear in a configuration
+// file.
+func execPinHash(opts options, positionals []string, stdin io.Reader, stdout, stderr io.Writer) int {
+	if len(positionals) > 1 {
+		return usageError(opts.program, stderr, "pin-hash", "unexpected argument %q", positionals[1])
+	}
+
+	pin, err := readPIN(positionals, stdin)
+	if err != nil {
+		return fail(opts.program, stderr, err)
+	}
+
+	secret := strings.TrimSpace(os.Getenv("GO_SPIN_GHOSTBOARD_PIN_SECRET"))
+	if secret == "" {
+		return fail(opts.program, stderr, errors.New("GO_SPIN_GHOSTBOARD_PIN_SECRET must hold the secret of the GoSpin server"))
+	}
+
+	digest, err := ghostboard.PINDigest(secret, pin)
+	if err != nil {
+		return fail(opts.program, stderr, err)
+	}
+
+	if opts.json {
+		if err := json.NewEncoder(stdout).Encode(struct {
+			PINHMAC string `json:"pin_hmac"`
+		}{PINHMAC: digest}); err != nil {
+			return fail(opts.program, stderr, fmt.Errorf("writing the pin digest: %w", err))
+		}
+		return exitOK
+	}
+
+	writeMessage(stdout, "%s\n", digest)
+	return exitOK
+}
+
+// readPIN resolves the PIN of pin-hash from the argument or from stdin.
+func readPIN(positionals []string, stdin io.Reader) (string, error) {
+	if len(positionals) == 1 {
+		return strings.TrimSpace(positionals[0]), nil
+	}
+
+	data, err := io.ReadAll(io.LimitReader(stdin, 1024))
+	if err != nil {
+		return "", fmt.Errorf("reading the pin from stdin: %w", err)
+	}
+	return strings.TrimSpace(string(data)), nil
 }
 
 // readText resolves the text of add and set from an argument, from -f (possibly

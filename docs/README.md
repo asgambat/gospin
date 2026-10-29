@@ -140,6 +140,7 @@ script warns when it detects that.
 | [ADR-0005](ADRs/0005-gb-cli-separate-binary.md) | `gb-cli` as a separate binary with its own configuration |
 | [ADR-0006](ADRs/0006-json-persistence-dirty-cache.md) | JSON data file with an in-memory cache and dirty tracking |
 | [ADR-0007](ADRs/0007-taskfile-build-frontend.md) | Taskfile as the only build front-end |
+| [ADR-0008](ADRs/0008-ghostboard-pin-protection.md) | PIN protection for private ghostboards |
 
 New records follow [ADRs/adr-template.md](ADRs/adr-template.md) and are added to this table.
 

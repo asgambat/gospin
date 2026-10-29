@@ -104,7 +104,21 @@
 
         .gb-pill-live { color: var(--gb-ok); }
         .gb-pill-connecting, .gb-pill-reconnecting { color: var(--gb-warn); }
+        .gb-pill-locked { color: var(--gb-warn); }
         .gb-pill-error { color: var(--gb-error); }
+
+        .gb-pin {
+            background-color: var(--gb-panel);
+            color: var(--gb-text);
+            border-color: var(--gb-border);
+            letter-spacing: .4em;
+        }
+
+        .gb-pin:focus {
+            outline: none;
+            border-color: var(--gb-accent);
+            box-shadow: 0 0 0 3px rgba(37, 99, 235, .15);
+        }
 
         .gb-error {
             background-color: var(--gb-error-bg);
@@ -146,7 +160,25 @@
             </span>
         </div>
 
-        <section class="gb-panel rounded-lg shadow p-4">
+        <section class="gb-panel rounded-lg shadow p-6 max-w-md mx-auto" x-show="locked" x-transition x-cloak>
+            <h2 class="text-xl font-semibold mb-1">🔒 Private board</h2>
+            <p class="gb-muted text-sm mb-4">
+                This board needs its PIN before you can read or write it.
+            </p>
+            <form @submit.prevent="unlock()" class="flex flex-col gap-3">
+                <input id="ghostboard-pin" type="password" x-model="pin" x-ref="pinInput"
+                       :disabled="unlocking" maxlength="64" autocomplete="current-password"
+                       inputmode="numeric" aria-label="Board PIN" placeholder="PIN"
+                       class="gb-pin w-full text-center rounded border p-3 font-mono text-lg">
+                <button type="submit" class="gb-btn px-3 py-2 rounded" :disabled="unlocking || !pin">
+                    <span x-show="!unlocking">Unlock</span>
+                    <span x-show="unlocking">Checking…</span>
+                </button>
+            </form>
+            <p class="gb-error px-3 py-2 rounded mt-3 text-sm" x-show="lockError" x-text="lockError"></p>
+        </section>
+
+        <section class="gb-panel rounded-lg shadow p-4" x-show="ready && !locked" x-transition x-cloak>
             <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
                 <div class="text-sm">
                     <span class="font-semibold">Board:</span>

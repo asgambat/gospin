@@ -31,6 +31,7 @@ Commands:
   follow            Print the board and every change as it happens (Ctrl-C to stop)
   edit              Edit a board with $VISUAL or $EDITOR and write it back
   config            Print the configuration in use (no request is made)
+  pin-hash [pin]    Print the ghostboard.pin_hmac value of a PIN
   completion <sh>   Print a completion script (bash, zsh or fish)
   version           Print the build metadata
 
@@ -38,6 +39,9 @@ Flags:
   -b, --board <name>     Board to use (default: from configuration, else "default")
   -u, --url <url>        GoSpin server URL (default: from configuration, else
                          http://localhost:8084)
+      --pin <pin>        PIN of a board protected by ghostboard.private_boards;
+                         prefer GO_SPIN_BOARD_PIN or the configuration file,
+                         since a flag stays in the shell history and in ps
       --timeout <dur>    Request timeout, e.g. 30s or 1m
       --config <path>    Configuration file to use
       --no-config        Ignore the configuration files
@@ -68,12 +72,21 @@ Output:
   object never share stdout, so download - and follow refuse --json.
 
 Configuration:
-  Keys: url, board, timeout_secs; any other key is reported by config.
+  Keys: url, board, pin, timeout_secs; any other key is reported by config.
   Looked up next to the executable, then in
   $XDG_CONFIG_HOME/ghostboard/config.yaml (or ~/.config/ghostboard/config.yaml),
   unless --config names a file or --no-config is given.
-  GO_SPIN_BOARD_URL and GO_SPIN_BOARD_TIMEOUT_SECS override the file;
-  GO_SPIN_BOARD_TOKEN is sent as a Bearer token.
+  GO_SPIN_BOARD_URL, GO_SPIN_BOARD_PIN and GO_SPIN_BOARD_TIMEOUT_SECS override
+  the file; GO_SPIN_BOARD_TOKEN is sent as a Bearer token.
+  A private board unlocks itself on the first 401: the PIN is traded for a
+  session token, so it travels once per command.
+
+Private boards:
+  The server protects the boards named in ghostboard.private_boards with one
+  shared PIN. Store only its HMAC on the server:
+    GO_SPIN_GHOSTBOARD_PIN_SECRET=... {program} pin-hash 1234
+  then put the value in ghostboard.pin_hmac and export the same secret for the
+  server.
 
 Exit codes:
   0 success, 1 runtime or server error, 2 misuse of the command line
@@ -92,6 +105,9 @@ Examples:
   {program} download -b lavoro -o /tmp/lavoro.txt
   {program} follow -b lavoro --diff
   {program} edit -b lavoro
+  {program} read -b lavoro                # uses the pin from the configuration
+  GO_SPIN_BOARD_PIN=1234 {program} follow -b lavoro
+  {program} pin-hash 1234
   {program} config --paths
   {program} version --json
   {program} completion bash

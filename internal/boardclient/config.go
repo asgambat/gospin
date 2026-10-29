@@ -38,10 +38,11 @@ const (
 	// XDG_CONFIG_HOME is not set.
 	homeConfigSubdir = ".config"
 
-	// EnvURL and EnvTimeout override the configuration file. They share the
-	// GO_SPIN prefix of the server settings.
+	// EnvURL, EnvTimeout and EnvPIN override the configuration file. They share
+	// the GO_SPIN prefix of the server settings.
 	EnvURL     = "GO_SPIN_BOARD_URL"
 	EnvTimeout = "GO_SPIN_BOARD_TIMEOUT_SECS"
+	EnvPIN     = "GO_SPIN_BOARD_PIN"
 )
 
 // Config is the resolved configuration of the CLI, before the command-line
@@ -53,6 +54,8 @@ type Config struct {
 	Board string
 	// FilePath is the configuration file that was read, empty when none was.
 	FilePath string
+	// PIN unlocks a board protected by the shared ghostboard PIN.
+	PIN string
 	// Warnings lists what the configuration file contains but the CLI does
 	// not understand, such as a mistyped key. Reporting them is the whole
 	// point of the config command: a silently ignored key looks like a
@@ -116,6 +119,10 @@ func Load(opts LoadOptions) (Config, error) {
 		cfg.URL = value
 		cfg.EnvOverrides = append(cfg.EnvOverrides, EnvURL)
 	}
+	if value := strings.TrimSpace(getenv(EnvPIN)); value != "" {
+		cfg.PIN = value
+		cfg.EnvOverrides = append(cfg.EnvOverrides, EnvPIN)
+	}
 	if value := strings.TrimSpace(getenv(EnvTimeout)); value != "" {
 		secs, convErr := strconv.Atoi(value)
 		if convErr != nil || secs <= 0 {
@@ -140,6 +147,11 @@ func (c Config) Validate() error {
 	}
 	if c.Timeout <= 0 {
 		return fmt.Errorf("request timeout must be positive, got %s", c.Timeout)
+	}
+	if c.PIN != "" {
+		if err := ghostboard.ValidatePIN(c.PIN); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -208,7 +220,7 @@ func executableDir(executablePath string) string {
 }
 
 // knownConfigKeys are the keys a configuration file may carry.
-var knownConfigKeys = []string{"url", "board", "timeout_secs"}
+var knownConfigKeys = []string{"url", "board", "pin", "timeout_secs"}
 
 // loadFile applies the keys of a configuration file on top of cfg. Absent keys
 // keep their current value; the values themselves are validated later, on the
@@ -230,6 +242,9 @@ func loadFile(path string, cfg *Config) ([]string, error) {
 	if reader.InConfig("timeout_secs") {
 		cfg.Timeout = time.Duration(reader.GetInt("timeout_secs")) * time.Second
 	}
+	if reader.InConfig("pin") {
+		cfg.PIN = strings.TrimSpace(reader.GetString("pin"))
+	}
 
 	return unknownKeys(reader, path), nil
 }
@@ -249,7 +264,7 @@ func unknownKeys(reader *viper.Viper, path string) []string {
 		if slices.Contains(knownConfigKeys, name) {
 			continue
 		}
-		warnings = append(warnings, fmt.Sprintf("unknown key %q in %s: known keys are url, board and timeout_secs", name, path))
+		warnings = append(warnings, fmt.Sprintf("unknown key %q in %s: known keys are url, board, pin and timeout_secs", name, path))
 	}
 	return warnings
 }

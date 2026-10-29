@@ -13,6 +13,7 @@ type options struct {
 	program    string
 	board      string
 	url        string
+	pin        string
 	configPath string
 	output     string
 	headers    headerFlags
@@ -83,6 +84,7 @@ func registerSharedFlags(flags *flag.FlagSet, opts *options) {
 	flags.StringVar(&opts.board, "board", opts.board, "board to use")
 	flags.StringVar(&opts.url, "u", opts.url, "GoSpin server URL")
 	flags.StringVar(&opts.url, "url", opts.url, "GoSpin server URL")
+	flags.StringVar(&opts.pin, "pin", opts.pin, "PIN of a board protected by ghostboard.private_boards")
 	flags.DurationVar(&opts.timeout, "timeout", opts.timeout, "request timeout")
 	flags.StringVar(&opts.configPath, "config", opts.configPath, "configuration file to use")
 	flags.BoolVar(&opts.noConfig, "no-config", false, "ignore the configuration files")
@@ -171,7 +173,7 @@ func splitCommand(args []string) (string, []string, error) {
 // isCommand reports whether token is one of the subcommands.
 func isCommand(token string) bool {
 	switch token {
-	case "add", "set", "read", "upload", "download", "follow", "edit", "config", "completion", "version":
+	case "add", "set", "read", "upload", "download", "follow", "edit", "config", "completion", "version", "pin-hash":
 		return true
 	default:
 		return false
@@ -182,7 +184,7 @@ func isCommand(token string) bool {
 // argument, so the value is not mistaken for the subcommand.
 func flagTakesValue(arg string) bool {
 	switch arg {
-	case "-b", "--board", "-u", "--url", "--timeout", "--config", "--retry", "--header", "-f", "-o":
+	case "-b", "--board", "-u", "--url", "--pin", "--timeout", "--config", "--retry", "--header", "-f", "-o":
 		return true
 	default:
 		return false

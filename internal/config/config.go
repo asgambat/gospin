@@ -11,6 +11,7 @@ import (
 	"github.com/joho/godotenv"
 	"github.com/spf13/viper"
 
+	"github.com/asgambat/gospin/internal/ghostboard"
 	"github.com/asgambat/gospin/internal/logger"
 )
 
@@ -19,9 +20,9 @@ const ENV_PREFIX = "GO_SPIN"
 // Config holds all application configuration (immutable after load)
 type Config struct {
 	Misc       MiscConfig
-	Ghostboard GhostboardConfig
 	Data       DataConfig
 	Server     ServerConfig
+	Ghostboard GhostboardConfig
 }
 
 type ServerConfig struct {
@@ -52,10 +53,16 @@ type DataConfig struct {
 // GhostboardConfig tunes the shared-text boards served at /ui/ghostboard.
 type GhostboardConfig struct {
 	FilePath          string
+	PINHMAC           string
+	PINSecret         string
+	PrivateBoards     []string
 	ClearDelay        time.Duration
 	MaxTextBytes      int
 	PersistInterval   time.Duration
 	HeartbeatInterval time.Duration
+	SessionTTL        time.Duration
+	PINMaxAttempts    int
+	PINLockout        time.Duration
 }
 
 const (
@@ -63,6 +70,9 @@ const (
 	defaultGhostboardMaxTextBytes        = 16777216
 	defaultGhostboardPersistIntervalSecs = 2
 	defaultGhostboardHeartbeatSecs       = 25
+	defaultGhostboardSessionTTLSecs      = 28800
+	defaultGhostboardPINMaxAttempts      = 5
+	defaultGhostboardPINLockoutSecs      = 60
 )
 
 // DefaultGhostboardConfig returns the defaults documented in config.yaml.
@@ -72,6 +82,9 @@ func DefaultGhostboardConfig() GhostboardConfig {
 		MaxTextBytes:      defaultGhostboardMaxTextBytes,
 		PersistInterval:   defaultGhostboardPersistIntervalSecs * time.Second,
 		HeartbeatInterval: defaultGhostboardHeartbeatSecs * time.Second,
+		SessionTTL:        defaultGhostboardSessionTTLSecs * time.Second,
+		PINMaxAttempts:    defaultGhostboardPINMaxAttempts,
+		PINLockout:        defaultGhostboardPINLockoutSecs * time.Second,
 	}
 }
 
@@ -90,6 +103,15 @@ func (g GhostboardConfig) WithDefaults() GhostboardConfig {
 	}
 	if g.HeartbeatInterval <= 0 {
 		g.HeartbeatInterval = defaults.HeartbeatInterval
+	}
+	if g.SessionTTL <= 0 {
+		g.SessionTTL = defaults.SessionTTL
+	}
+	if g.PINMaxAttempts <= 0 {
+		g.PINMaxAttempts = defaults.PINMaxAttempts
+	}
+	if g.PINLockout <= 0 {
+		g.PINLockout = defaults.PINLockout
 	}
 	return g
 }
@@ -148,6 +170,12 @@ func LoadConfig() (*Config, error) {
 	viper.SetDefault("ghostboard.max_text_bytes", defaultGhostboardMaxTextBytes)
 	viper.SetDefault("ghostboard.persist_interval_secs", defaultGhostboardPersistIntervalSecs)
 	viper.SetDefault("ghostboard.heartbeat_interval_secs", defaultGhostboardHeartbeatSecs)
+	viper.SetDefault("ghostboard.pin_hmac", "")
+	viper.SetDefault("ghostboard.pin_secret", "")
+	viper.SetDefault("ghostboard.private_boards", []string{})
+	viper.SetDefault("ghostboard.session_ttl_secs", defaultGhostboardSessionTTLSecs)
+	viper.SetDefault("ghostboard.pin_max_attempts", defaultGhostboardPINMaxAttempts)
+	viper.SetDefault("ghostboard.pin_lockout_secs", defaultGhostboardPINLockoutSecs)
 
 	// Environment variables automatically override config file values
 	viper.AutomaticEnv()
@@ -215,6 +243,12 @@ func LoadConfig() (*Config, error) {
 			MaxTextBytes:      viper.GetInt("ghostboard.max_text_bytes"),
 			PersistInterval:   time.Duration(viper.GetInt("ghostboard.persist_interval_secs")) * time.Second,
 			HeartbeatInterval: time.Duration(viper.GetInt("ghostboard.heartbeat_interval_secs")) * time.Second,
+			PINHMAC:           strings.TrimSpace(viper.GetString("ghostboard.pin_hmac")),
+			PINSecret:         strings.TrimSpace(viper.GetString("ghostboard.pin_secret")),
+			PrivateBoards:     ghostboardPrivateBoards(),
+			SessionTTL:        time.Duration(viper.GetInt("ghostboard.session_ttl_secs")) * time.Second,
+			PINMaxAttempts:    viper.GetInt("ghostboard.pin_max_attempts"),
+			PINLockout:        time.Duration(viper.GetInt("ghostboard.pin_lockout_secs")) * time.Second,
 		},
 
 		Misc: MiscConfig{
@@ -356,8 +390,67 @@ func (c *Config) validate() error {
 	if c.Ghostboard.HeartbeatInterval <= 0 {
 		return fmt.Errorf("ghostboard.heartbeat_interval_secs must be positive")
 	}
+	if err := c.Ghostboard.validatePIN(); err != nil {
+		return err
+	}
 
 	return nil
+}
+
+// validatePIN checks the settings of the PIN that protects the private boards.
+// A configuration that names a private board without a PIN would leave the
+// board open while looking protected, so it is rejected at startup.
+func (g GhostboardConfig) validatePIN() error {
+	if g.SessionTTL <= 0 {
+		return fmt.Errorf("ghostboard.session_ttl_secs must be positive")
+	}
+	if g.PINMaxAttempts <= 0 {
+		return fmt.Errorf("ghostboard.pin_max_attempts must be positive")
+	}
+	if g.PINLockout <= 0 {
+		return fmt.Errorf("ghostboard.pin_lockout_secs must be positive")
+	}
+
+	for _, name := range g.PrivateBoards {
+		if err := ghostboard.ValidateBoardName(name); err != nil {
+			return fmt.Errorf("ghostboard.private_boards contains an invalid board name %q: %w", name, err)
+		}
+	}
+
+	if len(g.PrivateBoards) > 0 && g.PINHMAC == "" {
+		return fmt.Errorf("ghostboard.pin_hmac is required when ghostboard.private_boards is set: generate it with gb-cli pin-hash")
+	}
+	if g.PINHMAC == "" {
+		return nil
+	}
+
+	if err := ghostboard.ValidatePINSecret(g.PINSecret); err != nil {
+		return fmt.Errorf("%w (set it in GO_SPIN_GHOSTBOARD_PIN_SECRET, never in the configuration file)", err)
+	}
+	if _, err := ghostboard.NewAuthenticator(ghostboard.AuthConfig{
+		PINDigest:   g.PINHMAC,
+		Secret:      g.PINSecret,
+		SessionTTL:  g.SessionTTL,
+		MaxAttempts: g.PINMaxAttempts,
+		Lockout:     g.PINLockout,
+	}); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// ghostboardPrivateBoards returns the board names that need the PIN, trimmed
+// and without the empty entries a YAML list often carries.
+func ghostboardPrivateBoards() []string {
+	raw := viper.GetStringSlice("ghostboard.private_boards")
+	boards := make([]string, 0, len(raw))
+	for _, name := range raw {
+		if name = strings.TrimSpace(name); name != "" {
+			boards = append(boards, name)
+		}
+	}
+	return boards
 }
 
 // getEnvOrDefault returns env var value or default

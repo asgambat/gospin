@@ -119,7 +119,7 @@ func run(program string, args []string, stdin io.Reader, stdout, stderr io.Write
 		return fail(program, stderr, err)
 	}
 
-	opts := options{program: program, board: cfg.Board, url: cfg.URL, timeout: cfg.Timeout, configPath: configPath}
+	opts := options{program: program, board: cfg.Board, url: cfg.URL, pin: cfg.PIN, timeout: cfg.Timeout, configPath: configPath}
 
 	flags := flag.NewFlagSet(command, flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
@@ -155,11 +155,13 @@ func run(program string, args []string, stdin io.Reader, stdout, stderr io.Write
 		return execConfig(opts, cfg, boardclient.ConfigPaths(loadOptions), positionals, stdout, stderr)
 	case "completion":
 		return execCompletion(opts, positionals, stdout, stderr)
+	case "pin-hash":
+		return execPinHash(opts, positionals, stdin, stdout, stderr)
 	}
 
 	// The effective configuration is validated only now, after the flags: a
 	// value from the configuration file is a default that a flag may correct.
-	if err := (boardclient.Config{URL: opts.url, Board: opts.board, Timeout: opts.timeout}).Validate(); err != nil {
+	if err := (boardclient.Config{URL: opts.url, Board: opts.board, PIN: opts.pin, Timeout: opts.timeout}).Validate(); err != nil {
 		return fail(program, stderr, err)
 	}
 
@@ -167,6 +169,7 @@ func run(program string, args []string, stdin io.Reader, stdout, stderr io.Write
 		Timeout: opts.timeout,
 		Retries: opts.retry,
 		Headers: requestHeaders(opts),
+		PIN:     opts.pin,
 	})
 	if err != nil {
 		return fail(program, stderr, err)
