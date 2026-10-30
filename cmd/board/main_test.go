@@ -184,6 +184,7 @@ func runCLI(t *testing.T, args []string, stdin string) (int, string, string) {
 	t.Setenv("GO_SPIN_BOARD_URL", "")
 	t.Setenv("GO_SPIN_BOARD_TIMEOUT_SECS", "")
 	t.Setenv("GO_SPIN_BOARD_TOKEN", "")
+	t.Setenv("GO_SPIN_BOARD_KEY", "")
 	t.Setenv("VISUAL", "")
 	t.Setenv("EDITOR", "")
 

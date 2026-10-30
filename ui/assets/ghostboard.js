@@ -996,6 +996,12 @@ function ghostboard() {
       return this.apiUrl() + '/files/' + encodeURIComponent(file.id);
     },
 
+    // archiveUrl is every attachment of the board in one ZIP, so a board with
+    // several files downloads in a single request.
+    archiveUrl() {
+      return this.apiUrl() + '/files.zip';
+    },
+
     toggleFiles() {
       this.filesOpen = !this.filesOpen;
     },

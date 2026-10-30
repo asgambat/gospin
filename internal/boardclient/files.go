@@ -20,12 +20,21 @@ const (
 	// fileEndpoint names the attachment routes in the messages about a missing
 	// route.
 	fileEndpoint = "/api/boards/:board/files"
+
+	// fileArchiveEndpoint names the archive route in the messages about a
+	// missing route.
+	fileArchiveEndpoint = "/api/boards/:board/files.zip"
 )
 
 // ErrFileNotFound is returned when the server does not know an attachment id.
 // It is distinct from EndpointError: the route exists and answered, the file
 // does not.
 var ErrFileNotFound = errors.New("file not found")
+
+// ErrNoFiles is returned when a board has no attachments to download. Like
+// ErrFileNotFound, it is distinct from EndpointError: the route exists and
+// answered, there is simply nothing on the board.
+var ErrNoFiles = errors.New("board has no files")
 
 // File is one attachment of a board: the opaque id used in URLs, the original
 // name kept as a download label and the size and expiry the server reports.
@@ -129,6 +138,55 @@ func (c *Client) DownloadFile(ctx context.Context, board, id string, w io.Writer
 	written, err := io.Copy(w, resp.Body)
 	if err != nil {
 		return written, fmt.Errorf("writing the file of board %q: %w", board, err)
+	}
+	return written, nil
+}
+
+// DownloadFilesArchive streams every attachment of a board as one ZIP archive
+// to w and returns how many bytes it wrote. A board without attachments is
+// reported as ErrNoFiles, so the caller can say so instead of writing an empty
+// file.
+func (c *Client) DownloadFilesArchive(ctx context.Context, board string, w io.Writer) (int64, error) {
+	if err := ghostboard.ValidateBoardName(board); err != nil {
+		return 0, &BoardNameError{Name: board}
+	}
+	if c.pin != "" {
+		if err := c.ensureSession(ctx, board); err != nil {
+			return 0, err
+		}
+	}
+
+	requestURL := c.filesURL(board) + ".zip"
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, requestURL, nil)
+	if err != nil {
+		return 0, fmt.Errorf("building the archive request for board %q: %w", board, err)
+	}
+	c.applyHeaders(req)
+
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return 0, fmt.Errorf("contacting the GoSpin server at %s: %w", c.baseURL, err)
+	}
+	defer closeBody(resp, board)
+
+	switch resp.StatusCode {
+	case http.StatusOK:
+	case http.StatusUnauthorized:
+		return 0, &PINError{Board: board}
+	case http.StatusNotFound:
+		// A board without attachments answers 404 with its own message; a
+		// server without the route answers 404 with anything else.
+		if isNoFilesArchive(resp) {
+			return 0, ErrNoFiles
+		}
+		return 0, &EndpointError{URL: requestURL, Endpoint: fileArchiveEndpoint}
+	default:
+		return 0, responseError(resp, board, "downloading the files of")
+	}
+
+	written, err := io.Copy(w, resp.Body)
+	if err != nil {
+		return written, fmt.Errorf("writing the archive of board %q: %w", board, err)
 	}
 	return written, nil
 }
@@ -295,6 +353,19 @@ func isMissingFile(resp *http.Response) bool {
 		return false
 	}
 	return errorMessage(body) == ghostboard.ErrFileNotFound.Error()
+}
+
+// isNoFilesArchive reports whether a 404 carries the answer of a board without
+// attachments, as opposed to the answer of a server without the file routes.
+func isNoFilesArchive(resp *http.Response) bool {
+	if isHTML(resp.Header.Get("Content-Type")) {
+		return false
+	}
+	body, err := io.ReadAll(io.LimitReader(resp.Body, errorBodyLimit))
+	if err != nil {
+		return false
+	}
+	return errorMessage(body) == ghostboard.ErrNoFiles.Error()
 }
 
 // filesURL builds the plain API URL of the attachments of a board.

@@ -130,13 +130,17 @@ func execFileList(ctx context.Context, client *boardclient.Client, opts options,
 }
 
 // execFileGet downloads one attachment to a file, or to stdout when no output
-// is given.
+// is given. With --all it downloads every attachment of the board as one ZIP.
 func execFileGet(ctx context.Context, client *boardclient.Client, opts options, positionals []string, stdout, stderr io.Writer) int {
+	if opts.all {
+		return execFileGetArchive(ctx, client, opts, positionals, stdout, stderr)
+	}
+
 	if opts.output != "" && len(positionals) > 1 {
 		return usageError(opts.program, stderr, "file get", "give the id as the only argument when -o names the output")
 	}
 	if len(positionals) != 1 {
-		return usageError(opts.program, stderr, "file get", "needs exactly one file id")
+		return usageError(opts.program, stderr, "file get", "needs exactly one file id, or --all for the whole board")
 	}
 	id := strings.TrimSpace(positionals[0])
 
@@ -148,36 +152,11 @@ func execFileGet(ctx context.Context, client *boardclient.Client, opts options, 
 		return usageError(opts.program, stderr, "file get", "the bytes and a JSON result would share stdout: drop --json or write to a file")
 	}
 
-	if target == "-" {
-		if _, err := client.DownloadFile(ctx, opts.board, id, stdout); err != nil {
-			return failFile(opts.program, stderr, err, id)
-		}
-		return exitOK
-	}
-
-	if !opts.force {
-		if _, statErr := os.Stat(target); statErr == nil {
-			return fail(opts.program, stderr, fmt.Errorf("%s already exists: use --force to overwrite it", target))
-		} else if !errors.Is(statErr, fs.ErrNotExist) {
-			return fail(opts.program, stderr, fmt.Errorf("checking %s: %w", target, statErr))
-		}
-	}
-
-	handle, err := os.OpenFile(target, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, downloadPerm)
+	written, err := writeDownload(opts, target, stdout, stderr, func(w io.Writer) (int64, error) {
+		return client.DownloadFile(ctx, opts.board, id, w)
+	})
 	if err != nil {
-		return fail(opts.program, stderr, fmt.Errorf("writing %s: %w", target, err))
-	}
-
-	written, err := client.DownloadFile(ctx, opts.board, id, handle)
-	closeErr := handle.Close()
-	if err != nil {
-		if removeErr := os.Remove(target); removeErr != nil && !errors.Is(removeErr, fs.ErrNotExist) {
-			writeMessage(stderr, "%s: removing the partial %s: %v\n", opts.program, target, removeErr)
-		}
 		return failFile(opts.program, stderr, err, id)
-	}
-	if closeErr != nil {
-		return fail(opts.program, stderr, fmt.Errorf("closing %s: %w", target, closeErr))
 	}
 
 	if opts.json {
@@ -194,6 +173,84 @@ func execFileGet(ctx context.Context, client *boardclient.Client, opts options, 
 
 	notify(opts, stderr, "board %q: file %s saved to %s (%s)\n", opts.board, id, target, byteSize(written))
 	return exitOK
+}
+
+// execFileGetArchive downloads every attachment of the board as one ZIP, so a
+// board with several files moves in a single request. -o defaults to
+// <board>.zip: the archive is binary, so only an explicit "-" streams it to
+// stdout.
+func execFileGetArchive(ctx context.Context, client *boardclient.Client, opts options, positionals []string, stdout, stderr io.Writer) int {
+	if len(positionals) > 0 {
+		return usageError(opts.program, stderr, "file get", "--all downloads the whole board: drop the file id %q", positionals[0])
+	}
+
+	target := opts.output
+	if target == "" {
+		target = opts.board + ".zip"
+	}
+	if target == "-" && opts.json {
+		return usageError(opts.program, stderr, "file get", "the archive and a JSON result would share stdout: drop --json or write to a file")
+	}
+
+	written, err := writeDownload(opts, target, stdout, stderr, func(w io.Writer) (int64, error) {
+		return client.DownloadFilesArchive(ctx, opts.board, w)
+	})
+	if err != nil {
+		if errors.Is(err, boardclient.ErrNoFiles) {
+			return fail(opts.program, stderr, fmt.Errorf("board %q has no files to download", opts.board))
+		}
+		return fail(opts.program, stderr, err)
+	}
+
+	if opts.json {
+		if err := json.NewEncoder(stdout).Encode(struct {
+			Board string `json:"board"`
+			Path  string `json:"path"`
+			Bytes int64  `json:"bytes"`
+		}{Board: opts.board, Path: target, Bytes: written}); err != nil {
+			return fail(opts.program, stderr, fmt.Errorf("writing the archive result: %w", err))
+		}
+		return exitOK
+	}
+
+	notify(opts, stderr, "board %q: files saved to %s (%s)\n", opts.board, target, byteSize(written))
+	return exitOK
+}
+
+// writeDownload streams a download to the target the command resolved, or to
+// stdout for "-". A named target refuses to overwrite a file without --force
+// and removes a partial file when the transfer fails, so a failed download
+// never leaves a truncated artifact behind.
+func writeDownload(opts options, target string, stdout, stderr io.Writer, download func(io.Writer) (int64, error)) (int64, error) {
+	if target == "-" {
+		return download(stdout)
+	}
+
+	if !opts.force {
+		if _, err := os.Stat(target); err == nil {
+			return 0, fmt.Errorf("%s already exists: use --force to overwrite it", target)
+		} else if !errors.Is(err, fs.ErrNotExist) {
+			return 0, fmt.Errorf("checking %s: %w", target, err)
+		}
+	}
+
+	handle, err := os.OpenFile(target, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, downloadPerm)
+	if err != nil {
+		return 0, fmt.Errorf("writing %s: %w", target, err)
+	}
+
+	written, err := download(handle)
+	closeErr := handle.Close()
+	if err != nil {
+		if removeErr := os.Remove(target); removeErr != nil && !errors.Is(removeErr, fs.ErrNotExist) {
+			writeMessage(stderr, "%s: removing the partial %s: %v\n", opts.program, target, removeErr)
+		}
+		return written, err
+	}
+	if closeErr != nil {
+		return written, fmt.Errorf("closing %s: %w", target, closeErr)
+	}
+	return written, nil
 }
 
 // execFileDelete removes one attachment from the board. The id is the only

@@ -10,6 +10,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/asgambat/gospin/internal/api/middleware"
 	"github.com/asgambat/gospin/internal/logger"
 )
 
@@ -112,12 +113,34 @@ const (
 	vendorTailwind       = "assets/vendor/tailwind-2.2.19.min.css"
 )
 
+// Sealed-board entry point. Both the ghostboard page and the home page carry
+// the SEALED_BOARD_ENTRY marker comment; the handlers inject the matching link
+// only when ghostboard.sealed_enabled, so a disabled feature leaves no dead
+// link and no marker in the served markup. The link only navigates to
+// /ui/sealed: the page that owns the key runs under its own no-CDN CSP
+// (ADR-0010), and no key handling happens on the CDN-policy pages.
+const (
+	sealedBoardEntryMarker = "<!-- SEALED_BOARD_ENTRY -->"
+
+	ghostboardSealedEntry = `<p class="text-xs gb-muted mt-2">` +
+		`<a href="/ui/sealed" class="underline">` +
+		`🔐 Create a sealed board: only whoever holds the link can read it</a></p>`
+
+	homeSealedEntry = `<a href="/ui/sealed" class="underline cursor-pointer" ` +
+		`style="color: var(--subtle-color);" ` +
+		`title="Create a sealed ghostboard: only whoever holds the link can read it">` +
+		`🔐 Sealed board</a>`
+)
+
 // GhostboardPageConfig carries the limits the ghostboard page needs to enforce
-// them before a request: the board size for the .txt picker and the attachment
-// size for the upload panel.
+// them before a request: the board size for the .txt picker, the attachment size
+// for the upload panel and, for the sealed page, how much plaintext fits in one
+// envelope.
 type GhostboardPageConfig struct {
-	MaxTextBytes int
-	MaxFileBytes int64
+	MaxTextBytes            int
+	MaxFileBytes            int64
+	SealedMaxPlaintextBytes int
+	SealedEnabled           bool
 }
 
 // serveGhostboardPage serves the ghostboard page with the script and icon tags
@@ -135,7 +158,7 @@ func serveGhostboardPage(cfg GhostboardPageConfig) gin.HandlerFunc {
 		}
 
 		rewritten := string(html)
-		rewritten = cacheBustTags(rewritten, "src", "assets/ghostboard.js", vendorAlpineJS)
+		rewritten = cacheBustTags(rewritten, "src", "assets/ghostboard.js", "assets/ghostboard-theme.js", vendorAlpineJS)
 		rewritten = cacheBustTags(rewritten, "href",
 			vendorTailwind,
 			"assets/ghostboard-icon.svg",
@@ -146,6 +169,43 @@ func serveGhostboardPage(cfg GhostboardPageConfig) gin.HandlerFunc {
 			fmt.Sprintf(`data-max-bytes="%d"`, cfg.MaxTextBytes), 1)
 		rewritten = strings.Replace(rewritten, `data-max-file-bytes=""`,
 			fmt.Sprintf(`data-max-file-bytes="%d"`, cfg.MaxFileBytes), 1)
+		// The entry point is injected only when sealed boards are enabled, so a
+		// disabled feature leaves neither a dead link nor the marker comment.
+		rewritten = strings.Replace(rewritten, sealedBoardEntryMarker, ghostboardSealedEntry, 1)
+		if !cfg.SealedEnabled {
+			rewritten = strings.ReplaceAll(rewritten, ghostboardSealedEntry, "")
+		}
+
+		c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(rewritten))
+	}
+}
+
+// serveSealedPage serves the page of a sealed board. It carries its own
+// Content-Security-Policy, because that page holds the decryption key in
+// location.hash and must load nothing from another origin, and it is never
+// cached: the ciphertext it shows is a one-time envelope on a burn board.
+func serveSealedPage(cfg GhostboardPageConfig) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if !cfg.SealedEnabled {
+			c.JSON(http.StatusNotFound, gin.H{"error": "sealed boards are disabled"})
+			return
+		}
+
+		c.Header("Content-Security-Policy", middleware.SealedPageContentSecurityPolicy)
+		c.Header("Cache-Control", "no-store")
+
+		html, err := os.ReadFile(uiPath("sealed.html"))
+		if err != nil {
+			logger.WithComponent("ui_router").Errorf("cannot read sealed page: %v", err)
+			c.Status(http.StatusInternalServerError)
+			return
+		}
+
+		rewritten := string(html)
+		rewritten = cacheBustTags(rewritten, "src", "assets/sealed.js", vendorAlpineJS)
+		rewritten = cacheBustTags(rewritten, "href", vendorTailwind, "assets/ghostboard-icon.svg")
+		rewritten = strings.Replace(rewritten, `data-max-plaintext-bytes=""`,
+			fmt.Sprintf(`data-max-plaintext-bytes="%d"`, cfg.SealedMaxPlaintextBytes), 1)
 
 		c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(rewritten))
 	}
@@ -251,6 +311,13 @@ func NewUIRouter(r *gin.Engine, ghostboardPage GhostboardPageConfig) {
 		)
 		rewritten = cacheBustTags(rewritten, "href", vendorTailwind)
 
+		// Same deal as the ghostboard page: the entry point is injected only
+		// when sealed boards are enabled, and it only navigates to /ui/sealed.
+		rewritten = strings.Replace(rewritten, sealedBoardEntryMarker, homeSealedEntry, 1)
+		if !ghostboardPage.SealedEnabled {
+			rewritten = strings.ReplaceAll(rewritten, homeSealedEntry, "")
+		}
+
 		c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(rewritten))
 	})
 	r.GET("/ui/home.js", func(c *gin.Context) {
@@ -264,6 +331,14 @@ func NewUIRouter(r *gin.Engine, ghostboardPage GhostboardPageConfig) {
 	servePage := serveGhostboardPage(ghostboardPage)
 	r.GET("/ui/ghostboard", servePage)
 	r.GET("/ui/ghostboard/*board", servePage)
+
+	// The sealed page. /ui/sealed with no board is the create flow, and
+	// /ui/sealed/<board>#k=<key> reveals an existing one. The route is always
+	// registered so a disabled feature answers a 404 instead of falling through
+	// to the dashboard SPA and looking like a working page.
+	sealedPage := serveSealedPage(ghostboardPage)
+	r.GET("/ui/sealed", sealedPage)
+	r.GET("/ui/sealed/*board", sealedPage)
 
 	// Serve index.html for any sub-path under /ui (SPA client-side routing)
 	r.NoRoute(func(c *gin.Context) {

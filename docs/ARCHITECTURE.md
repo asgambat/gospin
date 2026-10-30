@@ -453,7 +453,7 @@ func (m *MemoryRuntime) Start(name string) error {
   `ghostboard.persist_interval_secs` (boards with neither text nor files are pruned) and flushes
   once more on shutdown.
 
-**Attachments** (`internal/ghostboard/files.go`):
+**Attachments** (`internal/ghostboard/files.go`, `internal/ghostboard/archive.go`):
 - A board carries a `files` array of `{id, name, size, content_type, created_at, expires_at}`. The
   metadata lives in the same JSON document as the text, so one flush persists both; the bytes live
   under `<dir of ghostboard.file_path>/files/<board>/<id>`.
@@ -477,9 +477,14 @@ func (m *MemoryRuntime) Start(name string) error {
   without a file, an unknown or invalid board directory, a directory inside a board, a leftover
   `.tmp-` upload and a symlink are all removed (the symlink itself, never its target), each with a
   warning. It never follows a link and never touches a path outside the files root.
-- The per-request timeout is not applied to uploads and downloads: those handlers set their own
-  read/write deadline of `file_transfer_timeout_secs` with `http.ResponseController`, because a
-  transfer of hundreds of megabytes cannot fit the 1-second JSON budget.
+- `ArchiveFiles` streams every attachment of a board as one ZIP: entries are stored, not deflated,
+  a duplicate name becomes `name (2).ext` so extracting the archive cannot overwrite one file with
+  another, and an attachment that vanishes before its turn (the idle clear, a delete) is left out
+  instead of failing the whole download. A board without files is reported as `ErrNoFiles` before
+  the first byte is written, so the handler answers `404` instead of an empty archive.
+- The per-request timeout is not applied to uploads, downloads and archives: those handlers set
+  their own read/write deadline of `file_transfer_timeout_secs` with `http.ResponseController`,
+  because a transfer of hundreds of megabytes cannot fit the 1-second JSON budget.
 
 **PIN gate** (`internal/ghostboard/auth.go`):
 - The boards named in `ghostboard.private_boards` are protected by one shared PIN, for reading and
@@ -508,6 +513,45 @@ func (m *MemoryRuntime) Start(name string) error {
   and closes the stream, instead of serving the text of a private board for as long as the page
   stays open. The page turns that event into the PIN form, keeping the text typed locally.
 
+**Sealed boards** (`internal/sealedcrypto`, `internal/ghostboard/sealed.go`,
+`ui/assets/sealed.js`, ADR-0010):
+- The client encrypts and decrypts; the server only stores an envelope
+  `{"v":1,"iv":"…","ct":"…"}` in base64url, AES-256-GCM with the board name as additional
+  authenticated data (`gospin-sealed-v1|<board>`), so an envelope copied under another board name
+  fails to decrypt. There is no key derivation: the key is 256 random bits.
+- The key never reaches the server: it travels in the URL fragment of `/ui/sealed/<board>#k=<key>`
+  (a fragment is not part of a request line, a header or a `Referer`), or through `--key`,
+  `--key-file` and `GO_SPIN_BOARD_KEY` for `gb-cli`. `internal/sealedcrypto` (Go) and
+  `ui/assets/sealed.js` (WebCrypto) implement the same format and are pinned by one known-answer
+  vector, `ui/assets/sealed-vector.json`, which the Go test reproduces byte for byte and the browser
+  implementation checks with `window.sealedSelfTest()`.
+- `Board` gains `Mode` (`plain` | `sealed`) and `Burn`, both fixed when the first write creates the
+  board: a plaintext write to a sealed board answers `409` instead of replacing the envelope, and a
+  plain board that already holds text cannot be sealed, because converting it would mean reading
+  the plaintext. A missing `mode` in an existing file loads as plain, so there is no migration.
+  `ghostboard.max_text_bytes` bounds the envelope, and `sealedcrypto.MaxPlaintextBytes` computes the
+  plaintext it can carry for the page and the CLI.
+- `Store.Open` is the only read of a burn board and it runs once: under the mutex it takes the
+  envelope, records a tombstone, empties the board and sets the store dirty; it then calls `Flush`
+  **outside** the lock (the flush takes the lock itself) and only answers once the burn is on disk.
+  A failed flush rolls the board back and reveals nothing, so the note is not handed out while it
+  is still readable after a restart. A second open, a restart and a cached response all get
+  `ErrBoardBurned` (`410 Gone`); after `sealed_burn_tombstone_secs` the tombstone is dropped, the
+  name answers `404` and is free again.
+- `Get` and `Subscribe` refuse an unopened burn board (`ErrBurnRequiresOpen`), because the snapshot
+  of a plain read or of the event stream would consume the note before a reader asked for it. An
+  unopened burn board also uses `sealed_burn_tombstone_secs` as its idle window instead of
+  `clear_delay_secs`, so the note is not emptied before it is read; when that window elapses the
+  store destroys the envelope and records the tombstone, exactly as an open would have.
+- Tombstones are persisted next to the boards (`"tombstones":[{"name","burned_at"}]`) because a
+  burned board has no text left for `persistedBoardsLocked` to keep; an expired tombstone is dropped
+  at load. A name cannot be both alive and tombstoned: the loader prefers the tombstone, so a crash
+  in the middle of a burn cannot resurrect the note.
+- Attachment operations on a sealed board answer `ErrSealedBoardFiles` (`409`): a board that carries
+  a readable file is not zero-knowledge. `ghostboard.sealed_enabled: false` refuses sealed writes
+  (`404` at the edge) and unregisters the open routes, while reads and opens of existing envelopes
+  keep working, so disabling the feature never strands a note.
+
 **HTTP surface** (`internal/api/route/ghostboard_route.go` and
 `internal/api/controller/ghostboard_controller.go`):
 - `GET`/`POST /ghostboard/:board` — JSON board state; a write accepts a JSON body, a form field
@@ -521,16 +565,33 @@ func (m *MemoryRuntime) Start(name string) error {
   request arrived over HTTPS); `DELETE` expires the cookie. The route is registered without the
   gate, since it is how a session is obtained, and answers `404` for a board that is not in
   `ghostboard.private_boards`, which has no PIN to trade.
-- `GET`/`POST /ghostboard/:board/files`, `GET`/`DELETE /ghostboard/:board/files/:id` and
-  `DELETE /ghostboard/:board/files` — the JSON attachment surface (list, one file per multipart
-  request, download, delete one, delete all). The `/api/boards/:board/files...` routes mirror them
-  with tab-separated lines for the list and the created file, so a script needs no JSON parser.
+- `GET`/`POST /ghostboard/:board/files`, `GET`/`DELETE /ghostboard/:board/files/:id`,
+  `GET /ghostboard/:board/files.zip` and `DELETE /ghostboard/:board/files` — the JSON attachment
+  surface (list, one file per multipart request, download one, download all as one ZIP, delete one,
+  delete all). The `/api/boards/:board/files...` routes mirror them with tab-separated lines for
+  the list and the created file, so a script needs no JSON parser.
   Both surfaces sit behind `GhostboardPIN` and disappear entirely (`404`) when
   `ghostboard.files_enabled` is false.
+- `POST /ghostboard/:board/open` and `POST /api/boards/:board/open` — the one read of a burn
+  board, answered `404` for an unknown board, `409` for a board that is not a burn board and `410`
+  once it is gone. They are registered only when `ghostboard.sealed_enabled` is true, carry
+  `Cache-Control: no-store` and sit behind `GhostboardPIN` like every other board endpoint. A write
+  asking for `"mode":"sealed"` (or `X-Board-Mode: sealed`) is routed to `UpdateSealed`; an
+  envelope that does not parse answers `400`.
 - `ui/ghostboard.html` and `ui/assets/ghostboard.js` render one independent board per
   `/ui/ghostboard/<board>` path. The page loads the board state before opening the event stream,
   so a private board shows the lock form instead of a stream that would retry forever, and a `401`
   while saving brings the form back without dropping the text typed locally.
+- `ui/sealed.html` and `ui/assets/sealed.js` serve `/ui/sealed` (create) and `/ui/sealed/<board>`
+  (reveal) under `middleware.SealedPageContentSecurityPolicy`, which has no CDN origin, and with
+  `Cache-Control: no-store`. The page detects `window.isSecureContext` and refuses to pretend
+  outside HTTPS, pointing at the equivalent `gb-cli` command; it never opens a burn board on load
+  (the reveal is a click) and stores the key nowhere but the fragment.
+- Creation is one navigation away from the other pages: `serveGhostboardPage` and the `/ui/home`
+  handler replace the `SEALED_BOARD_ENTRY` marker of `ui/ghostboard.html` and `ui/home.html` with a
+  link to `/ui/sealed` only while `ghostboard.sealed_enabled` is true. The link only navigates: the
+  page that owns the key stays the only one under the no-CDN policy (ADR-0010), so no key handling
+  ever happens on a page whose policy allows remote origins.
 
 **CLI** (`cmd/board`, client in `internal/boardclient`):
 - `gb-cli` is a thin HTTP client of `/api/boards/:board`, so it works locally, in a
@@ -546,6 +607,13 @@ func (m *MemoryRuntime) Start(name string) error {
   `GO_SPIN_BOARD_*` environment) and the command-line flags are applied on top by `cmd/board`.
   `Config.Validate` runs on the effective values, so a flag always corrects a mistyped file entry;
   `--no-config` skips every file and `ConfigPaths` lists the candidates.
+- `sealed new` mints (or takes) a key, seals the text with `internal/sealedcrypto` and writes it
+  with the sealed mode header, printing the link that carries the key; `open` consumes a burn board
+  and prints the decrypted text. `read`, `add`, `set` and `follow` take the sealed path as soon as a
+  key is configured: `follow` decrypts every snapshot, because a sealed board that is not a burn
+  board still streams envelopes. The key is resolved from `--key`, `--key-file` and
+  `GO_SPIN_BOARD_KEY`, and a sealed command without one exits with `5` instead of a generic
+  failure.
 - `config` prints the effective configuration, the file that was read and (with `--paths`) every
   candidate, without contacting the server, which makes a wrong URL or an unused file visible
   immediately. It also reports the keys the CLI does not understand and the environment variables
@@ -817,6 +885,21 @@ sequenceDiagram
     Cache->>Repository: Save (if dirty)
     Repository->>Repository: Write to File
 ```
+
+Every request first passes the cross-cutting middleware installed in `SetupRoutes`: Honeybadger
+error reporting, recovery, gzip (skipped for the event stream and the attachment routes), CORS and
+`middleware.SecurityHeaders`. The last one adds the Content-Security-Policy, `nosniff`,
+`Referrer-Policy: no-referrer`, `Permissions-Policy` and the optional HSTS to every response,
+including the static UI; a handler that must be stricter, like the attachment download, overrides
+the CSP with `sandbox` later in the same header map. The policy comes from
+`server.security_headers`, and an empty `csp` means the built-in one that fits the shipped UI.
+
+The second, minimal server (`createWaitingServer`, `server.waiting_server_port`) serves the boot
+page while a container starts, and it installs the same middleware: the operator's `enabled` and
+`hsts_max_age_secs` apply there too, while the policy is
+`middleware.WaitingPageContentSecurityPolicy`, a `default-src 'none'` policy that allows the inline
+script and style of that one self-contained page. The configured `csp` overrides the dashboard
+policy only, since a dashboard policy would refuse the boot page's inline script.
 
 ### Event Flow Architecture
 

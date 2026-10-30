@@ -143,6 +143,61 @@ func (gc *GhostboardController) DownloadFile(c *gin.Context) {
 	http.ServeContent(c.Writer, c.Request, file.Name, file.CreatedAt, handle)
 }
 
+// DownloadFilesArchive streams every attachment of a board as one ZIP archive.
+// It is the way to move a board with several files at once: the page and
+// gb-cli make one request instead of one per file. A board without attachments
+// has no archive, so it answers 404 instead of an empty ZIP.
+func (gc *GhostboardController) DownloadFilesArchive(c *gin.Context) {
+	if !gc.filesAvailable(c) {
+		return
+	}
+
+	board := ghostboardBoardName(c)
+	files, err := gc.store.Files(board)
+	if err != nil {
+		writeGhostboardError(c, err)
+		return
+	}
+	if len(files) == 0 {
+		c.Header("Cache-Control", "no-store")
+		c.JSON(http.StatusNotFound, gin.H{"error": ghostboard.ErrNoFiles.Error()})
+		return
+	}
+
+	// The archive of a full board is as large as its attachments, so it needs
+	// the transfer window instead of the per-request timeout of the API routes.
+	if err := http.NewResponseController(c.Writer).SetWriteDeadline(time.Now().Add(gc.store.FileLimits().TransferTimeout)); err != nil {
+		logger.WithComponent("ghostboard").Debugf("cannot set the archive deadline: %v", err)
+	}
+
+	c.Header("Content-Type", "application/zip")
+	c.Header("Content-Disposition", ghostboardContentDisposition(board+".zip"))
+	c.Header("X-Content-Type-Options", "nosniff")
+	c.Header("Cache-Control", "no-store")
+	c.Header("Content-Security-Policy", "sandbox")
+
+	archive, err := gc.store.ArchiveFiles(c.Request.Context(), board, c.Writer)
+	if err != nil {
+		// A failure before the first byte can still be a status the client
+		// understands; after it the archive is truncated, and the only honest
+		// answer is to end the response and say so in the log.
+		if !c.Writer.Written() {
+			// Nothing of the archive left the server: drop the download
+			// headers so the error is not answered as a file.
+			c.Writer.Header().Del("Content-Disposition")
+			c.Writer.Header().Del("Content-Security-Policy")
+			c.Writer.Header().Del("Content-Type")
+			gc.writeFileError(c, err)
+			return
+		}
+		logger.WithComponent("ghostboard").Errorf("the archive of board %q stopped after %d file(s): %v", board, archive.Files, err)
+		c.Abort()
+		return
+	}
+
+	logger.WithComponent("ghostboard").Debugf("sent %d attachment(s) of board %q as one archive", archive.Files, board)
+}
+
 // DeleteFile removes one attachment of a board.
 func (gc *GhostboardController) DeleteFile(c *gin.Context) {
 	if !gc.filesAvailable(c) {
@@ -305,8 +360,12 @@ func (gc *GhostboardController) writeFileError(c *gin.Context, err error) {
 
 	var maxBytesErr *http.MaxBytesError
 	switch {
+	case errors.Is(err, ghostboard.ErrSealedBoardFiles):
+		rejectFile(c, http.StatusConflict, gin.H{"error": ghostboard.ErrSealedBoardFiles.Error()}, err)
 	case errors.Is(err, ghostboard.ErrFilesDisabled), errors.Is(err, ghostboard.ErrFileNotFound):
 		rejectFile(c, http.StatusNotFound, gin.H{"error": "file not found"}, err)
+	case errors.Is(err, ghostboard.ErrNoFiles):
+		rejectFile(c, http.StatusNotFound, gin.H{"error": ghostboard.ErrNoFiles.Error()}, err)
 	case errors.Is(err, ghostboard.ErrInvalidFileID):
 		rejectFile(c, http.StatusBadRequest, gin.H{"error": "invalid file id"}, err)
 	case errors.Is(err, ghostboard.ErrInvalidFileName):

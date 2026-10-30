@@ -17,6 +17,7 @@ import (
 
 	"github.com/asgambat/gospin/internal/ghostboard"
 	"github.com/asgambat/gospin/internal/logger"
+	"github.com/asgambat/gospin/internal/sealedcrypto"
 )
 
 const (
@@ -48,6 +49,12 @@ const (
 	// ghostboardCookiePath is the path of the session cookie: the board API is
 	// mounted at the root, under /ghostboard and /api/boards.
 	ghostboardCookiePath = "/"
+
+	// ghostboardModeHeader and ghostboardBurnHeader let a script ask for a
+	// sealed board on the raw-text API, which has no JSON body to carry the
+	// mode and the burn flag.
+	ghostboardModeHeader = "X-Board-Mode"
+	ghostboardBurnHeader = "X-Board-Burn"
 )
 
 // errGhostboardInvalidBody marks a payload that could not be decoded.
@@ -56,6 +63,19 @@ var errGhostboardInvalidBody = errors.New("invalid request body")
 // errGhostboardInvalidText marks a text body that is not valid UTF-8, which
 // would be mangled by the JSON persistence of the store.
 var errGhostboardInvalidText = errors.New("request body is not valid UTF-8")
+
+// errGhostboardInvalidMode marks a board mode that is not "plain" or "sealed".
+var errGhostboardInvalidMode = errors.New("invalid board mode: use plain or sealed")
+
+// boardWrite is one decoded write request: the text plus the mode and the burn
+// flag the client asked for. An empty mode is a plain write, which is what every
+// client that predates sealed boards sends.
+type boardWrite struct {
+	Text     string
+	ClientID string
+	Mode     string
+	Burn     bool
+}
 
 // GhostboardController exposes the shared text boards over HTTP.
 type GhostboardController struct {
@@ -83,11 +103,19 @@ func (gc *GhostboardController) Get(c *gin.Context) {
 		writeGhostboardError(c, err)
 		return
 	}
+
+	// A cached envelope would let a burned board outlive its burn, so a sealed
+	// board is never stored by a proxy or a browser.
+	if board.Mode == ghostboard.ModeSealed {
+		c.Header("Cache-Control", "no-store")
+	}
 	c.JSON(http.StatusOK, board)
 }
 
 // Update stores a new text for a board. The body can be a JSON object with a
-// "text" field, a form field named "text", or the raw text itself.
+// "text" field, a form field named "text", or the raw text itself. A sealed
+// board is written with the envelope in the same field and the mode asked for
+// with the X-Board-Mode header or the "mode" JSON field.
 func (gc *GhostboardController) Update(c *gin.Context) {
 	name := ghostboardBoardName(c)
 	if err := ghostboard.ValidateBoardName(name); err != nil {
@@ -95,19 +123,64 @@ func (gc *GhostboardController) Update(c *gin.Context) {
 		return
 	}
 
-	text, err := gc.readText(c)
+	write, err := gc.readWrite(c)
 	if err != nil {
 		writeGhostboardError(c, err)
 		return
 	}
 
-	board, err := gc.store.Update(name, text, ghostboardClientID(c))
+	board, err := gc.storeWrite(name, write)
 	if err != nil {
 		writeGhostboardError(c, err)
 		return
 	}
 
 	c.JSON(http.StatusOK, board)
+}
+
+// storeWrite routes a write to the sealed or the plain path of the store, so the
+// two surfaces cannot disagree about which one a request meant.
+func (gc *GhostboardController) storeWrite(name string, write boardWrite) (ghostboard.Board, error) {
+	mode, err := boardMode(write.Mode)
+	if err != nil {
+		return ghostboard.Board{}, err
+	}
+	if mode == ghostboard.ModeSealed {
+		return gc.store.UpdateSealed(ghostboard.SealedWrite{
+			Name:     name,
+			Envelope: write.Text,
+			ClientID: write.ClientID,
+			Burn:     write.Burn,
+		})
+	}
+	return gc.store.Update(name, write.Text, write.ClientID)
+}
+
+// Open hands out the envelope of a burn board once and destroys it. Only a POST
+// reaches it: a GET would be consumed by a link preview or a browser prefetch
+// before the reader ever saw the note.
+func (gc *GhostboardController) Open(c *gin.Context) {
+	board, err := gc.store.Open(ghostboardBoardName(c))
+	if err != nil {
+		writeGhostboardError(c, err)
+		return
+	}
+
+	c.Header("Cache-Control", "no-store")
+	c.JSON(http.StatusOK, board)
+}
+
+// OpenText is Open on the plain API: the envelope alone, for a script that
+// decrypts it with gb-cli.
+func (gc *GhostboardController) OpenText(c *gin.Context) {
+	board, err := gc.store.Open(ghostboardBoardName(c))
+	if err != nil {
+		writeGhostboardError(c, err)
+		return
+	}
+
+	c.Header("Cache-Control", "no-store")
+	c.Data(http.StatusOK, "text/plain; charset=utf-8", []byte(board.Text))
 }
 
 // GetText returns a board's text as plain text for the CLI API. A board that
@@ -134,13 +207,13 @@ func (gc *GhostboardController) SetText(c *gin.Context) {
 		return
 	}
 
-	text, err := gc.readRawText(c)
+	write, err := gc.readRawWrite(c)
 	if err != nil {
 		writeGhostboardError(c, err)
 		return
 	}
 
-	if _, err := gc.store.Update(name, text, ghostboardClientID(c)); err != nil {
+	if _, err := gc.storeWrite(name, write); err != nil {
 		writeGhostboardError(c, err)
 		return
 	}
@@ -344,72 +417,110 @@ func (gc *GhostboardController) bodyLimit(contentType string) int64 {
 	return int64(gc.maxTextBytes)*factor + ghostboardBodyOverhead
 }
 
-func (gc *GhostboardController) readText(c *gin.Context) (string, error) {
+// readWrite decodes a write request: the text from a JSON object, a form field or
+// the raw body, and the mode and burn flag from the body or the headers. The
+// headers are read first so the raw API, which has no JSON to carry them, can
+// ask for a sealed board too.
+func (gc *GhostboardController) readWrite(c *gin.Context) (boardWrite, error) {
+	write := boardWrite{
+		Mode:     strings.TrimSpace(c.GetHeader(ghostboardModeHeader)),
+		Burn:     strings.EqualFold(strings.TrimSpace(c.GetHeader(ghostboardBurnHeader)), "true"),
+		ClientID: ghostboardClientID(c),
+	}
+
 	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, gc.bodyLimit(c.ContentType()))
 
-	var text string
 	switch c.ContentType() {
 	case "application/json":
 		var payload struct {
 			Text string `json:"text"`
+			Mode string `json:"mode"`
+			Burn bool   `json:"burn"`
 		}
 		if err := c.ShouldBindJSON(&payload); err != nil {
-			return "", ghostboardBodyError(err)
+			return boardWrite{}, ghostboardBodyError(err)
 		}
-		text = payload.Text
+		write.Text = payload.Text
+		if mode := strings.TrimSpace(payload.Mode); mode != "" {
+			write.Mode = mode
+		}
+		if payload.Burn {
+			write.Burn = true
+		}
 	case "application/x-www-form-urlencoded":
 		// A body that is not a text= form field is stored as-is, matching the
 		// upstream Ghostboard behaviour for plain curl -d payloads.
 		body, err := io.ReadAll(c.Request.Body)
 		if err != nil {
-			return "", ghostboardBodyError(err)
+			return boardWrite{}, ghostboardBodyError(err)
 		}
-		text = string(body)
-		if values, err := url.ParseQuery(text); err == nil {
+		write.Text = string(body)
+		if values, err := url.ParseQuery(write.Text); err == nil {
 			if texts, ok := values["text"]; ok && len(texts) > 0 {
-				text = texts[0]
+				write.Text = texts[0]
 			}
 		}
 	default:
 		body, err := io.ReadAll(c.Request.Body)
 		if err != nil {
-			return "", ghostboardBodyError(err)
+			return boardWrite{}, ghostboardBodyError(err)
 		}
-		text = string(body)
+		write.Text = string(body)
 	}
 
 	// The limit is enforced on the decoded text, so a body padded with JSON
 	// escapes cannot bypass it and an escaped body is not rejected for its size.
-	if len(text) > gc.maxTextBytes {
-		return "", ghostboard.ErrTextTooLarge
+	if len(write.Text) > gc.maxTextBytes {
+		return boardWrite{}, ghostboard.ErrTextTooLarge
 	}
 
 	// Boards hold text: invalid UTF-8 would be replaced by U+FFFD when the
 	// store marshals the board to its JSON file, silently rewriting what the
 	// client sent. JSON decoding already yields valid strings, so this rejects
 	// raw and percent-decoded bodies.
-	if !utf8.ValidString(text) {
-		return "", errGhostboardInvalidText
+	if !utf8.ValidString(write.Text) {
+		return boardWrite{}, errGhostboardInvalidText
 	}
 
-	return text, nil
+	return write, nil
 }
 
-// readRawText reads the whole request body verbatim, enforcing the configured
+// readRawWrite reads the whole request body verbatim, enforcing the configured
 // board size on the bytes received. Boards hold text, so a body that is not
 // valid UTF-8 is rejected instead of being stored and later mangled by the
 // JSON persistence.
-func (gc *GhostboardController) readRawText(c *gin.Context) (string, error) {
+func (gc *GhostboardController) readRawWrite(c *gin.Context) (boardWrite, error) {
+	write := boardWrite{
+		Mode:     strings.TrimSpace(c.GetHeader(ghostboardModeHeader)),
+		Burn:     strings.EqualFold(strings.TrimSpace(c.GetHeader(ghostboardBurnHeader)), "true"),
+		ClientID: ghostboardClientID(c),
+	}
+
 	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, int64(gc.maxTextBytes))
 
 	body, err := io.ReadAll(c.Request.Body)
 	if err != nil {
-		return "", ghostboardBodyError(err)
+		return boardWrite{}, ghostboardBodyError(err)
 	}
 	if !utf8.Valid(body) {
-		return "", errGhostboardInvalidText
+		return boardWrite{}, errGhostboardInvalidText
 	}
-	return string(body), nil
+	write.Text = string(body)
+	return write, nil
+}
+
+// boardMode maps the mode a client asked for onto a store mode. Anything else is
+// refused instead of being treated as plain, so a typo in a client can never
+// store ciphertext as if it were readable text.
+func boardMode(mode string) (ghostboard.Mode, error) {
+	switch strings.ToLower(strings.TrimSpace(mode)) {
+	case "", string(ghostboard.ModePlain):
+		return ghostboard.ModePlain, nil
+	case string(ghostboard.ModeSealed):
+		return ghostboard.ModeSealed, nil
+	default:
+		return "", errGhostboardInvalidMode
+	}
 }
 
 func writeGhostboardEvent(controller *http.ResponseController, c *gin.Context, event ghostboard.Event) bool {
@@ -475,6 +586,26 @@ func writeGhostboardError(c *gin.Context, err error) {
 	switch {
 	case errors.Is(err, ghostboard.ErrInvalidBoardName):
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid board name: use 1-64 letters, digits, dots, dashes or underscores"})
+	case errors.Is(err, ghostboard.ErrBoardBurned):
+		c.JSON(http.StatusGone, gin.H{"error": ghostboard.ErrBoardBurned.Error()})
+	case errors.Is(err, ghostboard.ErrBoardNotFound):
+		c.JSON(http.StatusNotFound, gin.H{"error": ghostboard.ErrBoardNotFound.Error()})
+	case errors.Is(err, ghostboard.ErrSealedDisabled):
+		c.JSON(http.StatusNotFound, gin.H{"error": ghostboard.ErrSealedDisabled.Error()})
+	case errors.Is(err, ghostboard.ErrBurnRequiresOpen):
+		c.JSON(http.StatusConflict, gin.H{"error": ghostboard.ErrBurnRequiresOpen.Error(), "open": "POST /ghostboard/" + ghostboardBoardName(c) + "/open"})
+	case errors.Is(err, ghostboard.ErrBoardNotSealed):
+		c.JSON(http.StatusConflict, gin.H{"error": ghostboard.ErrBoardNotSealed.Error()})
+	case errors.Is(err, ghostboard.ErrPlaintextWriteToSealed):
+		c.JSON(http.StatusConflict, gin.H{"error": ghostboard.ErrPlaintextWriteToSealed.Error()})
+	case errors.Is(err, ghostboard.ErrSealedOverPlainText):
+		c.JSON(http.StatusConflict, gin.H{"error": ghostboard.ErrSealedOverPlainText.Error()})
+	case errors.Is(err, ghostboard.ErrSealedBoardFiles):
+		c.JSON(http.StatusConflict, gin.H{"error": ghostboard.ErrSealedBoardFiles.Error()})
+	case errors.Is(err, errGhostboardInvalidMode):
+		c.JSON(http.StatusBadRequest, gin.H{"error": errGhostboardInvalidMode.Error()})
+	case errors.Is(err, sealedcrypto.ErrInvalidEnvelope), errors.Is(err, sealedcrypto.ErrUnsupportedVersion):
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid sealed envelope: expected {\"v\":1,\"iv\":…,\"ct\":…} in base64url"})
 	case errors.Is(err, ghostboard.ErrTextTooLarge):
 		c.JSON(http.StatusRequestEntityTooLarge, gin.H{"error": err.Error()})
 	case errors.Is(err, ghostboard.ErrPINLength):

@@ -10,6 +10,7 @@ import (
 
 	"github.com/asgambat/gospin/internal/api/middleware"
 	"github.com/asgambat/gospin/internal/app"
+	"github.com/asgambat/gospin/internal/sealedcrypto"
 )
 
 // isGhostboardEventStream reports whether path targets the ghostboard SSE
@@ -46,6 +47,11 @@ func SetupRoutes(appCtx *app.App, logger *logrus.Logger) *gin.Engine {
 		gzipHandler(c)
 	})
 	r.Use(middleware.CORSMiddleware(appCtx.Config.Server.CORSAllowedOrigins))
+	r.Use(middleware.SecurityHeaders(middleware.SecurityHeaderOptions{
+		Enabled:               appCtx.Config.Server.SecurityHeaders.Enabled,
+		ContentSecurityPolicy: appCtx.Config.Server.SecurityHeaders.CSP,
+		HSTSMaxAge:            appCtx.Config.Server.SecurityHeaders.HSTSMaxAge,
+	}))
 
 	r.GET("/health", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{
@@ -72,8 +78,10 @@ func SetupRoutes(appCtx *app.App, logger *logrus.Logger) *gin.Engine {
 		maxFileBytes = ghostboardCfg.MaxFileBytes
 	}
 	NewUIRouter(r, GhostboardPageConfig{
-		MaxTextBytes: ghostboardCfg.MaxTextBytes,
-		MaxFileBytes: maxFileBytes,
+		MaxTextBytes:            ghostboardCfg.MaxTextBytes,
+		MaxFileBytes:            maxFileBytes,
+		SealedEnabled:           ghostboardCfg.SealedEnabled,
+		SealedMaxPlaintextBytes: sealedcrypto.MaxPlaintextBytes(ghostboardCfg.MaxTextBytes),
 	})
 
 	return r

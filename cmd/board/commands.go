@@ -16,6 +16,7 @@ import (
 
 	"github.com/asgambat/gospin/internal/boardclient"
 	"github.com/asgambat/gospin/internal/ghostboard"
+	"github.com/asgambat/gospin/internal/sealedcrypto"
 )
 
 // downloadPerm is the permission of a board saved with download.
@@ -32,7 +33,7 @@ func execAdd(ctx context.Context, client *boardclient.Client, opts options, posi
 	}
 
 	if opts.dryRun {
-		current, err := client.Get(ctx, opts.board)
+		current, err := currentText(ctx, client, opts)
 		if err != nil {
 			return fail(opts.program, stderr, err)
 		}
@@ -46,6 +47,27 @@ func execAdd(ctx context.Context, client *boardclient.Client, opts options, posi
 		}, "board %q: would add %d byte(s), %d byte(s) in total (dry run)\n", opts.board, len(text), len(updated))
 	}
 
+	if hasSealedKey(opts) {
+		key, err := resolveSealedKey(opts)
+		if err != nil {
+			return fail(opts.program, stderr, err)
+		}
+		current, err := currentText(ctx, client, opts)
+		if err != nil {
+			return fail(opts.program, stderr, err)
+		}
+		updated := boardclient.AppendText(current, text)
+		if err := client.SealedWrite(ctx, opts.board, updated, key, false); err != nil {
+			return fail(opts.program, stderr, err)
+		}
+		return report(opts, stdout, stderr, actionReport{
+			Board:      opts.board,
+			Action:     "append",
+			Bytes:      len(text),
+			TotalBytes: len(updated),
+		}, "board %q updated: %d byte(s) added to the sealed board, %d byte(s) in total\n", opts.board, len(text), len(updated))
+	}
+
 	updated, err := client.Append(ctx, opts.board, text)
 	if err != nil {
 		return fail(opts.program, stderr, err)
@@ -57,6 +79,23 @@ func execAdd(ctx context.Context, client *boardclient.Client, opts options, posi
 		Bytes:      len(text),
 		TotalBytes: len(updated),
 	}, "board %q updated: %d byte(s) added, %d byte(s) in total\n", opts.board, len(text), len(updated))
+}
+
+// currentText reads the text a command works from, decrypting it when a sealed
+// key is configured.
+func currentText(ctx context.Context, client *boardclient.Client, opts options) (string, error) {
+	if !hasSealedKey(opts) {
+		return client.Get(ctx, opts.board)
+	}
+	key, err := resolveSealedKey(opts)
+	if err != nil {
+		return "", err
+	}
+	state, err := readSealedState(ctx, client, opts.board, key)
+	if err != nil {
+		return "", err
+	}
+	return state.Text, nil
 }
 
 // execSet replaces the whole text of the board.
@@ -73,6 +112,17 @@ func execSet(ctx context.Context, client *boardclient.Client, opts options, posi
 	if opts.dryRun {
 		return report(opts, stdout, stderr, result,
 			"board %q: would be replaced with %d byte(s) (dry run)\n", opts.board, len(text))
+	}
+
+	if hasSealedKey(opts) {
+		key, err := resolveSealedKey(opts)
+		if err != nil {
+			return fail(opts.program, stderr, err)
+		}
+		if err := client.SealedWrite(ctx, opts.board, text, key, false); err != nil {
+			return fail(opts.program, stderr, err)
+		}
+		return report(opts, stdout, stderr, result, "board %q replaced with a sealed envelope: %d byte(s)\n", opts.board, len(text))
 	}
 
 	if err := client.Set(ctx, opts.board, text); err != nil {
@@ -92,7 +142,7 @@ func execRead(ctx context.Context, client *boardclient.Client, opts options, pos
 	}
 
 	if opts.json || opts.stat {
-		board, err := client.GetBoard(ctx, opts.board)
+		board, err := sealedState(ctx, client, opts)
 		if err != nil {
 			return fail(opts.program, stderr, err)
 		}
@@ -114,7 +164,7 @@ func execRead(ctx context.Context, client *boardclient.Client, opts options, pos
 		return exitOK
 	}
 
-	text, err := client.Get(ctx, opts.board)
+	text, err := currentText(ctx, client, opts)
 	if err != nil {
 		return fail(opts.program, stderr, err)
 	}
@@ -254,12 +304,32 @@ func execFollow(ctx context.Context, client *boardclient.Client, opts options, p
 	cancelled := watchSignals(cancel)
 	defer cancelled()
 
+	// A sealed board streams envelopes: each snapshot is decrypted here, so the
+	// caller of follow sees the same text the page does.
+	var key sealedcrypto.Key
+	if hasSealedKey(opts) {
+		var err error
+		if key, err = resolveSealedKey(opts); err != nil {
+			return fail(opts.program, stderr, err)
+		}
+	}
+
 	// The announcement waits for the first revision: a wrong URL must print the
 	// error alone, without claiming the stream was opened.
 	announced := false
 	previous := ""
+	var decryptErr error
 
 	if err := client.Follow(ctx, opts.board, func(board boardclient.Board) {
+		if board.Sealed() && board.Text != "" {
+			plaintext, err := sealedcrypto.Open(key, opts.board, board.Text)
+			if err != nil {
+				decryptErr = &boardclient.SealedKeyError{Board: opts.board}
+				cancel()
+				return
+			}
+			board.Text = string(plaintext)
+		}
 		if !announced {
 			announced = true
 			notify(opts, stderr, "following board %q on %s (press Ctrl-C to stop)\n", opts.board, opts.url)
@@ -273,6 +343,9 @@ func execFollow(ctx context.Context, client *boardclient.Client, opts options, p
 		writeBoardSnapshot(stdout, board.Text)
 	}); err != nil {
 		return fail(opts.program, stderr, err)
+	}
+	if decryptErr != nil {
+		return fail(opts.program, stderr, decryptErr)
 	}
 
 	return exitOK

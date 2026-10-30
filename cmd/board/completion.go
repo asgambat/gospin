@@ -8,10 +8,10 @@ import (
 
 const (
 	// completionCommands are the subcommands offered by every generated script.
-	completionCommands = "add set read upload download follow edit file config pin-hash completion version help"
+	completionCommands = "add set read upload download follow edit file sealed open config pin-hash completion version help"
 
 	// completionFlags are the flags offered by every generated script.
-	completionFlags = "-b --board -u --url --pin --timeout --config --no-config --retry --header -q --quiet --json -f --append -o --force --stat --diff --dry-run --paths -h --help"
+	completionFlags = "-b --board -u --url --pin --key --key-file --burn --timeout --config --no-config --retry --header -q --quiet --json -f --append -o --force --all --stat --diff --dry-run --paths -h --help"
 )
 
 // execCompletion prints a completion script for the requested shell. It runs
@@ -88,6 +88,9 @@ complete -c %[1]s -f -n '__fish_use_subcommand' -a '%[2]s'
 complete -c %[1]s -l board -s b -d 'board to use'
 complete -c %[1]s -l url -s u -d 'GoSpin server URL'
 complete -c %[1]s -l pin -d 'PIN of a protected board'
+complete -c %[1]s -l key -d 'key of a sealed board'
+complete -c %[1]s -l key-file -d 'file holding the key of a sealed board'
+complete -c %[1]s -l burn -d 'destroy the sealed board after the first open'
 complete -c %[1]s -l timeout -d 'request timeout'
 complete -c %[1]s -l config -d 'configuration file'
 complete -c %[1]s -l no-config -d 'ignore the configuration files'
@@ -100,6 +103,7 @@ complete -c %[1]s -l dry-run -d 'show what would change without writing'
 complete -c %[1]s -l append -d 'append instead of replacing'
 complete -c %[1]s -s o -d 'output file'
 complete -c %[1]s -l force -d 'overwrite an existing file'
+complete -c %[1]s -l all -d 'download every file of a board as one ZIP'
 complete -c %[1]s -l stat -d 'print the revision and the update time'
 complete -c %[1]s -l diff -d 'print only what a revision added'
 complete -c %[1]s -l paths -d 'list the configuration files looked for'

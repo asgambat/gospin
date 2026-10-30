@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sealed ghostboard</title>
+    <link rel="icon" type="image/svg+xml" href="/ui/assets/ghostboard-icon.svg">
+    <meta name="theme-color" content="#1976d2">
+    <!-- The vendored Alpine only: this page holds the decryption key in the
+         fragment, so it loads no script from another origin. Its policy is
+         middleware.SealedPageContentSecurityPolicy, which has no CDN origin. -->
+    <script defer src="/ui/assets/vendor/alpine-3.17.5.min.js"></script>
+    <link href="/ui/assets/vendor/tailwind-2.2.19.min.css" rel="stylesheet">
+    <style>
+        [x-cloak] { display: none !important; }
+
+        body {
+            background-color: #0f172a;
+            color: #e2e8f0;
+        }
+
+        .sealed-panel {
+            background-color: #1e293b;
+            border: 1px solid #334155;
+        }
+
+        .sealed-muted { color: #94a3b8; }
+
+        .sealed-input,
+        .sealed-textarea {
+            background-color: #0f172a;
+            color: #e2e8f0;
+            border: 1px solid #334155;
+            border-radius: .25rem;
+        }
+
+        .sealed-textarea {
+            font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+            font-size: .875rem;
+            min-height: 16rem;
+            resize: vertical;
+        }
+
+        .sealed-input:focus,
+        .sealed-textarea:focus {
+            outline: none;
+            border-color: #60a5fa;
+            box-shadow: 0 0 0 3px rgba(96, 165, 250, .2);
+        }
+
+        .sealed-btn {
+            background-color: #1e293b;
+            color: #e2e8f0;
+            border: 1px solid #334155;
+            border-radius: .25rem;
+            transition: border-color .15s ease, color .15s ease;
+        }
+
+        .sealed-btn:hover:not(:disabled) {
+            border-color: #60a5fa;
+            color: #60a5fa;
+        }
+
+        .sealed-btn:disabled { opacity: .45; cursor: not-allowed; }
+
+        .sealed-btn-primary {
+            background-color: #2563eb;
+            border-color: #2563eb;
+            color: #ffffff;
+        }
+
+        .sealed-btn-primary:hover:not(:disabled) {
+            background-color: #1d4ed8;
+            border-color: #1d4ed8;
+            color: #ffffff;
+        }
+
+        .sealed-error {
+            background-color: #7f1d1d;
+            color: #fca5a5;
+            border: 1px solid currentColor;
+        }
+
+        .sealed-notice {
+            background-color: #14532d;
+            color: #86efac;
+            border: 1px solid currentColor;
+        }
+
+        .sealed-warn {
+            border-left: 3px solid #fbbf24;
+            color: #fbbf24;
+        }
+
+        .sealed-code {
+            font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+            word-break: break-all;
+        }
+
+        .sealed-output {
+            white-space: pre-wrap;
+            word-break: break-word;
+            font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+            font-size: .875rem;
+            background-color: #0f172a;
+            border: 1px solid #334155;
+            border-radius: .25rem;
+            padding: 1rem;
+            max-height: 70vh;
+            overflow: auto;
+        }
+    </style>
+</head>
+<body class="min-h-screen" data-max-plaintext-bytes="" x-data="sealedBoard()" x-cloak>
+    <div class="container mx-auto px-4 py-8 max-w-3xl">
+        <header class="mb-6">
+            <h1 class="text-3xl font-bold">🔐 Sealed ghostboard</h1>
+            <p class="sealed-muted">
+                The text is encrypted in this browser before it leaves it, and the key travels in the
+                link fragment: the server stores ciphertext it cannot read.
+            </p>
+        </header>
+
+        <div class="sealed-error px-4 py-3 rounded mb-4 flex items-start justify-between gap-3"
+             x-show="error" x-transition role="alert">
+            <span x-text="error"></span>
+            <button type="button" @click="error = ''" class="font-bold flex-shrink-0"
+                    aria-label="Dismiss error">&times;</button>
+        </div>
+
+        <div class="sealed-notice px-4 py-3 rounded mb-4" x-show="notice" x-transition
+             x-text="notice" role="status"></div>
+
+        <!-- WebCrypto exists only in a secure context: the page says so instead
+             of pretending to work on a plain-HTTP LAN address. -->
+        <section class="sealed-panel rounded-lg p-6" x-show="!secure" x-cloak>
+            <h2 class="text-xl font-semibold mb-2">⚠️ This page cannot encrypt here</h2>
+            <p class="sealed-muted mb-3">
+                The browser refuses <code class="sealed-code">crypto.subtle</code> outside HTTPS (or
+                <code class="sealed-code">localhost</code>), so a sealed board cannot be decrypted on
+                this page. Open GoSpin over HTTPS, or use the CLI, which encrypts in Go:
+            </p>
+            <pre class="sealed-output">gb-cli read -b &lt;board&gt; --key '&lt;the key from the link&gt;'</pre>
+        </section>
+
+        <!-- Create flow -->
+        <section class="sealed-panel rounded-lg p-6" x-show="secure && mode === 'create'" x-cloak>
+            <h2 class="text-xl font-semibold mb-1">Seal a note</h2>
+            <p class="sealed-muted text-sm mb-4">
+                The link produced here is the only copy of the key. Nobody — this server included —
+                can read the board without it, and nobody can recover it for you.
+            </p>
+
+            <label class="block text-sm mb-1" for="sealed-name">Board name</label>
+            <input id="sealed-name" type="text" x-model="name" maxlength="64" spellcheck="false"
+                   autocomplete="off" placeholder="nota-per-maria"
+                   class="sealed-input w-full p-2 mb-1">
+            <p class="sealed-muted text-xs mb-4">1-64 letters, digits, dots, dashes or underscores.</p>
+
+            <label class="block text-sm mb-1" for="sealed-text">Text to seal</label>
+            <textarea id="sealed-text" x-model="text" spellcheck="false" rows="12"
+                      placeholder="Paste the password, the invite link or the note."
+                      class="sealed-textarea w-full p-3 mb-1"></textarea>
+            <p class="sealed-muted text-xs mb-4">
+                <span x-text="textBytes()"></span> bytes<span x-show="maxPlaintext">,
+                at most <span x-text="plaintextLimitLabel()"></span></span>.
+            </p>
+
+            <label class="flex items-center gap-2 mb-4 text-sm">
+                <input type="checkbox" x-model="burn">
+                <span>Destroy the board after the first open (burn after read)</span>
+            </label>
+
+            <button type="button" @click="create()" :disabled="creating" class="sealed-btn sealed-btn-primary px-4 py-2">
+                <span x-show="!creating">Seal and create the link</span>
+                <span x-show="creating">Sealing…</span>
+            </button>
+
+            <div class="mt-5" x-show="link" x-cloak>
+                <p class="text-sm font-semibold mb-1">The link that holds the key</p>
+                <div class="flex flex-wrap items-center gap-2">
+                    <code class="sealed-code flex-1 sealed-input p-2" x-text="link"></code>
+                    <button type="button" @click="copyLink()" class="sealed-btn px-3 py-2">
+                        <span x-show="!copied">Copy</span>
+                        <span x-show="copied">Copied</span>
+                    </button>
+                    <a :href="link" class="sealed-btn px-3 py-2">Open it</a>
+                </div>
+                <p class="sealed-warn text-sm mt-3 pl-3">
+                    Keep it somewhere safe before closing this page: the key exists only in that link.
+                    Browser history, the clipboard and chat previews keep it too — send it over a
+                    channel you trust, and prefer a burn board for anything short-lived.
+                </p>
+            </div>
+        </section>
+
+        <!-- Reveal flow -->
+        <section class="sealed-panel rounded-lg p-6" x-show="secure && mode === 'reveal'" x-cloak>
+            <h2 class="text-xl font-semibold mb-1">
+                Sealed board <code class="sealed-code" x-text="board"></code>
+            </h2>
+
+            <template x-if="locked">
+                <form @submit.prevent="unlock()" class="mt-4">
+                    <p class="sealed-muted text-sm mb-3">
+                        This board is private: it needs its PIN before the envelope is handed over.
+                    </p>
+                    <input id="sealed-pin" type="password" x-model="pin" maxlength="64" inputmode="numeric"
+                           autocomplete="current-password" placeholder="PIN" aria-label="Board PIN"
+                           class="sealed-input w-full p-3 mb-3 text-center sealed-code">
+                    <button type="submit" class="sealed-btn sealed-btn-primary px-4 py-2" :disabled="unlocking || !pin">
+                        <span x-show="!unlocking">Unlock</span>
+                        <span x-show="unlocking">Checking…</span>
+                    </button>
+                    <p class="sealed-error px-3 py-2 rounded mt-3 text-sm" x-show="pinError" x-text="pinError"></p>
+                </form>
+            </template>
+
+            <div x-show="!locked && !revealed" x-cloak>
+                <p class="sealed-muted text-sm mb-3" x-show="awaitingOpen">
+                    This board may destroy itself as soon as it is handed over. Opening it is a
+                    deliberate click: a wrong key or a truncated link still claims it.
+                </p>
+                <button type="button" @click="open()" class="sealed-btn sealed-btn-primary px-4 py-2 mr-2"
+                        x-show="awaitingOpen">
+                    Open once and decrypt
+                </button>
+                <button type="button" @click="load()" class="sealed-btn px-4 py-2" x-show="!awaitingOpen">
+                    Decrypt
+                </button>
+            </div>
+
+            <div x-show="revealed" x-cloak>
+                <div class="flex flex-wrap items-center gap-2 mb-3">
+                    <button type="button" @click="copyText()" class="sealed-btn px-3 py-1 text-sm">Copy text</button>
+                    <button type="button" @click="save()" :disabled="saving || burned"
+                            class="sealed-btn px-3 py-1 text-sm" x-show="!burned">
+                        <span x-show="!saving && !saved">Save changes</span>
+                        <span x-show="saving">Sealing…</span>
+                        <span x-show="saved && !saving">Saved</span>
+                    </button>
+                    <span class="sealed-muted text-xs" x-show="burned">This board is gone: it was destroyed on this open.</span>
+                </div>
+                <textarea x-model="plaintext" spellcheck="false" rows="14" :readonly="burned"
+                          class="sealed-textarea w-full p-3" aria-label="Decrypted board text"></textarea>
+            </div>
+        </section>
+
+        <p class="text-xs sealed-muted mt-4">
+            A sealed board cannot carry attachments and cannot be turned back into a plain board.
+            The GoSpin server, its data file and its backups hold ciphertext only.
+        </p>
+    </div>
+
+    <script src="/ui/assets/sealed.js"></script>
+</body>
+</html>

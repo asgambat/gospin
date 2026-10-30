@@ -33,56 +33,21 @@ func main() {
 		logger.WithComponent("main").Fatalf("configuration error: %v", err)
 	}
 
-	// Set log level from configuration
-	logLevel, err := logrus.ParseLevel(cfg.Misc.LogLevel)
-	if err != nil {
-		logger.WithComponent("main").Warnf("invalid log level '%s', using 'info': %v", cfg.Misc.LogLevel, err)
-		logLevel = logrus.InfoLevel
-	}
-	logger.Logger.SetLevel(logLevel)
-	logger.WithComponent("main").Debugf("log level set to: %s", logLevel.String())
-	// Emit build identity eagerly so it shows up in container logs /
-	// `docker logs` output from the first line — complement to the
-	// homepage footer summary rendered via the /homepage JSON response.
-	logger.WithComponent("main").Infof("starting gospin %s", version.BuildInfo())
-	logger.WithComponent("main").Infof("Waiting server will run on port: %d", cfg.Server.WaitingServerPort)
-	logger.WithComponent("main").Infof("App will run on port: %d", cfg.Server.Port)
+	applyLogLevel(cfg.Misc.LogLevel)
+	logStartup(cfg)
 
-	repo, err := repository.NewJSONRepository(cfg.Data.FilePath)
+	app, err := newApp(cfg)
 	if err != nil {
-		logger.WithComponent("main").Fatalf("cannot init repository: %v", err)
-	}
-
-	jsonDoc, err := repo.Load(context.Background())
-	if err != nil {
-		logger.WithComponent("main").Fatalf("cannot load data file: %v", err)
-	}
-
-	cacheStore := cache.NewStore(*jsonDoc)
-	rt, err := runtime.NewRuntimeFromConfig(cfg.Misc.RuntimeType, jsonDoc, cacheStore)
-	if err != nil {
-		logger.WithComponent("main").Fatalf("cannot init runtime: %v", err)
-	}
-
-	app, err := appctx.New(cfg, repo, cacheStore, rt)
-	if err != nil {
-		logger.WithComponent("main").Fatalf("cannot init app: %v", err)
+		logger.WithComponent("main").Fatal(err)
 	}
 	defer app.Shutdown()
 
 	app.StartWatchers()
 
-	gin.SetMode(cfg.Misc.GinMode)
-	gin.DefaultWriter = logger.Logger.Writer()
-	gin.DefaultErrorWriter = logger.Logger.Writer()
+	configureGin(cfg.Misc.GinMode)
 
 	// Setup and start the secondary waiting server
-	waitingSrv := createWaitingServer(app, logger.Logger)
-	go func() {
-		if err := waitingSrv.ListenAndServe(fmt.Sprintf(":%d", cfg.Server.WaitingServerPort)); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			logger.WithComponent("main").Errorf("Waiting server error: %v", err)
-		}
-	}()
+	startWaitingServer(app, cfg.Server, logger.Logger)
 
 	//setup main server routes and start it!
 	r := route.SetupRoutes(app, logger.Logger)
@@ -93,12 +58,106 @@ func main() {
 	}
 }
 
+// applyLogLevel sets the process-wide log level from the configuration. An
+// unknown value does not stop the server: it falls back to info with a warning,
+// so a typo in one key does not take the dashboard down.
+func applyLogLevel(level string) logrus.Level {
+	parsed, err := logrus.ParseLevel(level)
+	if err != nil {
+		logger.WithComponent("main").Warnf("invalid log level '%s', using 'info': %v", level, err)
+		parsed = logrus.InfoLevel
+	}
+
+	logger.Logger.SetLevel(parsed)
+	logger.WithComponent("main").Debugf("log level set to: %s", parsed.String())
+	return parsed
+}
+
+// logStartup announces the build identity and the two ports. The identity is
+// emitted eagerly so it shows up in container logs / `docker logs` output from
+// the first line — the complement to the homepage footer summary rendered from
+// the /homepage JSON response.
+func logStartup(cfg *config.Config) {
+	logger.WithComponent("main").Infof("starting gospin %s", version.BuildInfo())
+	logger.WithComponent("main").Infof("Waiting server will run on port: %d", cfg.Server.WaitingServerPort)
+	logger.WithComponent("main").Infof("App will run on port: %d", cfg.Server.Port)
+}
+
+// configureGin applies the gin mode and sends gin's own output to the
+// application logger, so access logs and panic traces share the log stream and
+// its level instead of writing to stderr unbuffered.
+func configureGin(mode string) {
+	gin.SetMode(mode)
+	gin.DefaultWriter = logger.Logger.Writer()
+	gin.DefaultErrorWriter = logger.Logger.Writer()
+}
+
+// newApp builds the application container from the configuration: the data
+// repository, the in-memory cache, the container runtime and the app that ties
+// them together. Each failure names the step that broke, so the fatal message
+// the caller logs still says which piece of the wiring failed.
+func newApp(cfg *config.Config) (*appctx.App, error) {
+	repo, err := repository.NewJSONRepository(cfg.Data.FilePath)
+	if err != nil {
+		return nil, fmt.Errorf("cannot init repository: %w", err)
+	}
+
+	jsonDoc, err := repo.Load(context.Background())
+	if err != nil {
+		return nil, fmt.Errorf("cannot load data file: %w", err)
+	}
+
+	cacheStore := cache.NewStore(*jsonDoc)
+	rt, err := runtime.NewRuntimeFromConfig(cfg.Misc.RuntimeType, jsonDoc, cacheStore)
+	if err != nil {
+		return nil, fmt.Errorf("cannot init runtime: %w", err)
+	}
+
+	app, err := appctx.New(cfg, repo, cacheStore, rt)
+	if err != nil {
+		return nil, fmt.Errorf("cannot init app: %w", err)
+	}
+	return app, nil
+}
+
+// startWaitingServer serves the boot page on its own port, in the background,
+// and returns the server with a channel carrying the error it stopped with. A
+// server stopped normally (http.ErrServerClosed) reports no error: only a real
+// failure, like a port already in use, is logged and returned.
+func startWaitingServer(app *appctx.App, cfg config.ServerConfig, log *logrus.Logger) (*httpgrace.Server, <-chan error) {
+	srv := createWaitingServer(app, log)
+	done := make(chan error, 1)
+
+	go func() {
+		err := srv.ListenAndServe(fmt.Sprintf(":%d", cfg.WaitingServerPort))
+		if err != nil && !errors.Is(err, http.ErrServerClosed) {
+			log.WithField("component", "main").Errorf("Waiting server error: %v", err)
+		}
+		done <- err
+	}()
+
+	return srv, done
+}
+
 // createWaitingServer creates a secondary HTTP server dedicated to serving only the waiting page.
 // It exposes a single route GET /:name that triggers RuntimeController.WaitingPage.
 func createWaitingServer(app *appctx.App, logger *logrus.Logger) *httpgrace.Server {
+	return createGraceHttpServer(app.BaseCtx, "waiting-server", app.Config.Server, newWaitingRouter(app, logger))
+}
+
+// newWaitingRouter builds the engine of the waiting server: the boot page and
+// the readiness endpoint it polls. It carries the same security headers as the
+// main server, with the policy that page needs instead of the dashboard one, so
+// the second port is not a surface without a CSP.
+func newWaitingRouter(app *appctx.App, logger *logrus.Logger) *gin.Engine {
 	r := gin.New()
 	r.Use(middleware.HoneybadgerMiddleware(logger))
 	r.Use(gin.Recovery())
+	r.Use(middleware.SecurityHeaders(middleware.SecurityHeaderOptions{
+		Enabled:               app.Config.Server.SecurityHeaders.Enabled,
+		ContentSecurityPolicy: middleware.WaitingPageContentSecurityPolicy,
+		HSTSMaxAge:            app.Config.Server.SecurityHeaders.HSTSMaxAge,
+	}))
 
 	// Create RuntimeController for the waiting page
 	rc := controller.NewRuntimeController(app)
@@ -107,7 +166,7 @@ func createWaitingServer(app *appctx.App, logger *logrus.Logger) *httpgrace.Serv
 	r.GET("/container/:name/ready", cc.Ready)
 	r.GET("/:name", rc.WaitingPage)
 
-	return createGraceHttpServer(app.BaseCtx, "waiting-server", app.Config.Server, r)
+	return r
 }
 
 func createGraceHttpServer(ctx context.Context, name string, serverConfig config.ServerConfig, r *gin.Engine) *httpgrace.Server {

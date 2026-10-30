@@ -27,6 +27,7 @@ type Config struct {
 
 type ServerConfig struct {
 	CORSAllowedOrigins string
+	SecurityHeaders    SecurityHeadersConfig
 	Port               int
 	WaitingServerPort  int
 	ReadTimeout        time.Duration
@@ -34,6 +35,15 @@ type ServerConfig struct {
 	IdleTimeout        time.Duration
 	ShutDownTimeout    time.Duration
 	RequestTimeout     time.Duration
+}
+
+// SecurityHeadersConfig controls the headers every response carries. An empty
+// CSP means the built-in policy that fits the shipped UI, and an HSTS max age
+// of zero leaves Strict-Transport-Security out.
+type SecurityHeadersConfig struct {
+	CSP        string
+	HSTSMaxAge time.Duration
+	Enabled    bool
 }
 
 type DataConfig struct {
@@ -64,12 +74,14 @@ type GhostboardConfig struct {
 	PINMaxAttempts      int
 	PINLockout          time.Duration
 	FilesEnabled        bool
+	SealedEnabled       bool
 	MaxFileBytes        int64
 	MaxFileCount        int
 	MaxBoardFileBytes   int64
 	MaxTotalFileBytes   int64
 	FileTTL             time.Duration
 	FileTransferTimeout time.Duration
+	SealedBurnTombstone time.Duration
 }
 
 // FilesRoot returns the directory holding the attachments, one sub-directory
@@ -97,6 +109,8 @@ const (
 	defaultGhostboardMaxTotalFileBytes       = 5368709120 // 5 GiB
 	defaultGhostboardFileTTLSecs             = 86400      // 24 hours
 	defaultGhostboardFileTransferTimeoutSecs = 600        // 10 minutes
+
+	defaultGhostboardSealedBurnTombstoneSecs = 86400 // 24 hours
 )
 
 // DefaultGhostboardConfig returns the defaults documented in config.yaml.
@@ -117,6 +131,9 @@ func DefaultGhostboardConfig() GhostboardConfig {
 		MaxTotalFileBytes:   defaultGhostboardMaxTotalFileBytes,
 		FileTTL:             defaultGhostboardFileTTLSecs * time.Second,
 		FileTransferTimeout: defaultGhostboardFileTransferTimeoutSecs * time.Second,
+
+		SealedEnabled:       true,
+		SealedBurnTombstone: defaultGhostboardSealedBurnTombstoneSecs * time.Second,
 	}
 }
 
@@ -163,6 +180,9 @@ func (g GhostboardConfig) WithDefaults() GhostboardConfig {
 	if g.FileTransferTimeout <= 0 {
 		g.FileTransferTimeout = defaults.FileTransferTimeout
 	}
+	if g.SealedBurnTombstone <= 0 {
+		g.SealedBurnTombstone = defaults.SealedBurnTombstone
+	}
 	return g
 }
 
@@ -197,6 +217,9 @@ func LoadConfig() (*Config, error) {
 	viper.SetDefault("server.idle_timeout_secs", 120)
 	viper.SetDefault("server.shutdown_timeout_secs", 5)
 	viper.SetDefault("server.request_timeout_millis", 1000)
+	viper.SetDefault("server.security_headers.enabled", true)
+	viper.SetDefault("server.security_headers.csp", "")
+	viper.SetDefault("server.security_headers.hsts_max_age_secs", 0)
 
 	viper.SetDefault("data.file_path", confPath+"/data/config.json")
 	viper.SetDefault("data.persist_interval_secs", 5)
@@ -233,6 +256,8 @@ func LoadConfig() (*Config, error) {
 	viper.SetDefault("ghostboard.max_total_file_bytes", defaultGhostboardMaxTotalFileBytes)
 	viper.SetDefault("ghostboard.file_ttl_secs", defaultGhostboardFileTTLSecs)
 	viper.SetDefault("ghostboard.file_transfer_timeout_secs", defaultGhostboardFileTransferTimeoutSecs)
+	viper.SetDefault("ghostboard.sealed_enabled", true)
+	viper.SetDefault("ghostboard.sealed_burn_tombstone_secs", defaultGhostboardSealedBurnTombstoneSecs)
 
 	// Environment variables automatically override config file values
 	viper.AutomaticEnv()
@@ -279,6 +304,11 @@ func LoadConfig() (*Config, error) {
 			ShutDownTimeout:    time.Duration(viper.GetInt("server.shutdown_timeout_secs")) * time.Second,
 			RequestTimeout:     time.Duration(viper.GetInt("server.request_timeout_millis")) * time.Millisecond,
 			CORSAllowedOrigins: corsAllowedOrigins(),
+			SecurityHeaders: SecurityHeadersConfig{
+				Enabled:    viper.GetBool("server.security_headers.enabled"),
+				CSP:        strings.TrimSpace(viper.GetString("server.security_headers.csp")),
+				HSTSMaxAge: time.Duration(viper.GetInt("server.security_headers.hsts_max_age_secs")) * time.Second,
+			},
 		},
 		Data: DataConfig{
 			FilePath:                 viper.GetString("data.file_path"),
@@ -314,6 +344,8 @@ func LoadConfig() (*Config, error) {
 			MaxTotalFileBytes:   viper.GetInt64("ghostboard.max_total_file_bytes"),
 			FileTTL:             time.Duration(viper.GetInt("ghostboard.file_ttl_secs")) * time.Second,
 			FileTransferTimeout: time.Duration(viper.GetInt("ghostboard.file_transfer_timeout_secs")) * time.Second,
+			SealedEnabled:       viper.GetBool("ghostboard.sealed_enabled"),
+			SealedBurnTombstone: time.Duration(viper.GetInt("ghostboard.sealed_burn_tombstone_secs")) * time.Second,
 		},
 
 		Misc: MiscConfig{
@@ -432,6 +464,14 @@ func (c *Config) validate() error {
 	if c.Server.RequestTimeout <= 0 {
 		return fmt.Errorf("server.request_timeout_millis must be positive")
 	}
+	if c.Server.SecurityHeaders.HSTSMaxAge < 0 {
+		return fmt.Errorf("server.security_headers.hsts_max_age_secs must not be negative")
+	}
+	// A policy ends up in a header: a line break in it would let a value from
+	// the configuration file forge the rest of the response.
+	if strings.ContainsAny(c.Server.SecurityHeaders.CSP, "\r\n") {
+		return fmt.Errorf("server.security_headers.csp must be a single line")
+	}
 	if c.Misc.SchedulingTZ != "" && c.Misc.SchedulingTZ != "Local" {
 		if _, err := time.LoadLocation(c.Misc.SchedulingTZ); err != nil {
 			return fmt.Errorf("misc.scheduling_timezone is invalid: %w", err)
@@ -454,6 +494,9 @@ func (c *Config) validate() error {
 	}
 	if c.Ghostboard.HeartbeatInterval <= 0 {
 		return fmt.Errorf("ghostboard.heartbeat_interval_secs must be positive")
+	}
+	if c.Ghostboard.SealedBurnTombstone <= 0 {
+		return fmt.Errorf("ghostboard.sealed_burn_tombstone_secs must be positive")
 	}
 	if err := c.Ghostboard.validatePIN(); err != nil {
 		return err

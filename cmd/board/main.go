@@ -32,6 +32,9 @@ const (
 	exitUsage     = 2
 	exitEndpoint  = 3
 	exitBoardName = 4
+	// exitSealedKey marks a sealed command without a usable key, so a wrapper
+	// script can ask for the key instead of reporting a generic failure.
+	exitSealedKey = 5
 )
 
 // defaultProgramName is the binary name used when the invoked name cannot be
@@ -193,6 +196,10 @@ func run(program string, args []string, stdin io.Reader, stdout, stderr io.Write
 		return execEdit(ctx, client, opts, positionals, stdin, stdout, stderr)
 	case "file":
 		return execFile(ctx, client, opts, positionals, stdin, stdout, stderr)
+	case "sealed":
+		return execSealed(ctx, client, opts, positionals, stdin, stdout, stderr)
+	case "open":
+		return execOpen(ctx, client, opts, positionals, stdout, stderr)
 	default:
 		// splitCommand only returns the commands listed above.
 		return usageError(program, stderr, command, "unknown command")

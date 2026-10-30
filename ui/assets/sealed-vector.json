@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "board": "vector-board",
+  "key": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+  "iv": "ICEiIyQlJicoKSor",
+  "plaintext": "the quick brown fox jumps over the lazy dog",
+  "envelope": "{\"v\":1,\"iv\":\"ICEiIyQlJicoKSor\",\"ct\":\"plLDUB3tc21xXCC8rm-a2bYmlLzt9Q6eH9YDZCz4fn0d68Vo719M-nCSCUmegN1BRDlfqpqcSBx7T2w\"}",
+  "note": "Published known-answer test vector for gb-cli and ui/assets/sealed.js. The key is a fixed constant and is not a secret; never place a real board key in this file, which is served publicly under /ui/assets with a one-year cache."
+}

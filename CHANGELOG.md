@@ -8,6 +8,41 @@ work that has not been released yet; every release below lists what shipped in i
 
 ## [Unreleased]
 
+### Added
+
+- Ghostboard: **sealed boards**, encrypted in the client before they reach the server (ADR-0010).
+  The key is 256 random bits carried in the fragment of `/ui/sealed/<board>#k=<key>`, so the server,
+  its logs and its data file only ever see an AES-256-GCM envelope (`{"v":1,"iv":…,"ct":…}`, the
+  board name as additional authenticated data). Create one from the page or with
+  `gb-cli sealed new`, read it back with `read --key`, or mark it burn-after-read: opening it with
+  `POST /ghostboard/:board/open` (or `gb-cli open`) hands it out once, persists the burn before
+  answering and answers `410 Gone` from then on, with a tombstone for
+  `ghostboard.sealed_burn_tombstone_secs`. A sealed board refuses attachments and plaintext writes
+  (`409`), a plain `GET` of an unopened burn board reveals nothing (`409`), and the page that
+  decrypts needs HTTPS because WebCrypto is unavailable in a plain-HTTP context. Creation is one
+  click away from the existing surfaces: the ghostboard page and the dashboard footer carry a
+  navigation-only *Create a sealed board* link, injected server-side only when sealed boards are
+  on, and the key is still generated entirely inside `/ui/sealed`. Two new keys:
+  `ghostboard.sealed_enabled` and `ghostboard.sealed_burn_tombstone_secs`.
+
+- Configurable security headers on every response (`server.security_headers`): a
+  Content-Security-Policy whose built-in value fits the shipped UI and the Alpine, htmx and Tailwind
+  CDN origins, plus `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`, a
+  `Permissions-Policy` and an optional Strict-Transport-Security. `csp` replaces the policy,
+  `enabled: false` drops the whole set and `hsts_max_age_secs` stays `0` by default so a plain-HTTP
+  instance never pins HTTPS. The ghostboard theme bootstrap moved from an inline `<script>` to
+  `ui/assets/ghostboard-theme.js`, so no page needs `'unsafe-inline'` for scripts. The waiting
+  server carries the same headers with a minimal policy of its own, because its boot page keeps
+  its redirect loop inline.
+
+- Ghostboard: the attachments of a board download as one ZIP archive, from the **Download all
+  (.zip)** link of the 📎 Files panel, from `GET /ghostboard/:board/files.zip` (mirrored on
+  `/api/boards/:board/files.zip`) and from `gb-cli file get --all`, which saves `<board>.zip`
+  unless `-o` names a file. Entries are stored rather than deflated, a duplicate upload name
+  becomes `name (2).ext` so extracting the archive cannot overwrite one file with another, and a
+  board without files answers `404` with `{"error":"board has no files"}` instead of writing an
+  empty archive.
+
 ## [0.1.2] - 2026-10-30
 
 ### Added

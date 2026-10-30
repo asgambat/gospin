@@ -4,19 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Ghostboard</title>
-    <script>
-        (function () {
-            try {
-                var saved = localStorage.getItem('gosspin.ghostboard.theme');
-                var dark = saved === 'dark' || (!saved && window.matchMedia('(prefers-color-scheme: dark)').matches);
-                if (dark) {
-                    document.documentElement.classList.add('gb-dark');
-                }
-            } catch (error) {
-                // Storage can be unavailable in private mode; keep the light theme.
-            }
-        })();
-    </script>
+    <script src="/ui/assets/ghostboard-theme.js"></script>
     <link rel="manifest" href="/ui/assets/pwa/manifest-ghostboard.json">
     <link rel="icon" type="image/svg+xml" href="/ui/assets/ghostboard-icon.svg">
     <link rel="icon" type="image/png" sizes="32x32" href="/ui/assets/ghostboard-icon-32.png">
@@ -362,11 +350,16 @@
             </div>
 
             <div class="mb-3" x-show="filesEnabled" x-cloak>
-                <button type="button" @click="toggleFiles()" :aria-expanded="filesOpen ? 'true' : 'false'"
-                        aria-controls="ghostboard-files" class="gb-btn px-3 py-1 rounded text-sm"
-                        title="Files attached to this board">
-                    📎 Files<span x-show="files.length > 0" x-text="' (' + files.length + ')'"></span>
-                </button>
+                <div class="flex items-center gap-2">
+                    <button type="button" @click="toggleFiles()" :aria-expanded="filesOpen ? 'true' : 'false'"
+                            aria-controls="ghostboard-files" class="gb-btn px-3 py-1 rounded text-sm"
+                            title="Files attached to this board">
+                        📎 Files<span x-show="files.length > 0" x-text="' (' + files.length + ')'"></span>
+                    </button>
+                    <a x-show="files.length > 0" :href="archiveUrl()" :download="board + '.zip'"
+                       class="ml-auto gb-btn px-3 py-1 rounded text-sm"
+                       title="Download every file of this board as one ZIP archive">Download all (.zip)</a>
+                </div>
 
                 <div id="ghostboard-files" x-show="filesOpen" x-transition class="mt-2">
                     <div class="gb-drop rounded border-2 border-dashed px-4 py-6 text-center text-sm cursor-pointer"
@@ -438,6 +431,12 @@
             Open this URL on another device to share the same board:
             <code class="gb-code break-all" x-text="shareUrl"></code>
         </p>
+
+        <!-- Sealed-board entry point. The route replaces the marker below with
+             the link only when ghostboard.sealed_enabled. The link only
+             navigates to /ui/sealed: the page that owns the key works under its
+             own no-CDN CSP (ADR-0010), and nothing here ever handles it. -->
+        <!-- SEALED_BOARD_ENTRY -->
     </div>
 
     <script src="/ui/assets/ghostboard.js"></script>

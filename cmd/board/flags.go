@@ -14,6 +14,8 @@ type options struct {
 	board      string
 	url        string
 	pin        string
+	key        string
+	keyFile    string
 	configPath string
 	output     string
 	headers    headerFlags
@@ -29,6 +31,8 @@ type options struct {
 	dryRun     bool
 	force      bool
 	paths      bool
+	all        bool
+	burn       bool
 }
 
 // stringList collects a flag that may be repeated, such as -f.
@@ -85,6 +89,8 @@ func registerSharedFlags(flags *flag.FlagSet, opts *options) {
 	flags.StringVar(&opts.url, "u", opts.url, "GoSpin server URL")
 	flags.StringVar(&opts.url, "url", opts.url, "GoSpin server URL")
 	flags.StringVar(&opts.pin, "pin", opts.pin, "PIN of a board protected by ghostboard.private_boards")
+	flags.StringVar(&opts.key, "key", opts.key, "key of a sealed board: base64url, hex or a whole link")
+	flags.StringVar(&opts.keyFile, "key-file", opts.keyFile, "file holding the key of a sealed board")
 	flags.DurationVar(&opts.timeout, "timeout", opts.timeout, "request timeout")
 	flags.StringVar(&opts.configPath, "config", opts.configPath, "configuration file to use")
 	flags.BoolVar(&opts.noConfig, "no-config", false, "ignore the configuration files")
@@ -111,11 +117,15 @@ func registerCommandFlags(flags *flag.FlagSet, opts *options, command string) {
 		flags.BoolVar(&opts.stat, "stat", false, "print revision and update time on stderr")
 	case "follow":
 		flags.BoolVar(&opts.diff, "diff", false, "print only what a revision added")
+	case "sealed":
+		flags.Var(&opts.files, "f", "file to read the text from, repeated")
+		flags.BoolVar(&opts.burn, "burn", true, "destroy the board after the first open")
 	case "config":
 		flags.BoolVar(&opts.paths, "paths", false, "list the configuration files looked for")
 	case "file":
 		flags.StringVar(&opts.output, "o", "", "output file (file get)")
 		flags.BoolVar(&opts.force, "force", false, "overwrite an existing file (file get)")
+		flags.BoolVar(&opts.all, "all", false, "download every file of the board as one ZIP (file get)")
 	}
 }
 
@@ -176,7 +186,7 @@ func splitCommand(args []string) (string, []string, error) {
 // isCommand reports whether token is one of the subcommands.
 func isCommand(token string) bool {
 	switch token {
-	case "add", "set", "read", "upload", "download", "follow", "edit", "file", "config", "completion", "version", "pin-hash":
+	case "add", "set", "read", "upload", "download", "follow", "edit", "file", "sealed", "open", "config", "completion", "version", "pin-hash":
 		return true
 	default:
 		return false
@@ -187,7 +197,7 @@ func isCommand(token string) bool {
 // argument, so the value is not mistaken for the subcommand.
 func flagTakesValue(arg string) bool {
 	switch arg {
-	case "-b", "--board", "-u", "--url", "--pin", "--timeout", "--config", "--retry", "--header", "-f", "-o":
+	case "-b", "--board", "-u", "--url", "--pin", "--key", "--key-file", "--timeout", "--config", "--retry", "--header", "-f", "-o":
 		return true
 	default:
 		return false

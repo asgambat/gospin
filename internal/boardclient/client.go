@@ -113,7 +113,8 @@ func (e *BoardNameError) Unwrap() error {
 }
 
 // Board is the state carried by the JSON API and the event stream: the whole
-// text plus the revision and the last update time.
+// text plus the revision and the last update time. Text is the envelope of a
+// sealed board; Mode and Burn say whether it is one.
 //
 // UpdatedAt is a pointer so a board that was never written omits the field
 // instead of serialising a timestamp in year 1.
@@ -121,7 +122,14 @@ type Board struct {
 	UpdatedAt *time.Time `json:"updated_at,omitempty"`
 	Name      string     `json:"name"`
 	Text      string     `json:"text"`
+	Mode      string     `json:"mode,omitempty"`
 	Revision  uint64     `json:"revision"`
+	Burn      bool       `json:"burn,omitempty"`
+}
+
+// Sealed reports whether the board carries an envelope instead of plain text.
+func (b Board) Sealed() bool {
+	return b.Mode == sealedModeValue
 }
 
 // normalizeBoard drops the zero update time the server sends for a board that
@@ -362,13 +370,19 @@ func (c *Client) fetch(ctx context.Context, requestURL, board, endpoint, action 
 // number of attempts. The body is rebuilt on every attempt so a retry sends
 // exactly what the first attempt did.
 func (c *Client) send(ctx context.Context, method, requestURL, board, endpoint string, body []byte, action string) ([]byte, error) {
+	return c.sendWithHeaders(ctx, method, requestURL, board, endpoint, body, action, nil)
+}
+
+// sendWithHeaders is send with extra request headers, which is how a sealed
+// write asks for its mode on the raw-text API.
+func (c *Client) sendWithHeaders(ctx context.Context, method, requestURL, board, endpoint string, body []byte, action string, extra http.Header) ([]byte, error) {
 	if err := ghostboard.ValidateBoardName(board); err != nil {
 		return nil, &BoardNameError{Name: board}
 	}
 
 	unlocked := false
 	for attempt := 0; ; attempt++ {
-		payload, retriable, err := c.attempt(ctx, method, requestURL, board, endpoint, body, action)
+		payload, retriable, err := c.attempt(ctx, method, requestURL, board, endpoint, body, action, extra)
 		if err == nil {
 			return payload, nil
 		}
@@ -383,7 +397,7 @@ func (c *Client) send(ctx context.Context, method, requestURL, board, endpoint s
 				return nil, unlockErr
 			}
 			unlocked = true
-			payload, retriable, err = c.attempt(ctx, method, requestURL, board, endpoint, body, action)
+			payload, retriable, err = c.attempt(ctx, method, requestURL, board, endpoint, body, action, extra)
 			if err == nil {
 				return payload, nil
 			}
@@ -497,7 +511,7 @@ func (c *Client) unlock(ctx context.Context, board string) error {
 
 // attempt is a single request. It reports whether the failure is worth another
 // attempt: a transport error or one of the statuses of isRetriableStatus.
-func (c *Client) attempt(ctx context.Context, method, requestURL, board, endpoint string, body []byte, action string) ([]byte, bool, error) {
+func (c *Client) attempt(ctx context.Context, method, requestURL, board, endpoint string, body []byte, action string, extra http.Header) ([]byte, bool, error) {
 	var reader io.Reader
 	if body != nil {
 		reader = bytes.NewReader(body)
@@ -511,6 +525,11 @@ func (c *Client) attempt(ctx context.Context, method, requestURL, board, endpoin
 		req.Header.Set("Content-Type", "text/plain; charset=utf-8")
 	}
 	c.applyHeaders(req)
+	for name, values := range extra {
+		for _, value := range values {
+			req.Header.Set(name, value)
+		}
+	}
 
 	resp, err := c.http.Do(req)
 	if err != nil {

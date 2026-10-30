@@ -1,6 +1,7 @@
 package route
 
 import (
+	"archive/zip"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -104,6 +105,34 @@ func newFileRouteApp(t *testing.T, filesEnabled, private bool) *app.App {
 	}
 }
 
+// routeArchiveEntries opens the ZIP an archive request answered with and
+// returns its entries by name.
+func routeArchiveEntries(t *testing.T, data []byte) map[string]string {
+	t.Helper()
+
+	reader, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
+	if err != nil {
+		t.Fatalf("reading the archive: %v", err)
+	}
+
+	entries := make(map[string]string, len(reader.File))
+	for _, file := range reader.File {
+		handle, err := file.Open()
+		if err != nil {
+			t.Fatalf("opening entry %q: %v", file.Name, err)
+		}
+		content, err := io.ReadAll(handle)
+		if err != nil {
+			t.Fatalf("reading entry %q: %v", file.Name, err)
+		}
+		if err := handle.Close(); err != nil {
+			t.Fatalf("closing entry %q: %v", file.Name, err)
+		}
+		entries[file.Name] = string(content)
+	}
+	return entries
+}
+
 // routeUpload posts one multipart file to path.
 func routeUpload(t *testing.T, r *gin.Engine, path, token, filename, content string) *httptest.ResponseRecorder {
 	t.Helper()
@@ -178,6 +207,54 @@ func TestGhostboardFileRoutesAreRegistered(t *testing.T) {
 	if w := routeUpload(t, r, "/api/boards/team/files", "", "b.txt", "plain"); w.Code != http.StatusCreated {
 		t.Errorf("plain upload status = %d, want 201: %s", w.Code, w.Body.String())
 	}
+
+	// The whole board comes down as one archive, on both surfaces, and is
+	// never compressed: it is already packed.
+	for _, path := range []string{"/ghostboard/team/files.zip", "/api/boards/team/files.zip"} {
+		request := httptest.NewRequest(http.MethodGet, path, nil)
+		request.Header.Set("Accept-Encoding", "gzip")
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, request)
+		if w.Code != http.StatusOK {
+			t.Fatalf("GET %s = %d, want 200: %s", path, w.Code, w.Body.String())
+		}
+		if got := w.Header().Get("Content-Type"); got != "application/zip" {
+			t.Errorf("GET %s Content-Type = %q, want application/zip", path, got)
+		}
+		if encoding := w.Header().Get("Content-Encoding"); encoding != "" {
+			t.Errorf("GET %s Content-Encoding = %q, want no compression", path, encoding)
+		}
+		entries := routeArchiveEntries(t, w.Body.Bytes())
+		if entries["a.txt"] != "content" || entries["b.txt"] != "plain" {
+			t.Errorf("GET %s archive = %v, want both uploads", path, entries)
+		}
+	}
+}
+
+func TestGhostboardFilesArchiveWithoutFiles(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	logger := logrus.New()
+	logger.SetLevel(logrus.ErrorLevel)
+
+	r := SetupRoutes(newFileRouteApp(t, true, false), logger)
+
+	for _, path := range []string{"/ghostboard/team/files.zip", "/api/boards/team/files.zip"} {
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, path, nil))
+		if w.Code != http.StatusNotFound {
+			t.Fatalf("GET %s = %d, want 404 on a board without files: %s", path, w.Code, w.Body.String())
+		}
+
+		var body struct {
+			Error string `json:"error"`
+		}
+		if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+			t.Fatalf("decoding the answer of %s: %v", path, err)
+		}
+		if body.Error != ghostboard.ErrNoFiles.Error() {
+			t.Errorf("GET %s error = %q, want %q", path, body.Error, ghostboard.ErrNoFiles.Error())
+		}
+	}
 }
 
 func TestGhostboardFileRoutesNeedThePIN(t *testing.T) {
@@ -192,6 +269,8 @@ func TestGhostboardFileRoutesNeedThePIN(t *testing.T) {
 		path   string
 	}{
 		{method: http.MethodGet, path: "/ghostboard/lavoro/files"},
+		{method: http.MethodGet, path: "/ghostboard/lavoro/files.zip"},
+		{method: http.MethodGet, path: "/api/boards/lavoro/files.zip"},
 		{method: http.MethodGet, path: "/api/boards/lavoro/files"},
 		{method: http.MethodGet, path: "/ghostboard/lavoro/files/aaaaaaaaaaaaaaaaaaaaaaaaaa"},
 		{method: http.MethodDelete, path: "/ghostboard/lavoro/files/aaaaaaaaaaaaaaaaaaaaaaaaaa"},
@@ -233,6 +312,17 @@ func TestGhostboardFileRoutesNeedThePIN(t *testing.T) {
 	if w := routeUpload(t, r, "/ghostboard/lavoro/files", session.Token, "a.txt", "secret"); w.Code != http.StatusCreated {
 		t.Fatalf("upload with a session = %d, want 201: %s", w.Code, w.Body.String())
 	}
+
+	archive := httptest.NewRequest(http.MethodGet, "/ghostboard/lavoro/files.zip", nil)
+	archive.Header.Set("Authorization", "Bearer "+session.Token)
+	w = httptest.NewRecorder()
+	r.ServeHTTP(w, archive)
+	if w.Code != http.StatusOK {
+		t.Fatalf("archive with a session = %d, want 200: %s", w.Code, w.Body.String())
+	}
+	if entries := routeArchiveEntries(t, w.Body.Bytes()); entries["a.txt"] != "secret" {
+		t.Errorf("archive = %v, want the uploaded file", entries)
+	}
 }
 
 func TestGhostboardFileRoutesAbsentWhenDisabled(t *testing.T) {
@@ -242,7 +332,7 @@ func TestGhostboardFileRoutesAbsentWhenDisabled(t *testing.T) {
 
 	r := SetupRoutes(newFileRouteApp(t, false, false), logger)
 
-	for _, path := range []string{"/ghostboard/team/files", "/api/boards/team/files"} {
+	for _, path := range []string{"/ghostboard/team/files", "/api/boards/team/files", "/ghostboard/team/files.zip"} {
 		w := httptest.NewRecorder()
 		r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, path, nil))
 		if w.Code != http.StatusNotFound {

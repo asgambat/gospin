@@ -6,6 +6,10 @@ server:
   write_timeout_secs: 10
   idle_timeout_secs: 120
   request_timeout_millis: 1000    # per-request timeout applied to the API routes
+  security_headers:
+    enabled: true                 # adds the CSP, nosniff, referrer and permissions headers
+    csp: ""                       # empty = built-in policy (self plus the Alpine, htmx and Tailwind CDN origins)
+    hsts_max_age_secs: 0          # 0 leaves Strict-Transport-Security out; set it behind HTTPS
 data:
   file_path: ./config/data/config.json
   persist_interval_secs: 5
@@ -45,5 +49,7 @@ ghostboard:
   max_total_file_bytes: 5368709120    # bytes of every attachment on the instance (5 GiB)
   file_ttl_secs: 86400                # hard cap on a file's life (24h); the idle clear deletes it earlier
   file_transfer_timeout_secs: 600     # read/write window of one upload or download (10 min); replaces the request timeout on those routes
+  sealed_enabled: true                # sealed boards (client-side encryption) at /ui/sealed/:board and POST /ghostboard/:board/open; false answers 404
+  sealed_burn_tombstone_secs: 86400   # how long a burned name answers 410 (24h); also the idle window of an unopened burn board
     
 

@@ -48,6 +48,9 @@ var (
 	ErrNoSpace = errors.New("not enough storage")
 	// ErrFileTransferTimeout marks a transfer that hit file_transfer_timeout_secs.
 	ErrFileTransferTimeout = errors.New("transfer timeout")
+	// ErrNoFiles marks a board without attachments, which has no archive to
+	// build and no bytes to hand out.
+	ErrNoFiles = errors.New("board has no files")
 )
 
 const (
@@ -148,6 +151,10 @@ func (s *Store) Files(board string) ([]File, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	if err := s.sealedRefusalLocked(board); err != nil {
+		return nil, err
+	}
+
 	state, ok := s.boards[board]
 	if !ok {
 		return []File{}, nil
@@ -166,6 +173,10 @@ func (s *Store) File(board, id string) (File, error) {
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
+	if err := s.sealedRefusalLocked(board); err != nil {
+		return File{}, err
+	}
 
 	state, ok := s.boards[board]
 	if !ok {
@@ -227,6 +238,9 @@ func (s *Store) WriteFile(ctx context.Context, board, name, clientID string, r i
 	}
 	if !s.cfg.Files.Enabled {
 		return File{}, ErrFilesDisabled
+	}
+	if err := s.sealedRefusal(board); err != nil {
+		return File{}, err
 	}
 
 	label, err := SanitizeFileName(name)
@@ -354,6 +368,10 @@ func (s *Store) DeleteFile(board, id, clientID string) error {
 	}
 
 	s.mu.Lock()
+	if err := s.sealedRefusalLocked(board); err != nil {
+		s.mu.Unlock()
+		return err
+	}
 	state, ok := s.boards[board]
 	if !ok {
 		s.mu.Unlock()
@@ -393,6 +411,10 @@ func (s *Store) DeleteFiles(board, clientID string) (int, error) {
 	}
 
 	s.mu.Lock()
+	if err := s.sealedRefusalLocked(board); err != nil {
+		s.mu.Unlock()
+		return 0, err
+	}
 	state, ok := s.boards[board]
 	if !ok || len(state.board.Files) == 0 {
 		s.mu.Unlock()
@@ -720,7 +742,8 @@ func cloneBoard(board Board) Board {
 
 // normalizedBoard makes the attachments of a board an empty slice instead of
 // nil, so the JSON of a board without files carries "files": [] rather than
-// null.
+// null. Mode keeps its zero value for a plain board, which is why the field is
+// omitted and why a file written before sealed boards existed loads unchanged.
 func normalizedBoard(board Board) Board {
 	if board.Files == nil {
 		board.Files = []File{}

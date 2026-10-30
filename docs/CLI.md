@@ -32,7 +32,10 @@ error messages, so no example refers to a name the binary no longer has.
 | `file upload <path>` | Upload one attachment (`-` reads stdin, `-q` prints only the id, `--json`) |
 | `file list` | List the attachments of a board (`--json`) |
 | `file get <id>` | Download one attachment to stdout or to `-o <file>` (`--force` overwrites) |
+| `file get --all` | Download every attachment of a board as one ZIP (`<board>.zip` by default, `-o`, `--force`, `--json`) |
 | `file delete <id>` | Delete one attachment of a board (`--json`, `-q`) |
+| `sealed new [text]` | Create a sealed board, print its link and key (`--burn` on by default, `--json`) |
+| `open` | Open a burn board once, destroying it, and print the decrypted text (`--json`) |
 | `config` | Print the configuration in use (`--paths`, `--json`); no request is made |
 | `pin-hash [pin]` | Print the `ghostboard.pin_hmac` value of a PIN (argument or stdin) |
 | `completion <shell>` | Print a completion script for `bash`, `zsh` or `fish` |
@@ -77,6 +80,7 @@ gb-cli file list -b lavoro
 gb-cli file list -b lavoro --json
 gb-cli file get -b lavoro "$ID" -o ./screenshot.png --force
 gb-cli file get -b lavoro "$ID"            # writes the bytes to stdout
+gb-cli file get -b lavoro --all            # every file as ./lavoro.zip
 gb-cli file delete -b lavoro "$ID"         # remove it from the board
 
 # Script-friendly output and quiet mode
@@ -126,8 +130,9 @@ executable:   /usr/local/bin/gb-cli
 - The help, `version`, `config` and `completion` never contact the server.
 - Exit codes: `0` success, `1` runtime or server error (including `413`), `2` misuse of the command
   line (a conflicting source such as an argument plus `-f` or `-o` plus a file argument, `--stat`
-  with `--json`, a negative `--retry`, a non-positive `--timeout`), `3` the URL does not expose the
-  board API, `4` invalid board name.
+  with `--json`, a negative `--retry`, a non-positive `--timeout`, `open --dry-run`), `3` the URL
+  does not expose the board API, `4` invalid board name, `5` a sealed board was addressed without a
+  usable key.
 
 ## Behaviour notes
 
@@ -182,6 +187,7 @@ The file is looked up next to the executable first (portable installs) and then 
 | `GO_SPIN_BOARD_PIN` | Overrides `pin`; prefer it to `--pin`, which stays in the shell history and in `ps` |
 | `GO_SPIN_BOARD_TIMEOUT_SECS` | Overrides `timeout_secs` |
 | `GO_SPIN_BOARD_TOKEN` | Sent as `Authorization: Bearer <token>` |
+| `GO_SPIN_BOARD_KEY` | Key of a sealed board; prefer it to `--key`, which stays in the shell history and in `ps` |
 | `GO_SPIN_GHOSTBOARD_PIN_SECRET` | Secret `pin-hash` uses to compute the digest (never sent anywhere) |
 
 A key the CLI does not know (`timeout_sec` instead of `timeout_secs`) is reported by `config` as a
@@ -200,7 +206,50 @@ replaced a file value, so a typo can never look like a default that was never ov
 | `GET /api/boards/:board/files` | Tab-separated attachment list (`file list`) |
 | `POST /api/boards/:board/files` | Multipart upload, one part named `file`; answers the created line (`file upload`) |
 | `GET /api/boards/:board/files/:id` | Attachment bytes, streamed to stdout or `-o` (`file get`) |
+| `GET /api/boards/:board/files.zip` | Every attachment of the board as one ZIP (`file get --all`) |
 | `DELETE /api/boards/:board/files/:id` | Delete one attachment, `204 No Content` (`file delete`) |
+| `POST /api/boards/:board` with `X-Board-Mode: sealed` | Write the envelope of a sealed board (`set`, `add` and `sealed new` with a key) |
+| `POST /api/boards/:board/open` | Consume a burn board once and return its envelope (`open`) |
+
+## Sealed boards
+
+A sealed board is encrypted before it leaves the machine: `gb-cli` seals it in Go, so the CLI works
+on a plain-HTTP LAN address where the browser page cannot (WebCrypto needs a secure context).
+
+```bash
+# Create a burn board: the link is the only copy of the key
+gb-cli sealed new -b nota "la password del wifi"
+
+# Create one that stays readable, with a machine-readable report
+gb-cli sealed new -b nota --burn=false --json "nota duratura"
+
+# Write and read with the same key
+gb-cli set -b nota --key "$GB_KEY" "testo aggiornato"
+gb-cli add -b nota --key-file ~/.gb-nota.key "altra riga"
+gb-cli read -b nota --key "$GB_KEY"
+
+# Consume a burn board once: a second open answers 410
+gb-cli open -b nota --key "$GB_KEY"
+```
+
+The key comes from, in order: `--key`, `--key-file`, `GO_SPIN_BOARD_KEY`. Each accepts base64url
+(43 characters), hex (64 characters) or a whole sealed link, so a pasted
+`/ui/sealed/nota#k=...` works. A sealed command without a key exits with `5` and names all three
+sources.
+
+- `sealed new` prints only the link on stdout (the product of the command) and the key plus the
+  warning on stderr; `--json` writes `board`, `mode`, `link`, `key`, `burn` and `bytes` in one object.
+- `read`, `add`, `set` and `follow` take the sealed path as soon as a key is configured: `read`
+  decrypts the envelope (also with `--stat` and `--json`), `add` decrypts, appends and re-seals, and
+  `follow` decrypts every snapshot of a live sealed board.
+- `read` on a burn board is refused, because reading it would consume the note either way: the
+  error points at `open`, which prints the text and reports on stderr that the board is gone.
+- A wrong key, a truncated link or an envelope written for another board all fail with "this key
+  does not open the board"; the CLI never retries a rejected key.
+- A sealed board cannot carry attachments, and a plaintext write to one is refused by the server
+  with `409`. `upload`, `download` and `edit` are not sealed-aware on purpose: `upload` and `edit`
+  write plaintext (and are refused), and `download` would save the envelope rather than the note.
+  Use `read`, `add`, `set` and `open` with a key.
 
 ## Private boards
 
@@ -231,7 +280,9 @@ gb-cli pin-hash 1234
 Attachments need the same session: the CLI trades the PIN once **before** an upload, because a
 streamed body cannot be replayed after a `401`. A public board answers that unlock with `404`, which
 the CLI ignores and proceeds; a `file get` or `file delete` of an unknown id exits `1` with
-`file <id> not found`, which is how a deleted or expired file is reported.
+`file <id> not found`, which is how a deleted or expired file is reported. `file get --all` on a
+board without attachments exits `1` with `board "x" has no files to download` and writes nothing,
+so a script never mistakes an empty archive for a download.
 
 A PIN that is not 4-64 characters is rejected before any request is made, like an invalid board
 name. `gb-cli pin-hash` prints the HMAC-SHA256 of the PIN under `GO_SPIN_GHOSTBOARD_PIN_SECRET`,

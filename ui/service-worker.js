@@ -2,7 +2,7 @@
 // new install overwrites instead of layering on top of the old cache,
 // and so the activate handler below can deterministically prune stale
 // entries left over from previous versions.
-const CACHE_NAME = 'gosspin-ui-v8';
+const CACHE_NAME = 'gosspin-ui-v9';
 
 self.addEventListener('install', event => {
   // Take control of all clients immediately so the new caching strategy
@@ -18,6 +18,7 @@ self.addEventListener('install', event => {
         '/ui/home.js',
         '/ui/ghostboard',
         '/ui/assets/app.js',
+        '/ui/assets/ghostboard-theme.js',
         // Vendored browser libraries: the pages load Alpine, htmx and
         // Tailwind from the server, so an offline reload without these
         // entries would paint an unstyled, script-less page.
@@ -73,6 +74,14 @@ self.addEventListener('activate', event => {
 // assets, theme images, etc.) keeps the cache-first strategy for speed.
 self.addEventListener('fetch', event => {
   const url = new URL(event.request.url);
+
+  // The sealed page stays outside the worker: it holds the decryption key in the
+  // fragment and its ciphertext is a one-time envelope, so neither the page nor
+  // its requests may be replayed from a cache.
+  if (url.pathname === '/ui/sealed' || url.pathname.startsWith('/ui/sealed/')) {
+    return;
+  }
+
   const isGhostboardPage = url.pathname === '/ui/ghostboard' ||
                            url.pathname.startsWith('/ui/ghostboard/');
   const isHTMLorJS = url.pathname === '/ui' ||

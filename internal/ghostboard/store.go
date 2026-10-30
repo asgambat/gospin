@@ -48,12 +48,17 @@ var (
 // boardNamePattern keeps board names URL-safe and filesystem-friendly.
 var boardNamePattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$`)
 
-// Board is a single shared text board with its attachments.
+// Board is a single shared text board with its attachments. Text is the
+// envelope for a sealed board, and Mode and Burn keep their zero value for a
+// plain board, so a persistence file written before sealed boards existed loads
+// unchanged.
 type Board struct {
 	UpdatedAt time.Time `json:"updated_at"`
 	Name      string    `json:"name"`
 	Text      string    `json:"text"`
+	Mode      Mode      `json:"mode,omitempty"`
 	Files     []File    `json:"files"`
+	Burn      bool      `json:"burn,omitempty"`
 	Revision  uint64    `json:"revision"`
 }
 
@@ -71,17 +76,20 @@ type Config struct {
 	FilePath        string
 	Files           FileConfig
 	ClearDelay      time.Duration
+	SealedTombstone time.Duration
 	MaxTextBytes    int
 	PersistInterval time.Duration
+	SealedEnabled   bool
 }
 
 // Store keeps every board in memory and fans changes out to subscribers.
 type Store struct {
-	boards    map[string]*boardState
-	cfg       Config
-	mu        sync.Mutex
-	persistMu sync.Mutex
-	dirty     bool
+	boards     map[string]*boardState
+	tombstones map[string]time.Time
+	cfg        Config
+	mu         sync.Mutex
+	persistMu  sync.Mutex
+	dirty      bool
 }
 
 type boardState struct {
@@ -126,13 +134,20 @@ func New(cfg Config) (*Store, error) {
 	if cfg.PersistInterval <= 0 {
 		return nil, errors.New("ghostboard persist interval must be positive")
 	}
+	if cfg.SealedTombstone < 0 {
+		return nil, errors.New("ghostboard sealed burn tombstone must be positive")
+	}
+	if cfg.SealedTombstone == 0 {
+		cfg.SealedTombstone = DefaultSealedTombstone
+	}
 	if err := cfg.Files.validate(); err != nil {
 		return nil, err
 	}
 
 	store := &Store{
-		cfg:    cfg,
-		boards: make(map[string]*boardState),
+		cfg:        cfg,
+		boards:     make(map[string]*boardState),
+		tombstones: make(map[string]time.Time),
 	}
 
 	if cfg.FilePath != "" {
@@ -176,7 +191,15 @@ func (s *Store) Get(name string) (Board, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	// A burned name is gone, and a burn board that was not opened is refused:
+	// reading it would consume the note before its reader asked for it.
+	if _, burned := s.burnedAtLocked(name); burned {
+		return Board{}, ErrBoardBurned
+	}
 	if state, ok := s.boards[name]; ok {
+		if state.board.Burn {
+			return Board{}, ErrBurnRequiresOpen
+		}
 		return cloneBoard(state.board), nil
 	}
 	return normalizedBoard(Board{Name: name}), nil
@@ -197,7 +220,16 @@ func (s *Store) Update(name, text, clientID string) (Board, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	if _, burned := s.burnedAtLocked(name); burned {
+		return Board{}, ErrBoardBurned
+	}
+
 	state := s.boardLocked(name)
+	if state.board.Mode == ModeSealed {
+		// A plaintext write would silently turn "the server cannot read this"
+		// into a plain board, so it is refused instead of clearing the envelope.
+		return Board{}, ErrPlaintextWriteToSealed
+	}
 	if state.board.Text != text {
 		state.board.Text = text
 		state.board.Revision++
@@ -228,6 +260,15 @@ func (s *Store) Subscribe(name string) (*Subscription, Board, error) {
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
+	if _, burned := s.burnedAtLocked(name); burned {
+		return nil, Board{}, ErrBoardBurned
+	}
+	if state, ok := s.boards[name]; ok && state.board.Burn {
+		// The initial snapshot of the stream would consume the note before a
+		// reader asked for it.
+		return nil, Board{}, ErrBurnRequiresOpen
+	}
 
 	state := s.boardLocked(name)
 	if state.clearTimer != nil {
@@ -290,7 +331,10 @@ func (s *Store) Flush() error {
 		s.mu.Unlock()
 		return nil
 	}
-	doc := fileDocument{Boards: s.persistedBoardsLocked()}
+	doc := fileDocument{
+		Boards:     s.persistedBoardsLocked(),
+		Tombstones: s.tombstonesLocked(),
+	}
 	s.dirty = false
 	s.mu.Unlock()
 
@@ -320,7 +364,8 @@ func (s *Store) MaxTextBytes() int {
 }
 
 type fileDocument struct {
-	Boards []Board `json:"boards"`
+	Boards     []Board     `json:"boards"`
+	Tombstones []tombstone `json:"tombstones,omitempty"`
 }
 
 func (s *Store) load() error {
@@ -344,6 +389,12 @@ func (s *Store) load() error {
 		if len(board.Text) > s.cfg.MaxTextBytes {
 			return fmt.Errorf("board %q in ghostboard file exceeds max_text_bytes", board.Name)
 		}
+		if board.Mode != ModeSealed {
+			// A name or an unknown mode is a plain board: an envelope that does
+			// not claim to be sealed must not be treated as one.
+			board.Mode = ""
+			board.Burn = false
+		}
 		if board.Files, err = validFiles(board.Name, board.Files); err != nil {
 			return err
 		}
@@ -353,8 +404,35 @@ func (s *Store) load() error {
 		}
 	}
 
-	logger.WithComponent("ghostboard").Infof("loaded %d board(s) from %s", len(s.boards), s.cfg.FilePath)
+	for _, mark := range doc.Tombstones {
+		if err := ValidateBoardName(mark.Name); err != nil {
+			return fmt.Errorf("ghostboard file contains an invalid tombstone name %q: %w", mark.Name, err)
+		}
+		if s.tombstoneExpired(mark.BurnedAt) {
+			continue
+		}
+		// A name cannot be both burned and alive: prefer the tombstone, so a
+		// crash in the middle of a burn can never resurrect the note.
+		if _, ok := s.boards[mark.Name]; ok {
+			logger.WithComponent("ghostboard").Warnf("board %q in ghostboard file is also tombstoned: keeping the tombstone and dropping the board", mark.Name)
+			delete(s.boards, mark.Name)
+		}
+		s.tombstones[mark.Name] = mark.BurnedAt
+	}
+
+	logger.WithComponent("ghostboard").Infof("loaded %d board(s) and %d burned name(s) from %s", len(s.boards), len(s.tombstones), s.cfg.FilePath)
 	return nil
+}
+
+// tombstonesLocked returns the live tombstones sorted by name, so the file is
+// stable across flushes.
+func (s *Store) tombstonesLocked() []tombstone {
+	marks := make([]tombstone, 0, len(s.tombstones))
+	for name, burnedAt := range s.tombstones {
+		marks = append(marks, tombstone{Name: name, BurnedAt: burnedAt})
+	}
+	sort.Slice(marks, func(i, j int) bool { return marks[i].Name < marks[j].Name })
+	return marks
 }
 
 func (s *Store) boardLocked(name string) *boardState {
@@ -404,24 +482,51 @@ func (s *Store) scheduleIdleClearLocked(name string, state *boardState) {
 		return
 	}
 
-	state.clearTimer = time.AfterFunc(s.cfg.ClearDelay, func() {
+	// A burn board gets the longer tombstone window: emptying it with the
+	// shorter clear delay would destroy a note before its reader ever opens
+	// the link.
+	delay := s.cfg.ClearDelay
+	if state.board.Mode == ModeSealed && state.board.Burn {
+		delay = s.cfg.SealedTombstone
+	}
+
+	state.clearTimer = time.AfterFunc(delay, func() {
 		s.clearIfIdle(name, seq)
 	})
 }
 
 func (s *Store) clearIfIdle(name string, seq uint64) {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 
 	state, ok := s.boards[name]
 	if !ok || state.clearSeq != seq {
 		// The board was written or rescheduled after this tick was armed: the
 		// newer schedule owns the board now, so this stale tick must not clear it.
+		s.mu.Unlock()
 		return
 	}
 	state.clearTimer = nil
 
 	if len(state.subs) > 0 || (state.board.Text == "" && len(state.board.Files) == 0) {
+		s.mu.Unlock()
+		return
+	}
+
+	// A burn board that was never opened is destroyed instead of emptied: the
+	// note cannot outlive its window, and the name answers as burned from now
+	// on, exactly as if someone had opened it. The tombstone is flushed before
+	// this tick returns, so a restart cannot resurrect the note: the idle burn
+	// keeps the same synchronous-persistence promise Open makes.
+	if state.board.Mode == ModeSealed && state.board.Burn {
+		s.burnLocked(name, state, time.Now().UTC())
+		delete(s.boards, name)
+		s.mu.Unlock()
+		if err := s.Flush(); err != nil {
+			// Flush marked the store dirty again: the persist loop retries,
+			// but the burndown is no longer synchronous.
+			logger.WithComponent("ghostboard").Errorf("persisting the idle burn of board %q: %v", name, err)
+		}
+		logger.WithComponent("ghostboard").Infof("burned sealed board %q after %s without a reader", name, s.cfg.SealedTombstone)
 		return
 	}
 
@@ -433,6 +538,7 @@ func (s *Store) clearIfIdle(name string, seq uint64) {
 	state.board.Revision++
 	state.board.UpdatedAt = time.Now().UTC()
 	s.dirty = true
+	s.mu.Unlock()
 
 	logger.WithComponent("ghostboard").Debugf("cleared idle board %q after %s (%d file(s) removed)", name, s.cfg.ClearDelay, files)
 }

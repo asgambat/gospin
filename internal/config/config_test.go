@@ -892,6 +892,12 @@ func TestGhostboardConfig_WithDefaults(t *testing.T) {
 	if empty.FileTransferTimeout != defaults.FileTransferTimeout {
 		t.Errorf("FileTransferTimeout = %v, want %v", empty.FileTransferTimeout, defaults.FileTransferTimeout)
 	}
+	// SealedEnabled follows FilesEnabled: a bool cannot tell "unset" from an
+	// explicit false, so WithDefaults leaves it alone and LoadConfig supplies the
+	// default through viper.
+	if empty.SealedBurnTombstone != defaults.SealedBurnTombstone {
+		t.Errorf("SealedBurnTombstone = %v, want %v", empty.SealedBurnTombstone, defaults.SealedBurnTombstone)
+	}
 
 	custom := GhostboardConfig{
 		FilePath:            "/tmp/boards.json",
@@ -908,6 +914,7 @@ func TestGhostboardConfig_WithDefaults(t *testing.T) {
 		MaxTotalFileBytes:   8192,
 		FileTTL:             2 * time.Hour,
 		FileTransferTimeout: time.Minute,
+		SealedBurnTombstone: 3 * time.Hour,
 	}
 	if got := custom.WithDefaults(); !reflect.DeepEqual(got, custom) {
 		t.Errorf("WithDefaults() changed a fully configured value: %+v", got)
@@ -949,6 +956,7 @@ func TestConfig_Validate_InvalidGhostboard(t *testing.T) {
 		{name: "persist interval", mutate: func(g *GhostboardConfig) { g.PersistInterval = 0 }},
 		{name: "heartbeat interval", mutate: func(g *GhostboardConfig) { g.HeartbeatInterval = 0 }},
 		{name: "session ttl", mutate: func(g *GhostboardConfig) { g.SessionTTL = 0 }},
+		{name: "sealed burn tombstone", mutate: func(g *GhostboardConfig) { g.SealedBurnTombstone = 0 }},
 		{name: "pin max attempts", mutate: func(g *GhostboardConfig) { g.PINMaxAttempts = 0 }},
 		{name: "pin lockout", mutate: func(g *GhostboardConfig) { g.PINLockout = 0 }},
 		{name: "invalid private board name", mutate: func(g *GhostboardConfig) { g.PrivateBoards = []string{"not a board"} }},
@@ -1033,6 +1041,110 @@ func TestConfig_Validate_ValidPIN(t *testing.T) {
 	}
 }
 
+func TestConfig_Validate_InvalidSecurityHeaders(t *testing.T) {
+	base := func() *Config {
+		return &Config{
+			Server: ServerConfig{
+				Port:            8080,
+				ReadTimeout:     10 * time.Second,
+				WriteTimeout:    10 * time.Second,
+				IdleTimeout:     120 * time.Second,
+				ShutDownTimeout: 5 * time.Second,
+				RequestTimeout:  1000 * time.Millisecond,
+			},
+			Data: DataConfig{
+				FilePath:                 "/tmp/config.json",
+				PersistInterval:          5 * time.Second,
+				SchedulingPoll:           30 * time.Second,
+				RefreshIntervalSecs:      60,
+				StatsRefreshIntervalSecs: 120,
+				ActionsTimeoutSeconds:    30,
+			},
+			Misc:       MiscConfig{SchedulingTZ: "Local"},
+			Ghostboard: DefaultGhostboardConfig(),
+		}
+	}
+
+	tests := []struct {
+		mutate func(*SecurityHeadersConfig)
+		name   string
+	}{
+		{name: "negative hsts max age", mutate: func(s *SecurityHeadersConfig) { s.HSTSMaxAge = -time.Second }},
+		{name: "line break in the policy", mutate: func(s *SecurityHeadersConfig) {
+			s.CSP = "default-src 'self'\r\nX-Injected: 1"
+		}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := base()
+			tt.mutate(&cfg.Server.SecurityHeaders)
+			if err := cfg.validate(); err == nil {
+				t.Fatal("expected a validation error, got nil")
+			}
+		})
+	}
+}
+
+func TestLoadConfig_SecurityHeadersDefaults(t *testing.T) {
+	tempDir := t.TempDir()
+
+	_ = os.Setenv("GO_SPIN_CONFIG_PATH", tempDir)
+	_ = os.Setenv("GO_SPIN_DATA_FILE_PATH", tempDir+"/data/config.json")
+	defer func() {
+		_ = os.Unsetenv("GO_SPIN_CONFIG_PATH")
+		_ = os.Unsetenv("GO_SPIN_DATA_FILE_PATH")
+	}()
+
+	cfg, err := LoadConfig()
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+
+	if !cfg.Server.SecurityHeaders.Enabled {
+		t.Error("SecurityHeaders.Enabled = false, want true")
+	}
+	if cfg.Server.SecurityHeaders.CSP != "" {
+		t.Errorf("SecurityHeaders.CSP = %q, want empty for the built-in policy", cfg.Server.SecurityHeaders.CSP)
+	}
+	if cfg.Server.SecurityHeaders.HSTSMaxAge != 0 {
+		t.Errorf("SecurityHeaders.HSTSMaxAge = %v, want 0 (no HSTS by default)", cfg.Server.SecurityHeaders.HSTSMaxAge)
+	}
+}
+
+func TestLoadConfig_SecurityHeadersEnvOverrides(t *testing.T) {
+	tempDir := t.TempDir()
+	policy := "default-src 'none'; frame-ancestors 'none'"
+
+	_ = os.Setenv("GO_SPIN_CONFIG_PATH", tempDir)
+	_ = os.Setenv("GO_SPIN_DATA_FILE_PATH", tempDir+"/data/config.json")
+	_ = os.Setenv("GO_SPIN_SERVER_SECURITY_HEADERS_ENABLED", "false")
+	_ = os.Setenv("GO_SPIN_SERVER_SECURITY_HEADERS_CSP", policy)
+	_ = os.Setenv("GO_SPIN_SERVER_SECURITY_HEADERS_HSTS_MAX_AGE_SECS", "86400")
+	defer func() {
+		_ = os.Unsetenv("GO_SPIN_CONFIG_PATH")
+		_ = os.Unsetenv("GO_SPIN_DATA_FILE_PATH")
+		_ = os.Unsetenv("GO_SPIN_SERVER_SECURITY_HEADERS_ENABLED")
+		_ = os.Unsetenv("GO_SPIN_SERVER_SECURITY_HEADERS_CSP")
+		_ = os.Unsetenv("GO_SPIN_SERVER_SECURITY_HEADERS_HSTS_MAX_AGE_SECS")
+	}()
+
+	cfg, err := LoadConfig()
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+
+	if cfg.Server.SecurityHeaders.Enabled {
+		t.Error("SecurityHeaders.Enabled = true, want false from the environment")
+	}
+	if cfg.Server.SecurityHeaders.CSP != policy {
+		t.Errorf("SecurityHeaders.CSP = %q, want %q", cfg.Server.SecurityHeaders.CSP, policy)
+	}
+	if cfg.Server.SecurityHeaders.HSTSMaxAge != 24*time.Hour {
+		t.Errorf("SecurityHeaders.HSTSMaxAge = %v, want 24h", cfg.Server.SecurityHeaders.HSTSMaxAge)
+	}
+}
+
 func TestLoadConfig_GhostboardDefaults(t *testing.T) {
 	tempDir := t.TempDir()
 	dataFilePath := tempDir + "/data/config.json"
@@ -1080,6 +1192,12 @@ func TestLoadConfig_GhostboardDefaults(t *testing.T) {
 	if !cfg.Ghostboard.FilesEnabled {
 		t.Error("FilesEnabled = false, want true (attachments are on by default)")
 	}
+	if !cfg.Ghostboard.SealedEnabled {
+		t.Error("SealedEnabled = false, want true (sealed boards are on by default)")
+	}
+	if cfg.Ghostboard.SealedBurnTombstone != defaults.SealedBurnTombstone {
+		t.Errorf("SealedBurnTombstone = %v, want %v", cfg.Ghostboard.SealedBurnTombstone, defaults.SealedBurnTombstone)
+	}
 	if cfg.Ghostboard.MaxFileBytes != defaults.MaxFileBytes {
 		t.Errorf("MaxFileBytes = %d, want %d", cfg.Ghostboard.MaxFileBytes, defaults.MaxFileBytes)
 	}
@@ -1115,6 +1233,8 @@ func TestLoadConfig_GhostboardEnvOverrides(t *testing.T) {
 	_ = os.Setenv("GO_SPIN_GHOSTBOARD_MAX_FILE_BYTES", "1024")
 	_ = os.Setenv("GO_SPIN_GHOSTBOARD_MAX_FILE_COUNT", "4")
 	_ = os.Setenv("GO_SPIN_GHOSTBOARD_FILE_TTL_SECS", "3600")
+	_ = os.Setenv("GO_SPIN_GHOSTBOARD_SEALED_ENABLED", "false")
+	_ = os.Setenv("GO_SPIN_GHOSTBOARD_SEALED_BURN_TOMBSTONE_SECS", "120")
 	defer func() {
 		_ = os.Unsetenv("GO_SPIN_CONFIG_PATH")
 		_ = os.Unsetenv("GO_SPIN_DATA_FILE_PATH")
@@ -1123,6 +1243,8 @@ func TestLoadConfig_GhostboardEnvOverrides(t *testing.T) {
 		_ = os.Unsetenv("GO_SPIN_GHOSTBOARD_MAX_FILE_BYTES")
 		_ = os.Unsetenv("GO_SPIN_GHOSTBOARD_MAX_FILE_COUNT")
 		_ = os.Unsetenv("GO_SPIN_GHOSTBOARD_FILE_TTL_SECS")
+		_ = os.Unsetenv("GO_SPIN_GHOSTBOARD_SEALED_ENABLED")
+		_ = os.Unsetenv("GO_SPIN_GHOSTBOARD_SEALED_BURN_TOMBSTONE_SECS")
 	}()
 
 	cfg, err := LoadConfig()
@@ -1143,5 +1265,11 @@ func TestLoadConfig_GhostboardEnvOverrides(t *testing.T) {
 	}
 	if cfg.Ghostboard.FileTTL != time.Hour {
 		t.Errorf("FileTTL = %v, want 1h", cfg.Ghostboard.FileTTL)
+	}
+	if cfg.Ghostboard.SealedEnabled {
+		t.Error("SealedEnabled = true, want the environment override false")
+	}
+	if cfg.Ghostboard.SealedBurnTombstone != 2*time.Minute {
+		t.Errorf("SealedBurnTombstone = %v, want 2m", cfg.Ghostboard.SealedBurnTombstone)
 	}
 }

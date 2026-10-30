@@ -20,6 +20,8 @@ Welcome to the documentation for **GoSpin**, a Go application for scheduled mana
 | [plans/plan-template.md](plans/plan-template.md) | Template for implementation plans and design documents | Maintainers |
 | [plans/DOCS_REMAINING_WORK.md](plans/DOCS_REMAINING_WORK.md) | Open documentation items that need a maintainer decision | Maintainers |
 | [plans/board-uploads-spec.md](plans/board-uploads-spec.md) | Specification of the ghostboard file attachments: configuration, API, lifecycle, UI and CLI | Maintainers |
+| [plans/zero-knowledge-ghostboard.md](plans/zero-knowledge-ghostboard.md) | Implementation plan for sealed ghostboards: fragment key, client-side encryption and burn-after-read | Maintainers |
+| [plans/sealed-ghostboards-spec.md](plans/sealed-ghostboards-spec.md) | Specification of the sealed board feature: envelope, store lifecycle, API, UI, CLI and acceptance criteria | Maintainers |
 | [.github/branching-strategy.md](../.github/branching-strategy.md) | Branching model, commit conventions, PR size and review rules | Contributors |
 | [.github/pull_request_template.md](../.github/pull_request_template.md) | Pull request checklist | Contributors |
 | [gospin.postman_collection.json](gospin.postman_collection.json) | Postman collection for the HTTP API | Integrators |
@@ -143,6 +145,8 @@ script warns when it detects that.
 | [ADR-0007](ADRs/0007-taskfile-build-frontend.md) | Taskfile as the only build front-end |
 | [ADR-0008](ADRs/0008-ghostboard-pin-protection.md) | PIN protection for private ghostboards |
 | [ADR-0009](ADRs/0009-ghostboard-file-attachments.md) | Board-scoped file attachments, always served as downloads |
+| [ADR-0010](ADRs/0010-ghostboard-zero-knowledge-boards.md) | Zero-knowledge sealed ghostboards: key in the fragment, client-side encryption, burn after read |
+| [ADR-0010](ADRs/0010-ghostboard-zero-knowledge-boards.md) | Zero-knowledge boards with the key in the fragment and burn-after-read |
 
 New records follow [ADRs/adr-template.md](ADRs/adr-template.md) and are added to this table.
 

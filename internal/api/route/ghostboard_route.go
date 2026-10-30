@@ -36,11 +36,12 @@ func NewGhostboardRouter(appCtx *app.App, group *gin.RouterGroup) {
 	group.GET("api/boards/:board", timeoutMiddleware, pinGate, gc.GetText)
 	group.POST("api/boards/:board", timeoutMiddleware, pinGate, gc.SetText)
 
-	// Attachments. The upload and the download carry their own deadline: a
-	// file of hundreds of megabytes needs file_transfer_timeout_secs, not the
-	// per-request timeout of the JSON routes.
+	// Attachments. The upload, the download and the archive carry their own
+	// deadline: a file of hundreds of megabytes needs file_transfer_timeout_secs,
+	// not the per-request timeout of the JSON routes.
 	if cfg.FilesEnabled {
 		group.GET("ghostboard/:board/files", timeoutMiddleware, pinGate, gc.ListFiles)
+		group.GET("ghostboard/:board/files.zip", pinGate, gc.DownloadFilesArchive)
 		group.POST("ghostboard/:board/files", pinGate, gc.UploadFile)
 		group.GET("ghostboard/:board/files/:id", pinGate, gc.DownloadFile)
 		group.DELETE("ghostboard/:board/files/:id", timeoutMiddleware, pinGate, gc.DeleteFile)
@@ -49,6 +50,7 @@ func NewGhostboardRouter(appCtx *app.App, group *gin.RouterGroup) {
 		// The same operations on the plain API: the list and the created file
 		// are tab-separated lines, so a script needs no JSON parser.
 		group.GET("api/boards/:board/files", timeoutMiddleware, pinGate, gc.ListFilesPlain)
+		group.GET("api/boards/:board/files.zip", pinGate, gc.DownloadFilesArchive)
 		group.POST("api/boards/:board/files", pinGate, gc.UploadFilePlain)
 		group.GET("api/boards/:board/files/:id", pinGate, gc.DownloadFile)
 		group.DELETE("api/boards/:board/files/:id", timeoutMiddleware, pinGate, gc.DeleteFile)
@@ -59,4 +61,13 @@ func NewGhostboardRouter(appCtx *app.App, group *gin.RouterGroup) {
 	// token, lock expires the cookie of the browser.
 	group.POST("ghostboard/:board/unlock", timeoutMiddleware, gc.Unlock)
 	group.DELETE("ghostboard/:board/unlock", timeoutMiddleware, gc.Lock)
+
+	// Opening a burn board is a POST: a GET would be consumed by a link preview
+	// or a browser prefetch before the reader saw the note. With sealed boards
+	// disabled the routes are not registered at all, so they answer 404 like
+	// every other unconfigured feature.
+	if cfg.SealedEnabled {
+		group.POST("ghostboard/:board/open", timeoutMiddleware, pinGate, gc.Open)
+		group.POST("api/boards/:board/open", timeoutMiddleware, pinGate, gc.OpenText)
+	}
 }

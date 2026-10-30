@@ -226,6 +226,11 @@
         <footer class="shrink-0 px-3 py-2 border-t flex flex-wrap items-center gap-2 text-xs"
                 style="border-color: var(--card-border); background-color: var(--card-bg); color: var(--fg-color);">
 
+            <!-- Sealed-board entry point: the route injects the link below only
+                 when ghostboard.sealed_enabled. It only navigates to /ui/sealed,
+                 the page that owns the key under its own no-CDN CSP (ADR-0010). -->
+            <!-- SEALED_BOARD_ENTRY -->
+
             <!-- Stats Cards (Left) -->
             <div class="flex items-center gap-2 flex-1 ml-2">
 

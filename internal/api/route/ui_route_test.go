@@ -61,6 +61,40 @@ func TestUIRoute_ServiceWorkerServedWithCorrectHeaders(t *testing.T) {
 	}
 }
 
+// TestUIRoute_GhostboardPageOffersTheFilesArchive pins the archive link of the
+// Files panel to the route the server serves, so the page and the API cannot
+// drift apart without a test noticing.
+func TestUIRoute_GhostboardPageOffersTheFilesArchive(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	t.Chdir("../../..")
+
+	r := gin.New()
+	NewUIRouter(r, GhostboardPageConfig{MaxTextBytes: 16777216, MaxFileBytes: 838860800})
+
+	// The page binds the link to the helper and the helper builds the route,
+	// so both halves are pinned.
+	tests := []struct {
+		path   string
+		needle string
+	}{
+		{path: "/ui/ghostboard", needle: "archiveUrl()"},
+		{path: "/ui/assets/ghostboard.js", needle: "'/files.zip'"},
+	}
+
+	for _, tt := range tests {
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, tt.path, nil))
+
+		if w.Code != http.StatusOK {
+			t.Fatalf("GET %s = %d, want 200", tt.path, w.Code)
+		}
+		if !strings.Contains(w.Body.String(), tt.needle) {
+			t.Errorf("GET %s does not offer the archive of the board (missing %q)", tt.path, tt.needle)
+		}
+	}
+}
+
 func TestUIRoute_ServiceWorkerRegistrationServedWithCorrectHeaders(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 

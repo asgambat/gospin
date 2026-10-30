@@ -2,7 +2,9 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
+	"io/fs"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -16,6 +18,7 @@ import (
 type fakeFiles struct {
 	files    map[string]string
 	names    map[string]string
+	archive  string
 	received string
 	deleted  string
 	mu       sync.Mutex
@@ -33,13 +36,25 @@ func newFakeFiles(t *testing.T) (*fakeFiles, *httptest.Server) {
 func (f *fakeFiles) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	rest := strings.TrimPrefix(r.URL.Path, "/api/boards/")
 	parts := strings.Split(rest, "/")
-	if len(parts) < 2 || parts[1] != "files" {
+	if len(parts) < 2 || (parts[1] != "files" && parts[1] != "files.zip") {
 		http.NotFound(w, r)
 		return
 	}
 
 	f.mu.Lock()
 	defer f.mu.Unlock()
+
+	if len(parts) == 2 && parts[1] == "files.zip" && r.Method == http.MethodGet {
+		if len(f.files) == 0 {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusNotFound)
+			_, _ = w.Write([]byte(`{"error":"board has no files"}`))
+			return
+		}
+		w.Header().Set("Content-Type", "application/zip")
+		_, _ = w.Write([]byte(f.archive))
+		return
+	}
 
 	switch {
 	case len(parts) == 2 && r.Method == http.MethodGet:
@@ -255,6 +270,137 @@ func TestRunFileGetToStdout(t *testing.T) {
 	}
 	if stdout != "to stdout" {
 		t.Errorf("stdout = %q, want the file bytes", stdout)
+	}
+}
+
+func TestRunFileGetAllDefaultsToTheBoardName(t *testing.T) {
+	fake, server := newFakeFiles(t)
+	fake.files["aaaaaaaaaaaaaaaaaaaaaaaaaa"] = "hello"
+	fake.archive = "PK archive bytes"
+
+	t.Chdir(t.TempDir())
+	code, stdout, stderr := runCLI(t, []string{"-u", server.URL, "file", "get", "--all", "-b", "team"}, "")
+	if code != exitOK {
+		t.Fatalf("exit code %d, want 0 (stderr %q)", code, stderr)
+	}
+	if stdout != "" {
+		t.Errorf("stdout = %q, want the archive in the file", stdout)
+	}
+
+	data, err := os.ReadFile("team.zip")
+	if err != nil {
+		t.Fatalf("reading the archive: %v", err)
+	}
+	if string(data) != fake.archive {
+		t.Errorf("archive = %q, want the server bytes", data)
+	}
+	if !strings.Contains(stderr, "files saved to team.zip") {
+		t.Errorf("stderr %q does not confirm the download", stderr)
+	}
+}
+
+func TestRunFileGetAllToFile(t *testing.T) {
+	fake, server := newFakeFiles(t)
+	fake.files["aaaaaaaaaaaaaaaaaaaaaaaaaa"] = "hello"
+	fake.archive = "PK archive"
+
+	target := filepath.Join(t.TempDir(), "board.zip")
+	code, _, stderr := runCLI(t, []string{"-u", server.URL, "file", "get", "--all", "-b", "team", "-o", target}, "")
+	if code != exitOK {
+		t.Fatalf("exit code %d, want 0 (stderr %q)", code, stderr)
+	}
+
+	data, err := os.ReadFile(target)
+	if err != nil {
+		t.Fatalf("reading the archive: %v", err)
+	}
+	if string(data) != fake.archive {
+		t.Errorf("archive = %q, want the server bytes", data)
+	}
+
+	// An existing target is only replaced with --force.
+	code, _, stderr = runCLI(t, []string{"-u", server.URL, "file", "get", "--all", "-b", "team", "-o", target}, "")
+	if code != exitError {
+		t.Fatalf("exit code %d, want %d when the target exists (stderr %q)", code, exitError, stderr)
+	}
+	if !strings.Contains(stderr, "--force") {
+		t.Errorf("stderr %q does not point at --force", stderr)
+	}
+
+	code, _, stderr = runCLI(t, []string{"-u", server.URL, "file", "get", "--all", "-b", "team", "--force", "-o", target}, "")
+	if code != exitOK {
+		t.Errorf("exit code %d with --force, want 0 (stderr %q)", code, stderr)
+	}
+}
+
+func TestRunFileGetAllToStdout(t *testing.T) {
+	fake, server := newFakeFiles(t)
+	fake.files["aaaaaaaaaaaaaaaaaaaaaaaaaa"] = "hello"
+	fake.archive = "PK to stdout"
+
+	code, stdout, stderr := runCLI(t, []string{"-u", server.URL, "file", "get", "--all", "-b", "team", "-o", "-"}, "")
+	if code != exitOK {
+		t.Fatalf("exit code %d, want 0 (stderr %q)", code, stderr)
+	}
+	if stdout != fake.archive {
+		t.Errorf("stdout = %q, want the archive bytes", stdout)
+	}
+}
+
+func TestRunFileGetAllJSON(t *testing.T) {
+	fake, server := newFakeFiles(t)
+	fake.files["aaaaaaaaaaaaaaaaaaaaaaaaaa"] = "hello"
+	fake.archive = "PK archive"
+
+	t.Chdir(t.TempDir())
+	code, stdout, stderr := runCLI(t, []string{"-u", server.URL, "file", "get", "--all", "--json", "-b", "team"}, "")
+	if code != exitOK {
+		t.Fatalf("exit code %d, want 0 (stderr %q)", code, stderr)
+	}
+
+	var report struct {
+		Board string `json:"board"`
+		Path  string `json:"path"`
+		Bytes int64  `json:"bytes"`
+	}
+	if err := json.Unmarshal([]byte(stdout), &report); err != nil {
+		t.Fatalf("decoding %q: %v", stdout, err)
+	}
+	if report.Board != "team" || report.Path != "team.zip" || report.Bytes != int64(len(fake.archive)) {
+		t.Errorf("archive report = %+v, want team.zip of %d bytes", report, len(fake.archive))
+	}
+}
+
+func TestRunFileGetAllEmptyBoard(t *testing.T) {
+	_, server := newFakeFiles(t)
+
+	t.Chdir(t.TempDir())
+	code, stdout, stderr := runCLI(t, []string{"-u", server.URL, "file", "get", "--all", "-b", "team"}, "")
+	if code != exitError {
+		t.Fatalf("exit code %d, want %d (stderr %q)", code, exitError, stderr)
+	}
+	if stdout != "" {
+		t.Errorf("stdout = %q, want nothing", stdout)
+	}
+	if !strings.Contains(stderr, "has no files") {
+		t.Errorf("stderr %q does not say the board is empty", stderr)
+	}
+	if _, err := os.Stat("team.zip"); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("an empty board left a file behind: %v", err)
+	}
+}
+
+func TestRunFileGetAllUsage(t *testing.T) {
+	tests := [][]string{
+		{"file", "get", "--all", "aaaaaaaaaaaaaaaaaaaaaaaaaa"},
+		{"file", "get", "--all", "--json", "-o", "-"},
+	}
+
+	for _, args := range tests {
+		code, _, stderr := runCLI(t, args, "")
+		if code != exitUsage {
+			t.Errorf("%v: exit code %d, want %d (stderr %q)", args, code, exitUsage, stderr)
+		}
 	}
 }
 

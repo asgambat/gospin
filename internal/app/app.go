@@ -57,8 +57,10 @@ func New(cfg *config.Config, repo repository.Repository, store cache.AppStore, r
 	ghostboardStore, err := ghostboard.New(ghostboard.Config{
 		FilePath:        ghostboardCfg.FilePath,
 		ClearDelay:      ghostboardCfg.ClearDelay,
+		SealedTombstone: ghostboardCfg.SealedBurnTombstone,
 		MaxTextBytes:    ghostboardCfg.MaxTextBytes,
 		PersistInterval: ghostboardCfg.PersistInterval,
+		SealedEnabled:   ghostboardCfg.SealedEnabled,
 		Files: ghostboard.FileConfig{
 			// Attachments live next to the persistence file; without one there
 			// is no place to reconcile them at startup, so they stay off.

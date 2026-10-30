@@ -22,6 +22,8 @@ bundler, no transpiler, no `node_modules` and no JavaScript test runner.
 | `ui/index.html` → `ui/assets/app.js` | `/ui` (containers, groups, schedules dashboard) |
 | `ui/home.html` → `ui/home.js` | `/ui/home` (personal dashboard, and the SPA fallback for unhandled `/ui/*`) |
 | `ui/ghostboard.html` → `ui/assets/ghostboard.js` | `/ui/ghostboard[/:board]` (shared text board and its files) |
+| `ui/sealed.html` → `ui/assets/sealed.js` | `/ui/sealed[/:board]` (create and reveal a sealed board; own CSP, no service worker) |
+| `ui/assets/sealed-vector.json` | `/ui/assets/sealed-vector.json` (known-answer vector shared with `internal/sealedcrypto`) |
 | `ui/templates/waiting.html` | waiting page on the second server port (`{{CONTAINER_NAME}}`, `{{REDIRECT_URL}}`) |
 | `ui/assets/**` | `/ui/assets/**` (shared runtime assets, theme backgrounds, PWA manifests) |
 | `ui/assets/vendor/**` | `/ui/assets/vendor/**` (vendored Alpine, htmx and Tailwind builds) |
@@ -58,12 +60,32 @@ bundler, no transpiler, no `node_modules` and no JavaScript test runner.
   and can abort a transfer, which is what the per-file percentage and the cancel button need. One
   file per request, sent one after the other; the server answers `201` with the stored metadata and
   the page prepends it to `files`. Names are rendered with `x-text` and `:download`, never with
-  `x-html`; the delete button asks `window.confirm` per file. The Clear button opens an inline
+  `x-html`; the delete button asks `window.confirm` per file, and **Download all (.zip)** links the
+  one archive route so the whole board moves in a single request. The saved light/dark choice is
+  applied before paint by `ui/assets/ghostboard-theme.js`, a synchronous script in the head:
+  keeping it out of an inline `<script>` is what lets the server's Content-Security-Policy refuse
+  inline scripts. The Clear button opens an inline
   dialog rather than `window.confirm`, because it offers two choices: clear the text only, or clear
   the text and the attachments (`DELETE .../files` followed by the empty text).
 - `applyPayload()` applies `payload.files`, so a peer's upload or delete appears in an open panel
   through the same event stream as the text. `showLock()` and `sessionExpired()` call `resetFiles()`:
   a locked page must not keep the list, and the transfers in flight are aborted.
+- `ui/sealed.html` and `ui/assets/sealed.js` are the only page that handles a decryption key. Rules
+  that follow from that: the page carries its own `Content-Security-Policy`
+  (`middleware.SealedPageContentSecurityPolicy`) with no CDN origin and no `worker-src`, it is served
+  with `Cache-Control: no-store`, it does **not** include `sw-register.js`, and it never writes the
+  key to `localStorage`, `sessionStorage` or a cookie: the key lives in `location.hash` only. A
+  third-party script there could read both the key and the plaintext, which is why the policy is
+  narrower than the dashboard one and why the page loads only the vendored Alpine and its own
+  script. `window.isSecureContext` decides whether decryption is possible at all: outside HTTPS (or
+  `localhost`) the page refuses and prints the equivalent `gb-cli` command. The reveal of a burn
+  board is always a click, never an automatic fetch, and every request uses `cache: "no-store"`.
+  `window.sealedSelfTest()` seals the shared vector with its published IV and compares the result,
+  so the WebCrypto code and `internal/sealedcrypto` cannot drift apart; run it from the browser
+  console or from the end-to-end check. Creation is reached from the other pages: `ui/ghostboard.html`
+  and `ui/home.html` carry a `<!-- SEALED_BOARD_ENTRY -->` marker that the route replaces with a
+  navigation-only link to `/ui/sealed` when `ghostboard.sealed_enabled` is on; the key is never
+  handled by a page whose policy allows remote origins.
 - `ui/assets/app.js` and `ui/home.js` are served as-is (single-line, minified). Edit them directly,
   keep dead code out, and do not rename them without updating the cache-buster paths in
   `internal/api/route/ui_route.go`.
@@ -117,6 +139,8 @@ Alpine core must stay on the same version, and the plugin tag must stay before t
 
 ## PWA and service worker
 
+0. The sealed page is deliberately outside the worker: it is not in the precache list and does not
+   register it, so a burned envelope can never be replayed from a cache.
 1. `ui/service-worker.js` precaches the app shell, the pages, the theme backgrounds and the icons.
    Bump `CACHE_NAME` (`gosspin-ui-vN`) in the same change that adds, removes or renames a precached
    asset, and keep the list in sync with the files that exist.
@@ -154,6 +178,14 @@ Alpine core must stay on the same version, and the plugin tag must stay before t
   Exercise the modal or control you touched and report anything you could not verify.
 - Screenshots: after a visual change, `task screenshots` regenerates `docs/screenshots/` from a
   demo instance instead of a real one. It needs Node and installs Playwright under `.build/`; the
-  fixtures it serves live in `scripts/screenshots/fixtures/`.
+  fixtures it serves live in `scripts/screenshots/fixtures/`. The UI draws its icons with emoji, so
+  a host without an emoji font captures empty boxes: `task screenshots` warns, and either install
+  `fonts-noto-color-emoji` or extract the package into `.build/` and point `FONTCONFIG_FILE` at a
+  config that includes the system one and adds that directory:
+
+  ```bash
+  dpkg-deb -x fonts-noto-color-emoji_2.051-1_all.deb .build/screenshot-fonts/fonts
+  FONTCONFIG_FILE="$PWD/.build/screenshot-fonts/fonts.conf" task screenshots
+  ```
 - Gates before a PR: `go vet ./...`, `golangci-lint run --concurrency=1 ./...`, `go test ./...`
   (at minimum `go test ./internal/api/route` for UI-only changes).

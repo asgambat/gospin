@@ -16,14 +16,16 @@ import (
 
 // fakeFileServer mimics the plain attachment API of the server.
 type fakeFileServer struct {
-	names       map[string]string
-	files       map[string][]byte
-	token       string
-	notFoundRaw string
-	mu          sync.Mutex
-	unlocks     int
-	uploads     int
-	deletes     int
+	names          map[string]string
+	files          map[string][]byte
+	token          string
+	notFoundRaw    string
+	archivePayload string
+	archivePath    string
+	mu             sync.Mutex
+	unlocks        int
+	uploads        int
+	deletes        int
 	// unlockStatus, when set, makes the unlock endpoint answer that status.
 	unlockStatus int
 	requirePIN   bool
@@ -60,7 +62,7 @@ func (f *fakeFileServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	rest := strings.TrimPrefix(r.URL.Path, "/api/boards/")
 	parts := strings.Split(rest, "/")
-	if len(parts) < 2 || parts[1] != "files" {
+	if len(parts) < 2 || (parts[1] != "files" && parts[1] != "files.zip") {
 		http.NotFound(w, r)
 		return
 	}
@@ -81,6 +83,16 @@ func (f *fakeFileServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	switch {
+	case len(parts) == 2 && parts[1] == "files.zip" && r.Method == http.MethodGet:
+		f.archivePath = r.URL.Path
+		if len(f.files) == 0 {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusNotFound)
+			_, _ = w.Write([]byte(`{"error":"` + ghostboard.ErrNoFiles.Error() + `"}`))
+			return
+		}
+		w.Header().Set("Content-Type", "application/zip")
+		_, _ = w.Write([]byte(f.archivePayload))
 	case len(parts) == 2 && r.Method == http.MethodGet:
 		var body strings.Builder
 		for id := range f.files {
@@ -212,6 +224,79 @@ func TestClientDownloadFile(t *testing.T) {
 	}
 	if written != 10 || out.String() != "downloaded" {
 		t.Errorf("DownloadFile() = %d byte(s) %q, want the stored bytes", written, out.String())
+	}
+}
+
+func TestClientDownloadFilesArchive(t *testing.T) {
+	fake, server := newFakeFileServer(t)
+	fake.files["aaaaaaaaaaaaaaaaaaaaaaaaaa"] = []byte("hello")
+	fake.archivePayload = "PK\x05\x06 archive bytes"
+
+	client := newFileClient(t, server.URL, Options{})
+	var out strings.Builder
+	written, err := client.DownloadFilesArchive(context.Background(), "team", &out)
+	if err != nil {
+		t.Fatalf("DownloadFilesArchive() error = %v", err)
+	}
+	if written != int64(len(fake.archivePayload)) || out.String() != fake.archivePayload {
+		t.Errorf("DownloadFilesArchive() = %d byte(s) %q, want the archive bytes", written, out.String())
+	}
+	if fake.archivePath != "/api/boards/team/files.zip" {
+		t.Errorf("requested %q, want the archive route of the board", fake.archivePath)
+	}
+}
+
+func TestClientDownloadFilesArchiveWithoutFiles(t *testing.T) {
+	_, server := newFakeFileServer(t)
+	client := newFileClient(t, server.URL, Options{})
+
+	var out strings.Builder
+	if _, err := client.DownloadFilesArchive(context.Background(), "team", &out); !errors.Is(err, ErrNoFiles) {
+		t.Fatalf("DownloadFilesArchive() error = %v, want ErrNoFiles", err)
+	}
+	if out.Len() != 0 {
+		t.Errorf("DownloadFilesArchive() wrote %d byte(s) for a board without files", out.Len())
+	}
+}
+
+func TestClientDownloadFilesArchiveMissingRoute(t *testing.T) {
+	fake, server := newFakeFileServer(t)
+	fake.notFoundRaw = `{"error":"not found"}`
+	client := newFileClient(t, server.URL, Options{})
+
+	var out strings.Builder
+	_, err := client.DownloadFilesArchive(context.Background(), "team", &out)
+	var endpointErr *EndpointError
+	if !errors.As(err, &endpointErr) {
+		t.Fatalf("DownloadFilesArchive() error = %v, want EndpointError for a missing route", err)
+	}
+}
+
+func TestClientDownloadFilesArchiveUnlocksFirst(t *testing.T) {
+	fake, server := newFakeFileServer(t)
+	fake.requirePIN = true
+	fake.files["aaaaaaaaaaaaaaaaaaaaaaaaaa"] = []byte("secret")
+	fake.archivePayload = "PK archive"
+
+	client := newFileClient(t, server.URL, Options{PIN: "1234"})
+	var out strings.Builder
+	if _, err := client.DownloadFilesArchive(context.Background(), "lavoro", &out); err != nil {
+		t.Fatalf("DownloadFilesArchive() error = %v", err)
+	}
+	if fake.unlocks != 1 {
+		t.Errorf("unlock calls = %d, want 1 before the archive", fake.unlocks)
+	}
+}
+
+func TestClientDownloadFilesArchiveRejectsAnInvalidBoard(t *testing.T) {
+	_, server := newFakeFileServer(t)
+	client := newFileClient(t, server.URL, Options{})
+
+	var out strings.Builder
+	_, err := client.DownloadFilesArchive(context.Background(), "../etc", &out)
+	var boardNameErr *BoardNameError
+	if !errors.As(err, &boardNameErr) {
+		t.Fatalf("DownloadFilesArchive() error = %v, want BoardNameError", err)
 	}
 }
 

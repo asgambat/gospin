@@ -130,6 +130,10 @@ server:
   write_timeout_secs: 10
   idle_timeout_secs: 120
   request_timeout_millis: 1000   # per-request timeout applied to the API routes
+  security_headers:
+    enabled: true                # CSP, nosniff, referrer and permissions headers on every response
+    csp: ""                      # empty = built-in policy for the shipped UI (see Security headers)
+    hsts_max_age_secs: 0         # 0 = no Strict-Transport-Security; set it behind HTTPS
 
 data:
   file_path: ./config/data/config.json
@@ -168,6 +172,8 @@ ghostboard:
   max_total_file_bytes: 5368709120  # bytes of every attachment on the instance (5 GiB)
   file_ttl_secs: 86400           # hard cap on a file's life (24 hours); the idle clear can delete it earlier
   file_transfer_timeout_secs: 600   # read/write window of one upload or download (10 minutes)
+  sealed_enabled: true           # sealed boards at /ui/sealed/<board> and POST /ghostboard/:board/open
+  sealed_burn_tombstone_secs: 86400  # how long a burned name answers 410 (24 hours)
 ```
 
 The directory holding `data.file_path` is created at startup when it does not exist, so a fresh
@@ -209,6 +215,9 @@ published image and `docker-compose.yml` rely on.
 | `server.idle_timeout_secs` | `GO_SPIN_SERVER_IDLE_TIMEOUT_SECS` | `120` |
 | `server.shutdown_timeout_secs` | `GO_SPIN_SERVER_SHUTDOWN_TIMEOUT_SECS` | `5` |
 | `server.request_timeout_millis` | `GO_SPIN_SERVER_REQUEST_TIMEOUT_MILLIS` | `1000` |
+| `server.security_headers.enabled` | `GO_SPIN_SERVER_SECURITY_HEADERS_ENABLED` | `true` |
+| `server.security_headers.csp` | `GO_SPIN_SERVER_SECURITY_HEADERS_CSP` | empty (built-in policy) |
+| `server.security_headers.hsts_max_age_secs` | `GO_SPIN_SERVER_SECURITY_HEADERS_HSTS_MAX_AGE_SECS` | `0` |
 | `server.cors_allowed_origins` | `GO_SPIN_SERVER_CORS_ALLOWED_ORIGINS` | unset |
 
 The last row is the deprecated alias of `misc.cors_allowed_origins`: it is read only when the
@@ -268,6 +277,8 @@ keep it in the environment or an `.env` file that is not committed, never in `co
 | `ghostboard.max_total_file_bytes` | `GO_SPIN_GHOSTBOARD_MAX_TOTAL_FILE_BYTES` | `5368709120` |
 | `ghostboard.file_ttl_secs` | `GO_SPIN_GHOSTBOARD_FILE_TTL_SECS` | `86400` |
 | `ghostboard.file_transfer_timeout_secs` | `GO_SPIN_GHOSTBOARD_FILE_TRANSFER_TIMEOUT_SECS` | `600` |
+| `ghostboard.sealed_enabled` | `GO_SPIN_GHOSTBOARD_SEALED_ENABLED` | `true` |
+| `ghostboard.sealed_burn_tombstone_secs` | `GO_SPIN_GHOSTBOARD_SEALED_BURN_TOMBSTONE_SECS` | `86400` |
 
 `ghostboard.private_boards` is a list, and the environment form takes the board names **separated by
 spaces**, not commas: `GO_SPIN_GHOSTBOARD_PRIVATE_BOARDS="lavoro note"`. A comma stays part of the
@@ -347,6 +358,51 @@ misc:
 still read as a deprecated alias, but `misc.cors_allowed_origins` wins when both are set; a
 conflicting pair is reported with a startup warning that names both values, so an upgrade cannot
 change the allow-list silently.
+
+### Security Headers
+
+Every response carries a Content-Security-Policy plus `X-Content-Type-Options: nosniff`,
+`Referrer-Policy: no-referrer` and a `Permissions-Policy` that turns off the browser features the
+dashboard never uses (camera, microphone, geolocation, payment, USB).
+
+The built-in policy fits the shipped UI and a deployment that still loads the libraries from a CDN:
+
+```text
+default-src 'self';
+script-src 'self' 'unsafe-eval' https://cdn.jsdelivr.net https://unpkg.com https://cdn.tailwindcss.com;
+style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://unpkg.com https://cdn.tailwindcss.com;
+img-src 'self' data: https: http:;
+font-src 'self' data:; connect-src 'self'; media-src 'self'; manifest-src 'self'; worker-src 'self';
+object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'
+```
+
+Alpine and htmx evaluate their expressions with the `Function` constructor, which needs
+`'unsafe-eval'`; Tailwind and Alpine inject style rules and style attributes, which need
+`'unsafe-inline'` for styles only. Scripts themselves stay limited to the three CDN origins, and no
+page carries an inline `<script>`: the ghostboard theme bootstrap lives in
+`ui/assets/ghostboard-theme.js`, so `script-src` never needs `'unsafe-inline'`. The homepage icons
+are resolved to `https://cdn.jsdelivr.net` (or to the absolute URL in `homepage.yaml`, which may be a
+LAN device served over plain HTTP), which is why `img-src` allows both `https:` and `http:`.
+
+```yaml
+server:
+  security_headers:
+    enabled: true
+    csp: "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:"
+    hsts_max_age_secs: 31536000   # only behind HTTPS
+```
+
+Set `csp` to replace the policy with your own; set `enabled: false` to drop the whole set. HSTS is
+sent only when `hsts_max_age_secs` is positive, because a plain-HTTP instance must not pin HTTPS,
+and the operator who configures it is the one terminating TLS.
+
+The waiting server on `server.waiting_server_port` carries the same headers, because the boot page
+it serves while a container starts is a browser-facing page too. That page keeps its redirect loop
+and its style inline, so it gets its own minimal policy (`default-src 'none'`, inline script and
+style, `connect-src 'self'`) instead of the dashboard one; `csp` overrides the dashboard policy
+only, and `enabled: false` still removes the headers from both servers. `frame-ancestors 'none'` stops the
+dashboard from being embedded; loosen that directive in `csp` if you embed it in a homelab
+dashboard.
 
 ### Docker Socket Security
 
@@ -729,11 +785,13 @@ Sections missing from `homepage.yaml` are returned as empty arrays (`services: [
 ### Ghostboard
 | Method | Endpoint | Description |
 | ------ | -------- | ----------- |
-| GET | `/ghostboard/:board` | Read a board's text, revision and last update time |
-| POST | `/ghostboard/:board` | Replace a board's text (JSON, form field or raw body) |
+| GET | `/ghostboard/:board` | Read a board's text, revision and last update time (`mode: "sealed"` boards carry their envelope in `text`) |
+| POST | `/ghostboard/:board` | Replace a board's text (JSON, form field or raw body); `"mode":"sealed"` (or `X-Board-Mode: sealed`) writes an envelope, `"burn":true` (or `X-Board-Burn: true`) makes it destroy itself after the first open |
 | GET | `/ghostboard/:board/events` | Server-Sent Events stream with the current text and every change |
 | GET | `/api/boards/:board` | Read the board text as plain text (unknown boards return an empty `200` body) |
-| POST | `/api/boards/:board` | Replace the board text with the raw request body, byte for byte; `204 No Content` |
+| POST | `/api/boards/:board` | Replace the board text with the raw request body, byte for byte; `204 No Content`. `X-Board-Mode: sealed` and `X-Board-Burn: true` ask for a sealed, burn-after-read board |
+| POST | `/ghostboard/:board/open` | Open a burn board: returns the envelope once, destroys it before answering, `410 Gone` on every later open, `409` for a board that is not a burn board |
+| POST | `/api/boards/:board/open` | Same open on the plain surface: the envelope as `text/plain`, `410 Gone` afterwards |
 | POST | `/ghostboard/:board/unlock` | Trade the PIN of a private board for a session token (body `{"pin":"..."}`); sets the `gb_pin_session` cookie. `404` for a board that is not in `ghostboard.private_boards` |
 | DELETE | `/ghostboard/:board/unlock` | End the session of the browser by expiring its `gb_pin_session` cookie; `204 No Content` |
 | GET | `/ghostboard/:board/files` | List the attachments of a board: `{"files":[{id,name,size,content_type,created_at,expires_at}]}` |
@@ -741,7 +799,9 @@ Sections missing from `homepage.yaml` are returned as empty arrays (`services: [
 | GET | `/ghostboard/:board/files/:id` | Download an attachment as `application/octet-stream`; supports `Range` |
 | DELETE | `/ghostboard/:board/files/:id` | Delete one attachment; `204 No Content`, `404` for an unknown id |
 | DELETE | `/ghostboard/:board/files` | Delete every attachment of the board (the second choice of the Clear dialog); `204 No Content` |
+| GET | `/ghostboard/:board/files.zip` | Every attachment of the board as one ZIP archive; `404` when the board has none |
 | GET | `/api/boards/:board/files` | Same list as one tab-separated line per file: `id`, `name`, `size_bytes`, `expires_at` |
+| GET | `/api/boards/:board/files.zip` | Same archive on the plain surface |
 | POST | `/api/boards/:board/files` | Same upload, answering `201` with the line of the created file |
 | GET | `/api/boards/:board/files/:id` | Same download |
 | DELETE | `/api/boards/:board/files/:id` | Same delete |
@@ -813,6 +873,16 @@ in `gb-cli`. Downloads are always `Content-Disposition: attachment` with `applic
 and `nosniff`, so an uploaded page cannot run on the dashboard origin, and `Range` works, so a large
 download can resume.
 
+The **Download all (.zip)** link of the panel and `gb-cli file get --all` fetch the whole board in
+one request instead (`GET /ghostboard/:board/files.zip`, mirrored on `/api/boards/:board/files.zip`).
+The archive is streamed and has no `Range` support; entries are stored rather than deflated, because
+an attachment is usually a screenshot or another archive already. A second upload named `note.txt`
+becomes `note (2).txt` inside the archive, so extracting it cannot overwrite one file with another,
+and a board without files answers `404` with `{"error":"board has no files"}` instead of an empty
+archive. A board of up to `max_board_file_bytes` needs the transfer window, like any other
+transfer, so a reverse proxy must not time the response out earlier than
+`ghostboard.file_transfer_timeout_secs`.
+
 The lifecycle is the one of the board, not an independent file store:
 
 - an **upload or a delete counts as board activity** and re-arms the idle clear;
@@ -847,6 +917,9 @@ curl http://localhost:8084/api/boards/lavoro/files
 
 # download (the id comes from the listing)
 curl -OJ http://localhost:8084/ghostboard/lavoro/files/<id>
+
+# every attachment of the board as one archive (gb-cli: file get --all)
+curl -OJ http://localhost:8084/ghostboard/lavoro/files.zip
 
 # delete one, or every file of the board
 curl -X DELETE http://localhost:8084/ghostboard/lavoro/files/<id>
@@ -938,6 +1011,93 @@ curl -X POST http://localhost:8084/ghostboard/lavoro \
 # Read the current text
 curl http://localhost:8084/ghostboard/lavoro
 ```
+
+#### Sealed boards
+
+A sealed board is encrypted by the client before it reaches the server: the browser seals it with
+WebCrypto, `gb-cli` seals it in Go, and GoSpin stores one opaque envelope it cannot read. The key
+is 256 random bits and never travels to the server — it lives in the fragment of the link
+(`/ui/sealed/<board>#k=<key>`), which a browser does not send in the request line, the headers or
+the `Referer`.
+
+What this buys and what it does not:
+
+- **It protects the content.** `ghostboard.json`, its backups, a volume snapshot and anyone with
+the Docker socket see ciphertext only. That is the property a PIN cannot offer: ADR-0008 protects
+the route, not the file.
+- **It does not protect the link.** Browser history, the clipboard, a screenshot, browser sync or a
+  chat preview keep the key long after the page is closed. Send the link over a channel you trust.
+- **It does not hide the metadata.** The board name, the envelope size, the write and open times
+  and the client address are all visible to the server. Sealed means the content, not the fact that
+  a board exists and was read.
+- **It does not survive a lost key.** The key exists only in the link and in the copy printed by
+  `gb-cli`. There is no recovery, no escrow and no copy on the server. A sealed board is created
+  sealed and never converted back, and it cannot carry attachments (`409`).
+
+A board is **sealed** or plain for its whole life: the mode is fixed when the first write creates
+it, and a plaintext write to a sealed board is refused with `409` instead of silently replacing the
+envelope. A plain board that already holds text cannot be sealed, because converting it would mean
+reading the plaintext.
+
+```bash
+# Create a sealed board that destroys itself on the first open (the default)
+gb-cli sealed new -b nota "la password del wifi"
+
+# Create one that stays readable; print the report instead of the link
+gb-cli sealed new -b nota --burn=false --json "nota duratura"
+
+# Write again with the same key (the CLI seals before sending)
+gb-cli set -b nota --key "$GB_KEY" "testo aggiornato"
+
+# Read it, or consume a burn board exactly once
+gb-cli read -b nota --key-file ~/.gb-nota.key
+gb-cli open -b nota --key "$GB_KEY"
+```
+
+The key comes from `--key`, then `--key-file`, then `GO_SPIN_BOARD_KEY`; each accepts base64url,
+hex or a whole sealed link. Without a key a sealed command exits with `5`.
+
+**Burn after read** is a server-side destroy, not a checkbox the page remembers. Opening is
+`POST /ghostboard/:board/open`: the store takes the envelope, marks the board burned, persists that
+fact before the body leaves the server and only then answers. A second open, a restart, a reload or
+a cached response all get `410 Gone`. A plain `GET` of an unopened burn board answers `409` and
+reveals nothing, and so does its event stream, because the initial snapshot would consume the note
+before a reader asked for it. The name stays a tombstone for `sealed_burn_tombstone_secs`, then it
+becomes an unknown board (`404`) and is free again. An unopened burn board keeps its envelope for
+the same window instead of the shorter `clear_delay_secs`, so a note is not emptied before it is
+read.
+
+Anyone holding the link can burn a board without reading it, and a wrong key or a truncated link
+still burns the note: the server cannot check whether the reader decrypted it. That is why the page
+opens on a deliberate click and never on load.
+
+```bash
+# What the API does, if you would rather not use the CLI
+curl -X POST http://localhost:8084/ghostboard/nota \
+  -H 'Content-Type: application/json' \
+  -d '{"text":"{\"v\":1,\"iv\":\"...\",\"ct\":\"...\"}","mode":"sealed","burn":true}'
+
+# the envelope, once
+curl -X POST http://localhost:8084/api/boards/nota/open
+```
+
+The envelope is `{"v":1,"iv":"…","ct":"…"}` in base64url, AES-256-GCM with the board name as
+additional authenticated data (`gospin-sealed-v1|<board>`), so an envelope copied under another
+board name fails to decrypt. `ghostboard.max_text_bytes` bounds the **envelope**, which is about a
+third larger than the plaintext after base64: the page and the CLI show the effective plaintext
+limit instead of letting the server answer `413` after a long note.
+
+**HTTPS is required for the page.** `crypto.subtle` exists only in a secure context, so
+`http://192.168.1.10:8084/ui/sealed/nota` cannot decrypt and the page says so, pointing at `gb-cli`
+(which has no such limit because it encrypts in Go). The page also loads nothing from another
+origin — its Content-Security-Policy has no CDN — and stays out of the service worker, so a burned
+envelope cannot be replayed from a cache. Set `ghostboard.sealed_enabled: false` to remove the page
+and the `open` routes (`404`) and refuse sealed writes; already stored envelopes stay readable.
+
+Creation stays one click away: with sealed boards on, the ghostboard page and the dashboard footer
+show a *Create a sealed board* link that opens `/ui/sealed`. The link only navigates — the key is
+still minted, used and forgotten entirely inside the sealed page, which never loads anything the
+dashboard's policy allows — and the link disappears with the feature when `sealed_enabled` is off.
 
 #### Plain-text board API for CLIs
 
