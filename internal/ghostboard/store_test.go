@@ -504,6 +504,10 @@ func TestStartPersistenceFlushesAndStops(t *testing.T) {
 	dir := t.TempDir()
 	cfg := testConfig(dir)
 	cfg.PersistInterval = 10 * time.Millisecond
+	// This test waits for the persistence loop, not for the idle clear. The
+	// 30ms delay of testConfig is shorter than the first flush can take on a
+	// loaded machine, and a board cleared before that flush is never written.
+	cfg.ClearDelay = time.Minute
 
 	store, err := New(cfg)
 	if err != nil {

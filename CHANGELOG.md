@@ -3,11 +3,12 @@
 All notable changes to GoSpin are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project
-follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html). The file starts with the work
-that has not been released yet; changes shipped in earlier releases are described by the git tags
-and their commits.
+follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html). The top section collects the
+work that has not been released yet; every release below lists what shipped in it.
 
 ## [Unreleased]
+
+## [0.1.2] - 2026-10-30
 
 ### Added
 
@@ -28,25 +29,59 @@ and their commits.
   bare `http(s)` URLs or email addresses) through a Preview/Edit toggle. Raw HTML stays text, other
   link schemes stay literal, and a board over 262 144 characters shows a notice instead of being
   rendered.
-- `CHANGELOG.md` itself, so a release no longer has to reconstruct its own history.
-- `docs/FRONTEND.md`: UI file/route map, Alpine.js conventions, PWA and service-worker rules.
-- `docs/CLI.md`: full `gb-cli` reference, extracted from the README.
-- Five screenshots in `docs/screenshots/` regenerated from a demo instance: containers, groups,
-  schedules, homepage and ghostboard.
-- Eight architecture decision records under `docs/ADRs/`: polling scheduler, ghostboard over SSE,
-  homepage and actions proxy, build metadata and version bump, `gb-cli` as a separate binary, JSON
-  persistence with dirty tracking, the Taskfile as the only build front-end, and board-scoped file
-  attachments.
-- `scripts/screenshots/` and `task screenshots`: one command regenerates `docs/screenshots/` from
-  a demo instance (memory runtime, fictional fixtures) with Playwright's Chromium, which is
-  installed under `.build/` on first use so the application build stays free of a Node toolchain.
-- `docs/plans/DOCS_REMAINING_WORK.md`: the documentation items that still need a maintainer
-  decision.
+
+### Changed
+
+- The UI no longer loads Alpine, htmx or Tailwind from a CDN. The libraries are vendored under
+  `ui/assets/vendor/`, served by the binary with the same content-hash cache busting and precached
+  by the service worker, so the dashboard, the homepage and the ghostboard work on a LAN without
+  internet access.
+- Ghostboard PIN sessions are signed with a key derived from `GO_SPIN_GHOSTBOARD_PIN_SECRET` and
+  the PIN digest (`v2` tokens), so changing `ghostboard.pin_hmac` revokes every open session at
+  once instead of leaving it valid until `session_ttl_secs`. `POST /ghostboard/:board/unlock`
+  answers `404` for a board that is not in `ghostboard.private_boards`.
+
+### Fixed
+
+- Ghostboard: an event stream opened on a private board kept delivering its text after
+  `session_ttl_secs`. The stream now re-checks the session on every event and every heartbeat and
+  ends with a `locked` event, which brings the PIN form back in the page while keeping the locally
+  typed text.
+- Ghostboard: a rejected unlock was silent in the logs and a `429` lockout reached the page without
+  its duration. A failed attempt now logs the board and the client address (never the PIN, which
+  is a guess of a secret), and the page shows how many seconds the lockout lasts.
+
+## [0.1.1] - 2026-10-29
+
+### Added
+
 - Ghostboard PIN protection: the boards listed in `ghostboard.private_boards` need one shared PIN
   (4-64 characters) for reading and writing, the page shows a lock form, and the PIN is stored only
   as an HMAC keyed by `GO_SPIN_GHOSTBOARD_PIN_SECRET`. `POST /ghostboard/:board/unlock` returns a
   signed session token, failed attempts are throttled per address, and `gb-cli` gains `--pin`,
   `GO_SPIN_BOARD_PIN` and the `pin-hash` command (ADR-0008).
+
+## [0.1.0] - 2026-10-28
+
+### Added
+
+- `gb-cli` (`cmd/board`, built by `task build:cli`): the shell client of the boards, with `add`,
+  `set`, `read`, `upload`, `download`, `follow`, `edit`, `config`, `completion` and `version`, its
+  own configuration resolution (flags, `GO_SPIN_BOARD_*` and a config file) and the same build
+  metadata as the server (ADR-0005).
+- `CHANGELOG.md` itself, so a release no longer has to reconstruct its own history.
+- `docs/FRONTEND.md`: UI file/route map, Alpine.js conventions, PWA and service-worker rules.
+- `docs/CLI.md`: full `gb-cli` reference, extracted from the README.
+- Five screenshots in `docs/screenshots/` regenerated from a demo instance: containers, groups,
+  schedules, homepage and ghostboard.
+- Seven architecture decision records under `docs/ADRs/`: polling scheduler, ghostboard over SSE,
+  homepage and actions proxy, build metadata and version bump, `gb-cli` as a separate binary, JSON
+  persistence with dirty tracking and the Taskfile as the only build front-end.
+- `scripts/screenshots/` and `task screenshots`: one command regenerates `docs/screenshots/` from
+  a demo instance (memory runtime, fictional fixtures) with Playwright's Chromium, which is
+  installed under `.build/` on first use so the application build stays free of a Node toolchain.
+- `docs/plans/DOCS_REMAINING_WORK.md`: the documentation items that still need a maintainer
+  decision.
 
 ### Changed
 
@@ -69,14 +104,6 @@ and their commits.
   favicon, the service worker, the `/` redirect and the rule for adding a theme.
 - `docs/ARCHITECTURE.md` documents the homepage/actions proxy and the Cosmos import instead of
   leaving them out of the component deep dive.
-- The UI no longer loads Alpine, htmx or Tailwind from a CDN. The libraries are vendored under
-  `ui/assets/vendor/`, served by the binary with the same content-hash cache busting and precached
-  by the service worker, so the dashboard, the homepage and the ghostboard work on a LAN without
-  internet access.
-- Ghostboard PIN sessions are signed with a key derived from `GO_SPIN_GHOSTBOARD_PIN_SECRET` and
-  the PIN digest (`v2` tokens), so changing `ghostboard.pin_hmac` revokes every open session at
-  once instead of leaving it valid until `session_ttl_secs`. `POST /ghostboard/:board/unlock`
-  answers `404` for a board that is not in `ghostboard.private_boards`.
 - `config/config.yaml` and the README document the keys the code actually reads:
   `data.scheduling_enabled`, `data.scheduling_poll_interval_secs`, `server.request_timeout_millis`,
   `data.refresh_interval_secs`, `data.stats_refresh_interval_secs`,
@@ -90,13 +117,6 @@ and their commits.
 
 ### Fixed
 
-- Ghostboard: an event stream opened on a private board kept delivering its text after
-  `session_ttl_secs`. The stream now re-checks the session on every event and every heartbeat and
-  ends with a `locked` event, which brings the PIN form back in the page while keeping the locally
-  typed text.
-- Ghostboard: a rejected unlock was silent in the logs and a `429` lockout reached the page without
-  its duration. A failed attempt now logs the board and the client address (never the PIN, which
-  is a guess of a secret), and the page shows how many seconds the lockout lasts.
 - Homepage: a `settings.theme` value the UI does not ship (for example `default`) left the page
   without its CSS variables, i.e. unstyled. The theme is now normalized to `auto` when the config is
   loaded, and the page also falls back to `auto` for a name it does not know.
