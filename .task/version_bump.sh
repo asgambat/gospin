@@ -10,7 +10,7 @@ NEW="${1:-}"
 OLD="$(tr -d '[:space:]' < "$VERSION_FILE" 2>/dev/null || true)"
 
 if [ -z "$NEW" ]; then
-  echo "ERROR: specify the new version, e.g. task version:bump -- 0.1.2"
+  echo "ERROR: specify the new version, e.g. task version:bump -- 0.1.3"
   echo "Current version: ${OLD:-unknown}"
   exit 1
 fi
@@ -21,7 +21,7 @@ if [ -z "$OLD" ]; then
 fi
 
 if ! printf '%s' "$NEW" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
-  echo "ERROR: version '$NEW' is not in MAJOR.MINOR.PATCH form (e.g. 0.1.2)"
+  echo "ERROR: version '$NEW' is not in MAJOR.MINOR.PATCH form (e.g. 0.1.3)"
   echo "Current version: $OLD"
   exit 1
 fi
@@ -72,7 +72,7 @@ VERSION_FILES=(
 echo "Bumping $OLD → $NEW across all files..."
 
 # Escape the dots so sed treats them as literal characters rather than
-# "any character" (0.1.2 → 0\.0\.12). Bash parameter expansion keeps the
+# "any character" (0.1.3 → 0\.0\.12). Bash parameter expansion keeps the
 # number of backslashes exact; piping through sed's own replacement syntax
 # doubles them and the pattern stops matching anything.
 OLD_ESC="${OLD//./\\.}"

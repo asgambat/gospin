@@ -296,9 +296,9 @@ tasks:
         silent: true
 
   version:bump:
-    desc: 'Bump version, commit, and tag (usage: task version:bump -- 0.1.2)'
+    desc: 'Bump version, commit, and tag (usage: task version:bump -- 0.1.3)'
     cmds:
       - bash .task/version_bump.sh "{{.CLI_ARGS}}"
     preconditions:
       - sh: '[ -n "{{.CLI_ARGS}}" ]'
-        msg: "Usage: task version:bump -- <new-version>  (e.g. task version:bump -- 0.1.2)"
+        msg: "Usage: task version:bump -- <new-version>  (e.g. task version:bump -- 0.1.3)"
