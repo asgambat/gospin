@@ -59,6 +59,18 @@ func New(cfg *config.Config, repo repository.Repository, store cache.AppStore, r
 		ClearDelay:      ghostboardCfg.ClearDelay,
 		MaxTextBytes:    ghostboardCfg.MaxTextBytes,
 		PersistInterval: ghostboardCfg.PersistInterval,
+		Files: ghostboard.FileConfig{
+			// Attachments live next to the persistence file; without one there
+			// is no place to reconcile them at startup, so they stay off.
+			Enabled:         ghostboardCfg.FilesEnabled && ghostboardCfg.FilesRoot() != "",
+			Root:            ghostboardCfg.FilesRoot(),
+			MaxFileBytes:    ghostboardCfg.MaxFileBytes,
+			MaxBoardBytes:   ghostboardCfg.MaxBoardFileBytes,
+			MaxTotalBytes:   ghostboardCfg.MaxTotalFileBytes,
+			MaxFileCount:    ghostboardCfg.MaxFileCount,
+			TTL:             ghostboardCfg.FileTTL,
+			TransferTimeout: ghostboardCfg.FileTransferTimeout,
+		},
 	})
 	if err != nil {
 		logger.WithComponent("app").Errorf("cannot initialize ghostboard store: %v", err)

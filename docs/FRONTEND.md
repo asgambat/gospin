@@ -8,9 +8,10 @@ bundler, no transpiler, no `node_modules` and no JavaScript test runner.
 
 - Write plain JavaScript (ES2020+) and HTML only. No TypeScript, JSX/TSX, React, Vue, Svelte or any
   compile step.
-- Alpine.js 3, htmx 1.9.10 and Tailwind 2.2.19 are loaded from the CDNs pinned in the HTML. Adding
-  any other library requires maintainer approval — everything under `ui/` also ships to offline PWA
-  users.
+- Alpine.js 3.17.5, htmx 1.9.10 and Tailwind 2.2.19 are **vendored** under `ui/assets/vendor/`
+  and served by the Go binary: no page may load a script, stylesheet or font from a CDN, because
+  the UI has to work on a LAN without internet access. Adding any other library requires
+  maintainer approval and the same treatment.
 - Style with Tailwind utility classes and the existing `theme-<name>` body classes; avoid inline
   styles except for values driven by configuration (e.g. font size from `settings`).
 
@@ -20,23 +21,71 @@ bundler, no transpiler, no `node_modules` and no JavaScript test runner.
 | ---- | --------- |
 | `ui/index.html` → `ui/assets/app.js` | `/ui` (containers, groups, schedules dashboard) |
 | `ui/home.html` → `ui/home.js` | `/ui/home` (personal dashboard, and the SPA fallback for unhandled `/ui/*`) |
-| `ui/ghostboard.html` → `ui/assets/ghostboard.js` | `/ui/ghostboard[/:board]` (shared text board) |
+| `ui/ghostboard.html` → `ui/assets/ghostboard.js` | `/ui/ghostboard[/:board]` (shared text board and its files) |
 | `ui/templates/waiting.html` | waiting page on the second server port (`{{CONTAINER_NAME}}`, `{{REDIRECT_URL}}`) |
 | `ui/assets/**` | `/ui/assets/**` (shared runtime assets, theme backgrounds, PWA manifests) |
+| `ui/assets/vendor/**` | `/ui/assets/vendor/**` (vendored Alpine, htmx and Tailwind builds) |
 | `ui/service-worker.js` | `/ui/service-worker.js` (one hour cache, `Service-Worker-Allowed: /`) |
 | `ui/sw-register.js` | `/ui/sw-register.js` (one hour cache) |
 | `ui/assets/vite.ico` | `/favicon.ico` (one day cache) |
 | - | `/` redirects to `/ui` |
 
-- The Go server appends a content hash (`?v=...`) to the `app.js`, `home.js` and `ghostboard.js`
-  script tags: keep the script tags pointing at the served paths.
+- The Go server appends a content hash (`?v=...`) to the `app.js`, `home.js`, `ghostboard.js` and
+  vendored library tags: keep the tags pointing at the served paths. The list of rewritten
+  references lives in `internal/api/route/ui_route.go`, so a new `<script>` or `<link>` needs an
+  entry there or it will be cached for a year without a version.
+- `ui/ghostboard.html` has a **Preview** toggle: `ghostboardMarkdown()` in `ui/assets/ghostboard.js`
+  renders headings, lists, fenced code, blockquotes, rules, tables with column alignment, emphasis,
+  inline code, `[text](url)` links and bare `http(s)` URLs and email addresses. The preview is built
+  from escaped text and rendered with `x-html`, so it must never gain an HTML passthrough: the
+  renderer escapes first and only then adds its own tags. Generated tags are stashed as placeholders
+  while the inline passes run, so a URL in a link label is not autolinked into a nested anchor and
+  emphasis is not applied inside code. Table rows split on pipes that are neither escaped (`\\|`) nor
+  inside a code span. Renders are debounced and skipped above `GHOSTBOARD_PREVIEW_MAX_CHARS`
+  (262 144) so a multi-megabyte board cannot freeze the tab; the preview is refreshed from
+  `applyPayload()`, so a remote change updates it too.
 - `ui/ghostboard.html` renders the board and, for a board listed in `ghostboard.private_boards`,
   a PIN form in its place. The page loads the board state before opening the `EventSource`, so a
   locked board never leaves a stream retrying against a `401`; when a save answers `401` the form
-  comes back and the locally typed text is kept until the unlock writes it.
+  comes back and the locally typed text is kept until the unlock writes it. The server ends the
+  stream with a `locked` event when the session expires: the page listens for it and shows the
+  same form through `sessionExpired()`, so it must stay a single handler. A `429` on the unlock
+  carries `retry_after_secs` and the page shows how long the lockout lasts.
+- `ui/ghostboard.html` carries the **📎 Files** panel above the textarea. It is available in edit
+  and preview mode, hidden while the page is locked, and driven by `data-max-file-bytes` that
+  `serveGhostboardPage` injects (an empty value means the server disabled attachments and the panel
+  stays hidden). Uploads use `XMLHttpRequest`, not `fetch`: only XHR reports `upload.onprogress`
+  and can abort a transfer, which is what the per-file percentage and the cancel button need. One
+  file per request, sent one after the other; the server answers `201` with the stored metadata and
+  the page prepends it to `files`. Names are rendered with `x-text` and `:download`, never with
+  `x-html`; the delete button asks `window.confirm` per file. The Clear button opens an inline
+  dialog rather than `window.confirm`, because it offers two choices: clear the text only, or clear
+  the text and the attachments (`DELETE .../files` followed by the empty text).
+- `applyPayload()` applies `payload.files`, so a peer's upload or delete appears in an open panel
+  through the same event stream as the text. `showLock()` and `sessionExpired()` call `resetFiles()`:
+  a locked page must not keep the list, and the transfers in flight are aborted.
 - `ui/assets/app.js` and `ui/home.js` are served as-is (single-line, minified). Edit them directly,
   keep dead code out, and do not rename them without updating the cache-buster paths in
   `internal/api/route/ui_route.go`.
+
+### Vendored libraries
+
+| File | Library | Source |
+| ---- | ------- | ------ |
+| `ui/assets/vendor/alpine-3.17.5.min.js` | Alpine.js 3.17.5 | `npm alpinejs@3.17.5`, `dist/cdn.min.js` |
+| `ui/assets/vendor/alpine-collapse-3.17.5.min.js` | Alpine collapse plugin 3.17.5 | `npm @alpinejs/collapse@3.17.5`, `dist/cdn.min.js` |
+| `ui/assets/vendor/htmx-1.9.10.min.js` | htmx 1.9.10 | `npm htmx.org@1.9.10`, `dist/htmx.min.js` |
+| `ui/assets/vendor/tailwind-2.2.19.min.css` | Tailwind 2.2.19 (full build) | `npm tailwindcss@2.2.19`, `dist/tailwind.min.css` |
+
+Tailwind is the full pre-built stylesheet (~2.9 MB), which is the price of no toolchain and no
+CDN; the browser and the service worker cache it once. Upgrading a library means: download the new
+file with its version in the name, update the tags in `index.html`, `home.html` and
+`ghostboard.html`, update the constants in `internal/api/route/ui_route.go`, add the file to the
+precache list in `ui/service-worker.js` and bump its `CACHE_NAME`. The Alpine collapse plugin and
+Alpine core must stay on the same version, and the plugin tag must stay before the core one.
+`ui/assets/vendor/NOTICES.md` records versions and licenses: keep it in step with the files.
+`TestUIRoute_PagesLoadNoExternalAssets` fails if a page goes back to a CDN, and
+`TestUIRoute_ServiceWorkerPrecacheFilesExist` fails if the install list and the files disagree.
 
 ## Alpine.js components
 

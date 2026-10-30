@@ -28,7 +28,7 @@ func GhostboardPIN(auth *ghostboard.Authenticator) gin.HandlerFunc {
 		if board == "" {
 			board = ghostboard.DefaultBoard
 		}
-		if !auth.IsPrivate(board) || auth.ValidToken(sessionToken(c)) {
+		if !auth.IsPrivate(board) || auth.ValidToken(ghostboard.SessionToken(c.Request)) {
 			c.Next()
 			return
 		}
@@ -38,27 +38,4 @@ func GhostboardPIN(auth *ghostboard.Authenticator) gin.HandlerFunc {
 			"board": board,
 		})
 	}
-}
-
-// sessionToken returns the session token carried by a request, the bearer one
-// taking precedence over the cookie.
-func sessionToken(c *gin.Context) string {
-	if token := bearerToken(c.GetHeader("Authorization")); token != "" {
-		return token
-	}
-	cookie, err := c.Cookie(ghostboard.SessionCookie)
-	if err != nil {
-		return ""
-	}
-	return strings.TrimSpace(cookie)
-}
-
-// bearerToken extracts the credential of an "Authorization: Bearer" header,
-// returning an empty string for any other scheme.
-func bearerToken(header string) string {
-	const prefix = "Bearer "
-	if len(header) <= len(prefix) || !strings.EqualFold(header[:len(prefix)], prefix) {
-		return ""
-	}
-	return strings.TrimSpace(header[len(prefix):])
 }

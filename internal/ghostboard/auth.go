@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"net/http"
 	"strconv"
 	"strings"
 	"sync"
@@ -31,8 +32,9 @@ const (
 	MinSecretLength = 16
 
 	// tokenVersion tags the session token format, so a future change rejects
-	// the tokens of the previous format instead of misreading them.
-	tokenVersion = "v1"
+	// the tokens of the previous format instead of misreading them. Version 2
+	// signs with a key derived from the PIN digest, which version 1 did not.
+	tokenVersion = "v2"
 
 	// pinDigestPrefix and sessionPrefix keep the two uses of the secret apart:
 	// a session token can never be a valid PIN digest and vice versa.
@@ -41,6 +43,10 @@ const (
 
 	// sessionParts is the number of dot-separated fields of a session token.
 	sessionParts = 3
+
+	// sessionKeyPrefix separates the key that signs the session tokens from
+	// the other uses of the secret.
+	sessionKeyPrefix = "gospin-ghostboard-session-key:"
 
 	// lockoutCap bounds the backoff, so a client that keeps failing is slowed
 	// down without being locked out forever.
@@ -142,9 +148,12 @@ type Authenticator struct {
 	private map[string]struct{}
 	limiter *pinLimiter
 	now     func() time.Time
-	digest  []byte
-	secret  []byte
-	ttl     time.Duration
+	// sessionKey signs the session tokens. It is derived from the secret and
+	// the PIN digest, so rotating the PIN revokes every session at once.
+	sessionKey string
+	digest     []byte
+	secret     []byte
+	ttl        time.Duration
 }
 
 // NewAuthenticator validates the PIN settings and builds the gate.
@@ -177,10 +186,11 @@ func NewAuthenticator(cfg AuthConfig) (*Authenticator, error) {
 	}
 
 	return &Authenticator{
-		digest:  digest,
-		secret:  []byte(cfg.Secret),
-		private: private,
-		ttl:     cfg.SessionTTL,
+		digest:     digest,
+		secret:     []byte(cfg.Secret),
+		private:    private,
+		sessionKey: sessionKeyFrom(cfg.Secret, hex.EncodeToString(digest)),
+		ttl:        cfg.SessionTTL,
 		limiter: &pinLimiter{
 			entries: make(map[string]*pinAttempts),
 			max:     cfg.MaxAttempts,
@@ -258,7 +268,7 @@ func (a *Authenticator) Unlock(ip, pin string) (UnlockResult, error) {
 func (a *Authenticator) IssueToken() (string, time.Time) {
 	expires := a.now().Add(a.ttl)
 	payload := tokenVersion + "." + strconv.FormatInt(expires.Unix(), 10)
-	return payload + "." + signHex(string(a.secret), sessionPrefix+payload), expires
+	return payload + "." + signHex(a.sessionKey, sessionPrefix+payload), expires
 }
 
 // ValidToken reports whether token was issued by this server and has not
@@ -279,7 +289,7 @@ func (a *Authenticator) ValidToken(token string) bool {
 	}
 
 	payload := parts[0] + "." + parts[1]
-	if !hmac.Equal([]byte(parts[2]), []byte(signHex(string(a.secret), sessionPrefix+payload))) {
+	if !hmac.Equal([]byte(parts[2]), []byte(signHex(a.sessionKey, sessionPrefix+payload))) {
 		return false
 	}
 
@@ -291,6 +301,39 @@ func signHex(secret, message string) string {
 	mac := hmac.New(sha256.New, []byte(secret))
 	mac.Write([]byte(message))
 	return hex.EncodeToString(mac.Sum(nil))
+}
+
+// sessionKeyFrom derives the key that signs the session tokens from the secret
+// and the hex PIN digest. A new PIN therefore revokes the sessions issued for
+// the previous one, which is what makes rotating a leaked PIN enough, while a
+// restart with unchanged configuration keeps the open sessions alive.
+func sessionKeyFrom(secret, digestHex string) string {
+	return signHex(secret, sessionKeyPrefix+digestHex)
+}
+
+// SessionToken returns the session token carried by a request: the bearer
+// token of the Authorization header, which scripts and gb-cli send, takes
+// precedence over the cookie, which is what the browser can send (EventSource
+// and navigator.sendBeacon cannot set a header).
+func SessionToken(r *http.Request) string {
+	if token := bearerToken(r.Header.Get("Authorization")); token != "" {
+		return token
+	}
+	cookie, err := r.Cookie(SessionCookie)
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(cookie.Value)
+}
+
+// bearerToken extracts the credential of an "Authorization: Bearer" header,
+// returning an empty string for any other scheme.
+func bearerToken(header string) string {
+	const prefix = "Bearer "
+	if len(header) <= len(prefix) || !strings.EqualFold(header[:len(prefix)], prefix) {
+		return ""
+	}
+	return strings.TrimSpace(header[len(prefix):])
 }
 
 // pinLimiter throttles failed PIN attempts per client address. It is keyed by

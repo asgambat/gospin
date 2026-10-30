@@ -52,17 +52,34 @@ type DataConfig struct {
 
 // GhostboardConfig tunes the shared-text boards served at /ui/ghostboard.
 type GhostboardConfig struct {
-	FilePath          string
-	PINHMAC           string
-	PINSecret         string
-	PrivateBoards     []string
-	ClearDelay        time.Duration
-	MaxTextBytes      int
-	PersistInterval   time.Duration
-	HeartbeatInterval time.Duration
-	SessionTTL        time.Duration
-	PINMaxAttempts    int
-	PINLockout        time.Duration
+	FilePath            string
+	PINHMAC             string
+	PINSecret           string
+	PrivateBoards       []string
+	ClearDelay          time.Duration
+	MaxTextBytes        int
+	PersistInterval     time.Duration
+	HeartbeatInterval   time.Duration
+	SessionTTL          time.Duration
+	PINMaxAttempts      int
+	PINLockout          time.Duration
+	FilesEnabled        bool
+	MaxFileBytes        int64
+	MaxFileCount        int
+	MaxBoardFileBytes   int64
+	MaxTotalFileBytes   int64
+	FileTTL             time.Duration
+	FileTransferTimeout time.Duration
+}
+
+// FilesRoot returns the directory holding the attachments, one sub-directory
+// per board. It sits next to the persistence file, so the whole ghostboard
+// state stays together and no separate path has to be configured.
+func (g GhostboardConfig) FilesRoot() string {
+	if g.FilePath == "" {
+		return ""
+	}
+	return filepath.Join(filepath.Dir(g.FilePath), "files")
 }
 
 const (
@@ -73,6 +90,13 @@ const (
 	defaultGhostboardSessionTTLSecs      = 28800
 	defaultGhostboardPINMaxAttempts      = 5
 	defaultGhostboardPINLockoutSecs      = 60
+
+	defaultGhostboardMaxFileBytes            = 838860800 // 800 MiB
+	defaultGhostboardMaxFileCount            = 10
+	defaultGhostboardMaxBoardFileBytes       = 2147483648 // 2 GiB
+	defaultGhostboardMaxTotalFileBytes       = 5368709120 // 5 GiB
+	defaultGhostboardFileTTLSecs             = 86400      // 24 hours
+	defaultGhostboardFileTransferTimeoutSecs = 600        // 10 minutes
 )
 
 // DefaultGhostboardConfig returns the defaults documented in config.yaml.
@@ -85,6 +109,14 @@ func DefaultGhostboardConfig() GhostboardConfig {
 		SessionTTL:        defaultGhostboardSessionTTLSecs * time.Second,
 		PINMaxAttempts:    defaultGhostboardPINMaxAttempts,
 		PINLockout:        defaultGhostboardPINLockoutSecs * time.Second,
+
+		FilesEnabled:        true,
+		MaxFileBytes:        defaultGhostboardMaxFileBytes,
+		MaxFileCount:        defaultGhostboardMaxFileCount,
+		MaxBoardFileBytes:   defaultGhostboardMaxBoardFileBytes,
+		MaxTotalFileBytes:   defaultGhostboardMaxTotalFileBytes,
+		FileTTL:             defaultGhostboardFileTTLSecs * time.Second,
+		FileTransferTimeout: defaultGhostboardFileTransferTimeoutSecs * time.Second,
 	}
 }
 
@@ -112,6 +144,24 @@ func (g GhostboardConfig) WithDefaults() GhostboardConfig {
 	}
 	if g.PINLockout <= 0 {
 		g.PINLockout = defaults.PINLockout
+	}
+	if g.MaxFileBytes <= 0 {
+		g.MaxFileBytes = defaults.MaxFileBytes
+	}
+	if g.MaxFileCount <= 0 {
+		g.MaxFileCount = defaults.MaxFileCount
+	}
+	if g.MaxBoardFileBytes <= 0 {
+		g.MaxBoardFileBytes = defaults.MaxBoardFileBytes
+	}
+	if g.MaxTotalFileBytes <= 0 {
+		g.MaxTotalFileBytes = defaults.MaxTotalFileBytes
+	}
+	if g.FileTTL <= 0 {
+		g.FileTTL = defaults.FileTTL
+	}
+	if g.FileTransferTimeout <= 0 {
+		g.FileTransferTimeout = defaults.FileTransferTimeout
 	}
 	return g
 }
@@ -176,6 +226,13 @@ func LoadConfig() (*Config, error) {
 	viper.SetDefault("ghostboard.session_ttl_secs", defaultGhostboardSessionTTLSecs)
 	viper.SetDefault("ghostboard.pin_max_attempts", defaultGhostboardPINMaxAttempts)
 	viper.SetDefault("ghostboard.pin_lockout_secs", defaultGhostboardPINLockoutSecs)
+	viper.SetDefault("ghostboard.files_enabled", true)
+	viper.SetDefault("ghostboard.max_file_bytes", defaultGhostboardMaxFileBytes)
+	viper.SetDefault("ghostboard.max_file_count", defaultGhostboardMaxFileCount)
+	viper.SetDefault("ghostboard.max_board_file_bytes", defaultGhostboardMaxBoardFileBytes)
+	viper.SetDefault("ghostboard.max_total_file_bytes", defaultGhostboardMaxTotalFileBytes)
+	viper.SetDefault("ghostboard.file_ttl_secs", defaultGhostboardFileTTLSecs)
+	viper.SetDefault("ghostboard.file_transfer_timeout_secs", defaultGhostboardFileTransferTimeoutSecs)
 
 	// Environment variables automatically override config file values
 	viper.AutomaticEnv()
@@ -249,6 +306,14 @@ func LoadConfig() (*Config, error) {
 			SessionTTL:        time.Duration(viper.GetInt("ghostboard.session_ttl_secs")) * time.Second,
 			PINMaxAttempts:    viper.GetInt("ghostboard.pin_max_attempts"),
 			PINLockout:        time.Duration(viper.GetInt("ghostboard.pin_lockout_secs")) * time.Second,
+
+			FilesEnabled:        viper.GetBool("ghostboard.files_enabled"),
+			MaxFileBytes:        viper.GetInt64("ghostboard.max_file_bytes"),
+			MaxFileCount:        viper.GetInt("ghostboard.max_file_count"),
+			MaxBoardFileBytes:   viper.GetInt64("ghostboard.max_board_file_bytes"),
+			MaxTotalFileBytes:   viper.GetInt64("ghostboard.max_total_file_bytes"),
+			FileTTL:             time.Duration(viper.GetInt("ghostboard.file_ttl_secs")) * time.Second,
+			FileTransferTimeout: time.Duration(viper.GetInt("ghostboard.file_transfer_timeout_secs")) * time.Second,
 		},
 
 		Misc: MiscConfig{
@@ -393,7 +458,38 @@ func (c *Config) validate() error {
 	if err := c.Ghostboard.validatePIN(); err != nil {
 		return err
 	}
+	if err := c.Ghostboard.validateFiles(); err != nil {
+		return err
+	}
 
+	return nil
+}
+
+// validateFiles checks the attachment limits. They are validated even when
+// files_enabled is false, so turning the feature on can never fail at runtime
+// on a value nobody looked at.
+func (g GhostboardConfig) validateFiles() error {
+	if g.MaxFileBytes <= 0 {
+		return fmt.Errorf("ghostboard.max_file_bytes must be positive")
+	}
+	if g.MaxFileCount <= 0 {
+		return fmt.Errorf("ghostboard.max_file_count must be positive")
+	}
+	if g.MaxBoardFileBytes <= 0 {
+		return fmt.Errorf("ghostboard.max_board_file_bytes must be positive")
+	}
+	if g.MaxTotalFileBytes <= 0 {
+		return fmt.Errorf("ghostboard.max_total_file_bytes must be positive")
+	}
+	if g.MaxFileBytes > g.MaxBoardFileBytes || g.MaxBoardFileBytes > g.MaxTotalFileBytes {
+		return fmt.Errorf("ghostboard file limits must not decrease: max_file_bytes <= max_board_file_bytes <= max_total_file_bytes")
+	}
+	if g.FileTTL <= 0 {
+		return fmt.Errorf("ghostboard.file_ttl_secs must be positive")
+	}
+	if g.FileTransferTimeout <= 0 {
+		return fmt.Errorf("ghostboard.file_transfer_timeout_secs must be positive")
+	}
 	return nil
 }
 

@@ -113,6 +113,9 @@ func registerCommandFlags(flags *flag.FlagSet, opts *options, command string) {
 		flags.BoolVar(&opts.diff, "diff", false, "print only what a revision added")
 	case "config":
 		flags.BoolVar(&opts.paths, "paths", false, "list the configuration files looked for")
+	case "file":
+		flags.StringVar(&opts.output, "o", "", "output file (file get)")
+		flags.BoolVar(&opts.force, "force", false, "overwrite an existing file (file get)")
 	}
 }
 
@@ -173,7 +176,7 @@ func splitCommand(args []string) (string, []string, error) {
 // isCommand reports whether token is one of the subcommands.
 func isCommand(token string) bool {
 	switch token {
-	case "add", "set", "read", "upload", "download", "follow", "edit", "config", "completion", "version", "pin-hash":
+	case "add", "set", "read", "upload", "download", "follow", "edit", "file", "config", "completion", "version", "pin-hash":
 		return true
 	default:
 		return false

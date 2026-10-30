@@ -36,6 +36,25 @@ func NewGhostboardRouter(appCtx *app.App, group *gin.RouterGroup) {
 	group.GET("api/boards/:board", timeoutMiddleware, pinGate, gc.GetText)
 	group.POST("api/boards/:board", timeoutMiddleware, pinGate, gc.SetText)
 
+	// Attachments. The upload and the download carry their own deadline: a
+	// file of hundreds of megabytes needs file_transfer_timeout_secs, not the
+	// per-request timeout of the JSON routes.
+	if cfg.FilesEnabled {
+		group.GET("ghostboard/:board/files", timeoutMiddleware, pinGate, gc.ListFiles)
+		group.POST("ghostboard/:board/files", pinGate, gc.UploadFile)
+		group.GET("ghostboard/:board/files/:id", pinGate, gc.DownloadFile)
+		group.DELETE("ghostboard/:board/files/:id", timeoutMiddleware, pinGate, gc.DeleteFile)
+		group.DELETE("ghostboard/:board/files", timeoutMiddleware, pinGate, gc.DeleteFiles)
+
+		// The same operations on the plain API: the list and the created file
+		// are tab-separated lines, so a script needs no JSON parser.
+		group.GET("api/boards/:board/files", timeoutMiddleware, pinGate, gc.ListFilesPlain)
+		group.POST("api/boards/:board/files", pinGate, gc.UploadFilePlain)
+		group.GET("api/boards/:board/files/:id", pinGate, gc.DownloadFile)
+		group.DELETE("api/boards/:board/files/:id", timeoutMiddleware, pinGate, gc.DeleteFile)
+		group.DELETE("api/boards/:board/files", timeoutMiddleware, pinGate, gc.DeleteFiles)
+	}
+
 	// Session handling of a protected board: unlock trades the PIN for a signed
 	// token, lock expires the cookie of the browser.
 	group.POST("ghostboard/:board/unlock", timeoutMiddleware, gc.Unlock)

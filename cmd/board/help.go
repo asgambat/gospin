@@ -30,6 +30,7 @@ Commands:
   download [file]   Save a board to a file (default <board>.txt, - writes stdout)
   follow            Print the board and every change as it happens (Ctrl-C to stop)
   edit              Edit a board with $VISUAL or $EDITOR and write it back
+  file <action>     Work with the files of a board: upload, list, get or delete
   config            Print the configuration in use (no request is made)
   pin-hash [pin]    Print the ghostboard.pin_hmac value of a PIN
   completion <sh>   Print a completion script (bash, zsh or fish)
@@ -51,8 +52,8 @@ Flags:
       --json             Write a machine-readable result on stdout
   -f <file>              File to read the text from, repeatable (add, set)
       --dry-run          Show what would change without writing (add, set, upload)
-  -o <file>              Output file (download)
-      --force            Overwrite an existing file (download)
+  -o <file>              Output file (download, file get)
+      --force            Overwrite an existing file (download, file get)
       --stat             Print the revision and the update time (read)
       --diff             Print only what a revision added (follow)
       --paths            List the configuration files looked for (config)
@@ -64,6 +65,19 @@ Input:
   it is not read as a flag: {program} add -- "-2 righe".
   add puts a newline before the new text when the board does not already end
   with one, so the addition never glues onto the last line.
+
+Files:
+  A board also carries attachments. One file per request, so a multi-file
+  upload is a loop in the shell:
+    {program} file upload -b lavoro ./shot.png
+    {program} file list -b lavoro
+    {program} file get -b lavoro <id> -o ./shot.png
+    {program} file delete -b lavoro <id>
+  file upload prints the id of the stored file (-q prints only the id), file
+  list prints id, name, size and expiry, file get writes the bytes to stdout
+  unless -o names a file, and file delete removes one file by id. An attachment
+  follows the life of its board: it is deleted with the text when the board is
+  cleared, and never outlives ghostboard.file_ttl_secs.
 
 Output:
   read, "download -" and follow write the board text to stdout; confirmations
@@ -105,6 +119,10 @@ Examples:
   {program} download -b lavoro -o /tmp/lavoro.txt
   {program} follow -b lavoro --diff
   {program} edit -b lavoro
+  {program} file upload -b lavoro ./screenshot.png
+  {program} file list -b lavoro --json
+  {program} file get -b lavoro <id> -o /tmp/screenshot.png
+  {program} file delete -b lavoro <id>
   {program} read -b lavoro                # uses the pin from the configuration
   GO_SPIN_BOARD_PIN=1234 {program} follow -b lavoro
   {program} pin-hash 1234

@@ -34,7 +34,8 @@ disagree, this file wins.
 | `.github/` | Workflows, branch/PR conventions and the per-area agent instruction supplements |
 | `Taskfile.yml` | The only build front-end (see Build Commands) |
 
-The UI is plain HTML + JavaScript (Alpine.js, htmx and Tailwind loaded from CDNs). There is
+The UI is plain HTML + JavaScript (Alpine.js, htmx and Tailwind vendored under
+`ui/assets/vendor` and served by the binary, so the pages work on a LAN without internet). There is
 **no `package.json`, no Node toolchain, no TypeScript and no JS build step** in this repo; the UI
 rules (files → routes, Alpine patterns, PWA and service worker, UI testing) are in
 [docs/FRONTEND.md](docs/FRONTEND.md).
@@ -46,8 +47,8 @@ and never touches the application build or the shipped assets.
 ## Build Commands
 
 `Taskfile.yml` is the only build front-end; there is no Makefile. The legacy Tailwind
-`tailwind-install`/`css` targets went away with it — the UI loads Tailwind from a CDN, so
-nothing compiles CSS locally and `task install` only installs air.
+`tailwind-install`/`css` targets went away with it — the UI ships the vendored Tailwind build
+(`ui/assets/vendor/`), so nothing compiles CSS locally and `task install` only installs air.
 
 ```bash
 # Toolchain prerequisites

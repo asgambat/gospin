@@ -19,6 +19,7 @@ Welcome to the documentation for **GoSpin**, a Go application for scheduled mana
 | [PRDs/prd-template.md](PRDs/prd-template.md) | Template for product requirement documents | Maintainers |
 | [plans/plan-template.md](plans/plan-template.md) | Template for implementation plans and design documents | Maintainers |
 | [plans/DOCS_REMAINING_WORK.md](plans/DOCS_REMAINING_WORK.md) | Open documentation items that need a maintainer decision | Maintainers |
+| [plans/board-uploads-spec.md](plans/board-uploads-spec.md) | Specification of the ghostboard file attachments: configuration, API, lifecycle, UI and CLI | Maintainers |
 | [.github/branching-strategy.md](../.github/branching-strategy.md) | Branching model, commit conventions, PR size and review rules | Contributors |
 | [.github/pull_request_template.md](../.github/pull_request_template.md) | Pull request checklist | Contributors |
 | [gospin.postman_collection.json](gospin.postman_collection.json) | Postman collection for the HTTP API | Integrators |
@@ -121,7 +122,7 @@ containers, hosts and schedules), and the README embeds them under
 | [groups.png](screenshots/groups.png) | Groups tab: containers per group and group-level start/stop |
 | [schedules.png](screenshots/schedules.png) | Schedules tab: start and stop windows per container or group |
 | [home.png](screenshots/home.png) | Homepage: services, bookmarks and proxied actions defined in `homepage.yaml` |
-| [ghostboard.png](screenshots/ghostboard.png) | Ghostboard: a shared text board with live updates and no login |
+| [ghostboard.png](screenshots/ghostboard.png) | Ghostboard: a shared text board with live updates, files and no login |
 
 Regenerate them with `task screenshots` (`scripts/screenshots/`): it builds the server, runs it on the
 memory runtime with the fictional fixtures in `scripts/screenshots/fixtures/`, and captures the five
@@ -141,6 +142,7 @@ script warns when it detects that.
 | [ADR-0006](ADRs/0006-json-persistence-dirty-cache.md) | JSON data file with an in-memory cache and dirty tracking |
 | [ADR-0007](ADRs/0007-taskfile-build-frontend.md) | Taskfile as the only build front-end |
 | [ADR-0008](ADRs/0008-ghostboard-pin-protection.md) | PIN protection for private ghostboards |
+| [ADR-0009](ADRs/0009-ghostboard-file-attachments.md) | Board-scoped file attachments, always served as downloads |
 
 New records follow [ADRs/adr-template.md](ADRs/adr-template.md) and are added to this table.
 

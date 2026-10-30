@@ -48,11 +48,12 @@ var (
 // boardNamePattern keeps board names URL-safe and filesystem-friendly.
 var boardNamePattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$`)
 
-// Board is a single shared text board.
+// Board is a single shared text board with its attachments.
 type Board struct {
 	UpdatedAt time.Time `json:"updated_at"`
 	Name      string    `json:"name"`
 	Text      string    `json:"text"`
+	Files     []File    `json:"files"`
 	Revision  uint64    `json:"revision"`
 }
 
@@ -64,9 +65,11 @@ type Event struct {
 }
 
 // Config holds the store settings. All fields are required except FilePath,
-// which enables persistence when set.
+// which enables persistence when set, and Files, which disables attachments
+// when Enabled is false.
 type Config struct {
 	FilePath        string
+	Files           FileConfig
 	ClearDelay      time.Duration
 	MaxTextBytes    int
 	PersistInterval time.Duration
@@ -123,6 +126,9 @@ func New(cfg Config) (*Store, error) {
 	if cfg.PersistInterval <= 0 {
 		return nil, errors.New("ghostboard persist interval must be positive")
 	}
+	if err := cfg.Files.validate(); err != nil {
+		return nil, err
+	}
 
 	store := &Store{
 		cfg:    cfg,
@@ -136,6 +142,15 @@ func New(cfg Config) (*Store, error) {
 			}
 		}
 		if err := store.load(); err != nil {
+			return nil, err
+		}
+	}
+
+	if cfg.Files.Enabled {
+		if err := os.MkdirAll(cfg.Files.Root, dirPerm); err != nil {
+			return nil, fmt.Errorf("create ghostboard files directory %s: %w", cfg.Files.Root, err)
+		}
+		if err := store.ReconcileFiles(); err != nil {
 			return nil, err
 		}
 	}
@@ -162,9 +177,9 @@ func (s *Store) Get(name string) (Board, error) {
 	defer s.mu.Unlock()
 
 	if state, ok := s.boards[name]; ok {
-		return state.board, nil
+		return cloneBoard(state.board), nil
 	}
-	return Board{Name: name}, nil
+	return normalizedBoard(Board{Name: name}), nil
 }
 
 // Update stores a new text for the board and broadcasts it to every subscriber.
@@ -201,7 +216,7 @@ func (s *Store) Update(name, text, clientID string) (Board, error) {
 
 	s.scheduleIdleClearLocked(name, state)
 
-	return state.board, nil
+	return cloneBoard(state.board), nil
 }
 
 // Subscribe registers an event stream for the board and returns the current
@@ -227,7 +242,7 @@ func (s *Store) Subscribe(name string) (*Subscription, Board, error) {
 	}
 	state.subs[sub] = struct{}{}
 
-	return sub, state.board, nil
+	return sub, cloneBoard(state.board), nil
 }
 
 // StartPersistence periodically writes dirty boards to disk until ctx is
@@ -249,6 +264,9 @@ func (s *Store) StartPersistence(ctx context.Context) {
 				}
 				return
 			case <-ticker.C:
+				if err := s.SweepFiles(); err != nil {
+					logger.WithComponent("ghostboard").Errorf("ghostboard file sweep failed: %v", err)
+				}
 				if err := s.Flush(); err != nil {
 					logger.WithComponent("ghostboard").Errorf("ghostboard flush failed: %v", err)
 				}
@@ -326,8 +344,11 @@ func (s *Store) load() error {
 		if len(board.Text) > s.cfg.MaxTextBytes {
 			return fmt.Errorf("board %q in ghostboard file exceeds max_text_bytes", board.Name)
 		}
+		if board.Files, err = validFiles(board.Name, board.Files); err != nil {
+			return err
+		}
 		s.boards[board.Name] = &boardState{
-			board: board,
+			board: normalizedBoard(board),
 			subs:  make(map[*Subscription]struct{}),
 		}
 	}
@@ -363,9 +384,10 @@ func (s *Store) unsubscribe(sub *Subscription) {
 	close(sub.events)
 }
 
-// scheduleIdleClearLocked (re)arms the idle clear of a board. The text survives
-// clear_delay after the last write or the last subscriber leaving, whichever
-// happens last; a board with an open stream or no text is never scheduled.
+// scheduleIdleClearLocked (re)arms the idle clear of a board. The text and the
+// attachments survive clear_delay after the last write or the last subscriber
+// leaving, whichever happens last; a board with an open stream or nothing to
+// clear is never scheduled.
 func (s *Store) scheduleIdleClearLocked(name string, state *boardState) {
 	if state.clearTimer != nil {
 		state.clearTimer.Stop()
@@ -378,7 +400,7 @@ func (s *Store) scheduleIdleClearLocked(name string, state *boardState) {
 	state.clearSeq++
 	seq := state.clearSeq
 
-	if len(state.subs) > 0 || state.board.Text == "" {
+	if len(state.subs) > 0 || (state.board.Text == "" && len(state.board.Files) == 0) {
 		return
 	}
 
@@ -399,22 +421,28 @@ func (s *Store) clearIfIdle(name string, seq uint64) {
 	}
 	state.clearTimer = nil
 
-	if len(state.subs) > 0 || state.board.Text == "" {
+	if len(state.subs) > 0 || (state.board.Text == "" && len(state.board.Files) == 0) {
 		return
 	}
 
+	// Text and attachments share one life: an idle board is cleared whole.
+	files := len(state.board.Files)
+	s.removeBoardFilesLocked(state)
 	state.board.Text = ""
+	state.board.Files = nil
 	state.board.Revision++
 	state.board.UpdatedAt = time.Now().UTC()
 	s.dirty = true
 
-	logger.WithComponent("ghostboard").Debugf("cleared idle board %q after %s", name, s.cfg.ClearDelay)
+	logger.WithComponent("ghostboard").Debugf("cleared idle board %q after %s (%d file(s) removed)", name, s.cfg.ClearDelay, files)
 }
 
 func (s *Store) persistedBoardsLocked() []Board {
 	boards := make([]Board, 0, len(s.boards))
 	for _, state := range s.boards {
-		if state.board.Text == "" {
+		// A board with attachments but no text is still stored: the files
+		// follow the board, not its text.
+		if state.board.Text == "" && len(state.board.Files) == 0 {
 			continue
 		}
 		boards = append(boards, state.board)

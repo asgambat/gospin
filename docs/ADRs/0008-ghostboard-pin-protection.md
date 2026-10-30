@@ -48,9 +48,11 @@ One shared PIN — set in configuration, never per board — protects the boards
   be brute-forced in milliseconds from a copied configuration file; the secret is what makes the
   digest useless on its own. `gb-cli pin-hash` prints the value.
 - **The PIN is traded for a stateless session token** by `POST /ghostboard/:board/unlock`
-  (`v1.<expiry>.<hmac>`). The browser gets it as an HttpOnly, `SameSite=Strict` cookie, scripts get
+  (`v2.<expiry>.<hmac>`). The browser gets it as an HttpOnly, `SameSite=Strict` cookie, scripts get
   it in the response body and send it as `Authorization: Bearer`. The token carries its expiry and
-  its signature, so a restart keeps the open sessions alive and nothing has to be stored.
+  its signature, so a restart keeps the open sessions alive and nothing has to be stored. The
+  signature is keyed with a value derived from the secret and the PIN digest, so replacing
+  `ghostboard.pin_hmac` revokes every session issued for the old PIN.
 - **Failures are throttled per client address**, `pin_max_attempts` before a `pin_lockout_secs`
   lockout that doubles on every further batch of failures, up to an hour. The counter is keyed on
   the connection address, never on `X-Forwarded-For`, which the client controls.
@@ -81,7 +83,8 @@ One shared PIN — set in configuration, never per board — protects the boards
   deployment that disables the lockout or ignores HTTPS has no protection left.
 - **NEG-004**: Changing the secret invalidates every digest and every open session at once, and an
   expired session brings the lock form back while the page is open (the text typed locally is kept
-  and written back after unlocking).
+  and written back after unlocking). Changing only the PIN revokes the sessions issued for the old
+  one, but still needs a restart, since `private_boards` and `pin_hmac` are read at startup.
 
 ## Alternatives Considered
 
@@ -147,6 +150,13 @@ One shared PIN — set in configuration, never per board — protects the boards
 - **IMP-005**: `ghostboard.pin_hmac`, `ghostboard.pin_secret`, `ghostboard.private_boards`,
   `ghostboard.session_ttl_secs`, `ghostboard.pin_max_attempts` and `ghostboard.pin_lockout_secs`
   are the knobs; the README documents each with its default and environment override.
+- **IMP-006**: The `v2` token is signed with `HMAC(pin_secret, sessionKeyPrefix + pin_hmac)`, so the
+  digest is part of the key and rotating the PIN is the revocation path. The event stream re-checks
+  the session on every change and heartbeat and ends with a `locked` event, because the middleware
+  alone would let an open stream outlive its token.
+  `POST /ghostboard/:board/unlock` answers `404` for a board that is not private, and every
+  rejected attempt is logged with the board and the client address, never with the tried PIN, which
+  is a guess of a secret and may be a typo of a credential used elsewhere.
 
 ## References
 

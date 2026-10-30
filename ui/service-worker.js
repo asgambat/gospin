@@ -2,7 +2,7 @@
 // new install overwrites instead of layering on top of the old cache,
 // and so the activate handler below can deterministically prune stale
 // entries left over from previous versions.
-const CACHE_NAME = 'gosspin-ui-v7';
+const CACHE_NAME = 'gosspin-ui-v8';
 
 self.addEventListener('install', event => {
   // Take control of all clients immediately so the new caching strategy
@@ -18,6 +18,13 @@ self.addEventListener('install', event => {
         '/ui/home.js',
         '/ui/ghostboard',
         '/ui/assets/app.js',
+        // Vendored browser libraries: the pages load Alpine, htmx and
+        // Tailwind from the server, so an offline reload without these
+        // entries would paint an unstyled, script-less page.
+        '/ui/assets/vendor/alpine-3.17.5.min.js',
+        '/ui/assets/vendor/alpine-collapse-3.17.5.min.js',
+        '/ui/assets/vendor/htmx-1.9.10.min.js',
+        '/ui/assets/vendor/tailwind-2.2.19.min.css',
         '/ui/assets/pwa/app-icon-192.png',
         '/ui/assets/pwa/app-icon-512.png',
         // Ghostboard PWA manifest and icons. The manifest is fetched
@@ -129,9 +136,12 @@ self.addEventListener('fetch', event => {
     return;
   }
 
-  // Cache-first for everything else (icons, theme images, etc.)
+  // Cache-first for everything else (icons, theme images, vendored
+  // libraries, etc.). ignoreSearch is what lets the entries precached
+  // without a query string match the ?v=<hash> URLs the pages use, so a
+  // vendored library is available offline on the first load too.
   event.respondWith(
-    caches.match(event.request).then(response => {
+    caches.match(event.request, { ignoreSearch: true }).then(response => {
       return response || fetch(event.request);
     })
   );

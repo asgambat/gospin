@@ -29,6 +29,10 @@ error messages, so no example refers to a name the binary no longer has.
 | `download [file]` | Save a board to a file (`<board>.txt` by default, `-` writes stdout, `--force` overwrites) |
 | `follow` | Print the board and every change as it happens (`--diff`, Ctrl-C to stop) |
 | `edit` | Edit a board with `$VISUAL`/`$EDITOR` and write it back |
+| `file upload <path>` | Upload one attachment (`-` reads stdin, `-q` prints only the id, `--json`) |
+| `file list` | List the attachments of a board (`--json`) |
+| `file get <id>` | Download one attachment to stdout or to `-o <file>` (`--force` overwrites) |
+| `file delete <id>` | Delete one attachment of a board (`--json`, `-q`) |
 | `config` | Print the configuration in use (`--paths`, `--json`); no request is made |
 | `pin-hash [pin]` | Print the `ghostboard.pin_hmac` value of a PIN (argument or stdin) |
 | `completion <shell>` | Print a completion script for `bash`, `zsh` or `fish` |
@@ -66,6 +70,14 @@ gb-cli edit -b lavoro
 # Watch a board live: the whole text, or only what is appended
 gb-cli follow -b lavoro
 gb-cli follow -b lavoro --diff
+
+# Move a file through a board: one file per request, so a multi-file upload is a loop
+ID=$(gb-cli file upload -b lavoro ./screenshot.png -q)
+gb-cli file list -b lavoro
+gb-cli file list -b lavoro --json
+gb-cli file get -b lavoro "$ID" -o ./screenshot.png --force
+gb-cli file get -b lavoro "$ID"            # writes the bytes to stdout
+gb-cli file delete -b lavoro "$ID"         # remove it from the board
 
 # Script-friendly output and quiet mode
 gb-cli --json add -b lavoro "deploy ok"
@@ -185,6 +197,10 @@ replaced a file value, so a typo can never look like a default that was never ov
 | `GET /ghostboard/:board` | JSON board state with revision and update time (`read --stat`, `read --json`) |
 | `GET /ghostboard/:board/events` | Server-Sent Events stream consumed by `follow` |
 | `POST /ghostboard/:board/unlock` | Trades the PIN for a session token; called by itself on the first `401` |
+| `GET /api/boards/:board/files` | Tab-separated attachment list (`file list`) |
+| `POST /api/boards/:board/files` | Multipart upload, one part named `file`; answers the created line (`file upload`) |
+| `GET /api/boards/:board/files/:id` | Attachment bytes, streamed to stdout or `-o` (`file get`) |
+| `DELETE /api/boards/:board/files/:id` | Delete one attachment, `204 No Content` (`file delete`) |
 
 ## Private boards
 
@@ -211,6 +227,11 @@ gb-cli pin-hash 1234
 | --------- | --------- | ------- |
 | No PIN configured for a private board | `1` | `board "x" is private: pass its pin with --pin, ...` |
 | Wrong PIN | `1` | `board "x": the pin was rejected` |
+
+Attachments need the same session: the CLI trades the PIN once **before** an upload, because a
+streamed body cannot be replayed after a `401`. A public board answers that unlock with `404`, which
+the CLI ignores and proceeds; a `file get` or `file delete` of an unknown id exits `1` with
+`file <id> not found`, which is how a deleted or expired file is reported.
 
 A PIN that is not 4-64 characters is rejected before any request is made, like an invalid board
 name. `gb-cli pin-hash` prints the HMAC-SHA256 of the PIN under `GO_SPIN_GHOSTBOARD_PIN_SECRET`,

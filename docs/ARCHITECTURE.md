@@ -450,7 +450,36 @@ func (m *MemoryRuntime) Start(name string) error {
   captured by the timer, so a tick that fires while a write re-arms the clear cannot empty the
   fresh text.
 - `StartPersistence` flushes dirty boards to a dedicated JSON file every
-  `ghostboard.persist_interval_secs` (empty boards are pruned) and flushes once more on shutdown.
+  `ghostboard.persist_interval_secs` (boards with neither text nor files are pruned) and flushes
+  once more on shutdown.
+
+**Attachments** (`internal/ghostboard/files.go`):
+- A board carries a `files` array of `{id, name, size, content_type, created_at, expires_at}`. The
+  metadata lives in the same JSON document as the text, so one flush persists both; the bytes live
+  under `<dir of ghostboard.file_path>/files/<board>/<id>`.
+- `id` is 128 random bits in lowercase base32 (26 characters) and is also the name on disk. The
+  uploader's name is only a download label, sanitized (path elements, control characters and the
+  length) before it is stored or put in a header.
+- `WriteFile` streams the request part to a temporary file inside the board directory, sniffs the
+  first 512 bytes for a content type, then commits under the store mutex: the quota checks, the
+  rename to the final id and the metadata append happen together, so the temporary file is the
+  reservation and two concurrent uploads cannot both pass a nearly full board. A rejected upload
+  (size, count, board quota, instance quota, `ENOSPC`) deletes its temporary file.
+- `OpenFile` returns the metadata and a handle; it refuses anything that is not a regular file, so a
+  symlink planted in the directory is never served. Downloads are always attachments, with
+  `nosniff` and a sandbox CSP, and `http.ServeContent` provides `Content-Length`, `Range` and
+  `If-Modified-Since` without buffering the file.
+- `SweepFiles` drops the files past `file_ttl_secs`; it runs at startup, on every persistence tick
+  and before a quota check, so an expired file frees its bytes immediately. `clearIfIdle` deletes
+  the files with the text: the two share one life, and an upload or a delete re-arms the idle
+  timer like a write does.
+- `ReconcileFiles` aligns the metadata and the disk at startup: a file without metadata, metadata
+  without a file, an unknown or invalid board directory, a directory inside a board, a leftover
+  `.tmp-` upload and a symlink are all removed (the symlink itself, never its target), each with a
+  warning. It never follows a link and never touches a path outside the files root.
+- The per-request timeout is not applied to uploads and downloads: those handlers set their own
+  read/write deadline of `file_transfer_timeout_secs` with `http.ResponseController`, because a
+  transfer of hundreds of megabytes cannot fit the 1-second JSON budget.
 
 **PIN gate** (`internal/ghostboard/auth.go`):
 - The boards named in `ghostboard.private_boards` are protected by one shared PIN, for reading and
@@ -462,14 +491,22 @@ func (m *MemoryRuntime) Start(name string) error {
   a copy of the configuration file cannot be brute-forced, and changing the secret invalidates
   every digest and every open session at once.
 - `Authenticator.Unlock` trades a PIN for a stateless session token
-  (`v1.<expiry>.<hmac>`): the session survives a restart because it only carries its expiry and a
-  signature. It throttles failures per client address with a lockout that doubles every further
-  batch of `pin_max_attempts` failures, capped at an hour, keyed on the connection address rather
-  than on `X-Forwarded-For` so a spoofed header cannot bypass it.
+  (`v2.<expiry>.<hmac>`): the session survives a restart because it only carries its expiry and a
+  signature. The signature is keyed with a value derived from the secret **and** the PIN digest, so
+  a new `ghostboard.pin_hmac` revokes every session issued for the previous PIN, which is the cheap
+  way to lock out whoever learned it; the secret alone would only allow revoking everything at
+  once by changing the secret. It throttles failures per client address with a lockout that
+  doubles every further batch of `pin_max_attempts` failures, capped at an hour, keyed on the
+  connection address rather than on `X-Forwarded-For` so a spoofed header cannot bypass it.
 - `middleware.GhostboardPIN` gates the route group: a private board needs the `gb_pin_session`
   cookie (browsers, `EventSource` and `sendBeacon` cannot set a header) or an
   `Authorization: Bearer` token (scripts and `gb-cli`). A `nil` authenticator means no PIN is
-  configured and every board is public.
+  configured and every board is public. `ghostboard.SessionToken` is the single place that decides
+  which of the two carries the token, so the middleware and the stream handler cannot disagree.
+- The gate runs once per request, so the event stream of a private board re-checks the session on
+  every change and on every heartbeat: when the token expires the handler writes a `locked` event
+  and closes the stream, instead of serving the text of a private board for as long as the page
+  stays open. The page turns that event into the PIN form, keeping the text typed locally.
 
 **HTTP surface** (`internal/api/route/ghostboard_route.go` and
 `internal/api/controller/ghostboard_controller.go`):
@@ -482,7 +519,14 @@ func (m *MemoryRuntime) Start(name string) error {
 - `POST`/`DELETE /ghostboard/:board/unlock` — the PIN is traded for a session token, returned in
   the body and set as an HttpOnly, `SameSite=Strict` cookie (`session_ttl_secs`, `Secure` when the
   request arrived over HTTPS); `DELETE` expires the cookie. The route is registered without the
-  gate, since it is how a session is obtained.
+  gate, since it is how a session is obtained, and answers `404` for a board that is not in
+  `ghostboard.private_boards`, which has no PIN to trade.
+- `GET`/`POST /ghostboard/:board/files`, `GET`/`DELETE /ghostboard/:board/files/:id` and
+  `DELETE /ghostboard/:board/files` — the JSON attachment surface (list, one file per multipart
+  request, download, delete one, delete all). The `/api/boards/:board/files...` routes mirror them
+  with tab-separated lines for the list and the created file, so a script needs no JSON parser.
+  Both surfaces sit behind `GhostboardPIN` and disappear entirely (`404`) when
+  `ghostboard.files_enabled` is false.
 - `ui/ghostboard.html` and `ui/assets/ghostboard.js` render one independent board per
   `/ui/ghostboard/<board>` path. The page loads the board state before opening the event stream,
   so a private board shows the lock form instead of a stream that would retry forever, and a `401`

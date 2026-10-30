@@ -161,6 +161,13 @@ ghostboard:
   session_ttl_secs: 28800        # how long an unlock stays valid (8 hours)
   pin_max_attempts: 5            # failed attempts per client address before a lockout
   pin_lockout_secs: 60           # first lockout; it doubles on every further batch of failures
+  files_enabled: true            # attachments of a board, served at /ghostboard/:board/files
+  max_file_bytes: 838860800      # largest single upload (800 MiB)
+  max_file_count: 10             # files per board
+  max_board_file_bytes: 2147483648  # bytes of the files of one board (2 GiB)
+  max_total_file_bytes: 5368709120  # bytes of every attachment on the instance (5 GiB)
+  file_ttl_secs: 86400           # hard cap on a file's life (24 hours); the idle clear can delete it earlier
+  file_transfer_timeout_secs: 600   # read/write window of one upload or download (10 minutes)
 ```
 
 The directory holding `data.file_path` is created at startup when it does not exist, so a fresh
@@ -170,28 +177,146 @@ clone (or a new `GO_SPIN_CONFIG_PATH`) needs no manual `mkdir` for `config/data/
 
 Every setting can be overridden with an environment variable. The prefix is `GO_SPIN_` and the dots
 of the configuration key become underscores, so `misc.log_level` maps to
-`GO_SPIN_MISC_LOG_LEVEL`. Two bootstrap variables keep their bare names:
+`GO_SPIN_MISC_LOG_LEVEL`. The environment wins over the configuration file, which wins over the
+built-in defaults, and the tables below name the variable of every key.
 
-```bash
-# Listening port of the main server (default 8084)
-PORT=8084
-# Port of the auxiliary waiting server (default 8085)
-WAITING_SERVER_PORT=8085
+A `.env` file in the working directory is read at startup as well; variables already present in the
+environment are never replaced by it. Values are validated when the process starts, so a port
+outside 1-65535, a zero or negative duration, an unknown `data.actions_mode` or a timezone that
+cannot be loaded stop it with the offending key in the message instead of leaving a half-configured
+instance running.
 
-# Log level
-GO_SPIN_MISC_LOG_LEVEL=debug
-# CORS allowed origins
-GO_SPIN_MISC_CORS_ALLOWED_ORIGINS=*
-# Path of the configuration directory
-GO_SPIN_CONFIG_PATH=./config
-# Cosmos API base URL
-GO_SPIN_MISC_COSMOS_BASE_URL=https://cosmos.example.com
-# Cosmos API bearer token
-GO_SPIN_MISC_COSMOS_TOKEN=your-token-here
-```
+#### Bootstrap
+
+| Variable | Default | Description |
+| -------- | ------- | ----------- |
+| `GO_SPIN_CONFIG_PATH` | `./config` | Directory holding `config.yaml`; the default `data.file_path` resolves inside it |
+| `PORT` | `8084` | Port of the main server |
+| `WAITING_SERVER_PORT` | `8085` | Port of the auxiliary waiting server |
 
 `PORT` and `WAITING_SERVER_PORT` are also accepted as `GO_SPIN_SERVER_PORT` and
-`GO_SPIN_SERVER_WAITING_SERVER_PORT`; the bare form wins when both are set.
+`GO_SPIN_SERVER_WAITING_SERVER_PORT`; the bare form wins when both are set, which is what the
+published image and `docker-compose.yml` rely on.
+
+#### Server
+
+| Key | Environment variable | Default |
+| --- | -------------------- | ------- |
+| `server.port` | `GO_SPIN_SERVER_PORT` | `8084` |
+| `server.waiting_server_port` | `GO_SPIN_SERVER_WAITING_SERVER_PORT` | `8085` |
+| `server.read_timeout_secs` | `GO_SPIN_SERVER_READ_TIMEOUT_SECS` | `10` |
+| `server.write_timeout_secs` | `GO_SPIN_SERVER_WRITE_TIMEOUT_SECS` | `10` |
+| `server.idle_timeout_secs` | `GO_SPIN_SERVER_IDLE_TIMEOUT_SECS` | `120` |
+| `server.shutdown_timeout_secs` | `GO_SPIN_SERVER_SHUTDOWN_TIMEOUT_SECS` | `5` |
+| `server.request_timeout_millis` | `GO_SPIN_SERVER_REQUEST_TIMEOUT_MILLIS` | `1000` |
+| `server.cors_allowed_origins` | `GO_SPIN_SERVER_CORS_ALLOWED_ORIGINS` | unset |
+
+The last row is the deprecated alias of `misc.cors_allowed_origins`: it is read only when the
+canonical key is empty, and a conflicting pair is reported with a startup warning.
+
+#### Data and persistence
+
+| Key | Environment variable | Default |
+| --- | -------------------- | ------- |
+| `data.file_path` | `GO_SPIN_DATA_FILE_PATH` | `./config/data/config.json` |
+| `data.persist_interval_secs` | `GO_SPIN_DATA_PERSIST_INTERVAL_SECS` | `5` |
+| `data.scheduling_enabled` | `GO_SPIN_DATA_SCHEDULING_ENABLED` | `true` |
+| `data.scheduling_poll_interval_secs` | `GO_SPIN_DATA_SCHEDULING_POLL_INTERVAL_SECS` | `30` |
+| `data.base_url` | `GO_SPIN_DATA_BASE_URL` | `http://localhost/` |
+| `data.spin_up_url` | `GO_SPIN_DATA_SPIN_UP_URL` | `http://localhost/` |
+| `data.refresh_interval_secs` | `GO_SPIN_DATA_REFRESH_INTERVAL_SECS` | `60` |
+| `data.stats_refresh_interval_secs` | `GO_SPIN_DATA_STATS_REFRESH_INTERVAL_SECS` | `120` |
+| `data.system_monitor_mount_point` | `GO_SPIN_DATA_SYSTEM_MONITOR_MOUNT_POINT` | `/` |
+| `data.actions_mode` | `GO_SPIN_DATA_ACTIONS_MODE` | `async` |
+| `data.actions_timeout_seconds` | `GO_SPIN_DATA_ACTIONS_TIMEOUT_SECONDS` | `30` |
+
+#### Misc
+
+| Key | Environment variable | Default |
+| --- | -------------------- | ------- |
+| `misc.gin_mode` | `GO_SPIN_MISC_GIN_MODE` | `release` |
+| `misc.scheduling_timezone` | `GO_SPIN_MISC_SCHEDULING_TIMEZONE` | `Local` |
+| `misc.runtime_type` | `GO_SPIN_MISC_RUNTIME_TYPE` | `docker` |
+| `misc.log_level` | `GO_SPIN_MISC_LOG_LEVEL` | `info` |
+| `misc.cors_allowed_origins` | `GO_SPIN_MISC_CORS_ALLOWED_ORIGINS` | `*` |
+| `misc.cosmos_base_url` | `GO_SPIN_MISC_COSMOS_BASE_URL` | empty |
+| `misc.cosmos_token` | `GO_SPIN_MISC_COSMOS_TOKEN` | empty |
+
+`misc.runtime_type` accepts `docker` or `memory`; `memory` runs the dashboard without the Docker
+socket, which is how the test suite and `task screenshots` work. `misc.cosmos_token` is a secret:
+keep it in the environment or an `.env` file that is not committed, never in `config/config.yaml`.
+
+#### Ghostboard
+
+| Key | Environment variable | Default |
+| --- | -------------------- | ------- |
+| `ghostboard.file_path` | `GO_SPIN_GHOSTBOARD_FILE_PATH` | `<dir of data.file_path>/ghostboard.json` |
+| `ghostboard.clear_delay_secs` | `GO_SPIN_GHOSTBOARD_CLEAR_DELAY_SECS` | `300` |
+| `ghostboard.max_text_bytes` | `GO_SPIN_GHOSTBOARD_MAX_TEXT_BYTES` | `16777216` |
+| `ghostboard.persist_interval_secs` | `GO_SPIN_GHOSTBOARD_PERSIST_INTERVAL_SECS` | `2` |
+| `ghostboard.heartbeat_interval_secs` | `GO_SPIN_GHOSTBOARD_HEARTBEAT_INTERVAL_SECS` | `25` |
+| `ghostboard.private_boards` | `GO_SPIN_GHOSTBOARD_PRIVATE_BOARDS` | empty |
+| `ghostboard.pin_hmac` | `GO_SPIN_GHOSTBOARD_PIN_HMAC` | empty |
+| `ghostboard.pin_secret` | `GO_SPIN_GHOSTBOARD_PIN_SECRET` | empty |
+| `ghostboard.session_ttl_secs` | `GO_SPIN_GHOSTBOARD_SESSION_TTL_SECS` | `28800` |
+| `ghostboard.pin_max_attempts` | `GO_SPIN_GHOSTBOARD_PIN_MAX_ATTEMPTS` | `5` |
+| `ghostboard.pin_lockout_secs` | `GO_SPIN_GHOSTBOARD_PIN_LOCKOUT_SECS` | `60` |
+| `ghostboard.files_enabled` | `GO_SPIN_GHOSTBOARD_FILES_ENABLED` | `true` |
+| `ghostboard.max_file_bytes` | `GO_SPIN_GHOSTBOARD_MAX_FILE_BYTES` | `838860800` |
+| `ghostboard.max_file_count` | `GO_SPIN_GHOSTBOARD_MAX_FILE_COUNT` | `10` |
+| `ghostboard.max_board_file_bytes` | `GO_SPIN_GHOSTBOARD_MAX_BOARD_FILE_BYTES` | `2147483648` |
+| `ghostboard.max_total_file_bytes` | `GO_SPIN_GHOSTBOARD_MAX_TOTAL_FILE_BYTES` | `5368709120` |
+| `ghostboard.file_ttl_secs` | `GO_SPIN_GHOSTBOARD_FILE_TTL_SECS` | `86400` |
+| `ghostboard.file_transfer_timeout_secs` | `GO_SPIN_GHOSTBOARD_FILE_TRANSFER_TIMEOUT_SECS` | `600` |
+
+`ghostboard.private_boards` is a list, and the environment form takes the board names **separated by
+spaces**, not commas: `GO_SPIN_GHOSTBOARD_PRIVATE_BOARDS="lavoro note"`. A comma stays part of the
+name and is rejected at startup as an invalid board name. The same variable cannot empty a list that
+the configuration file sets, because an empty environment value is ignored; remove the key from the
+file instead.
+
+A PIN setup needs three variables and no file at all:
+
+```bash
+export GO_SPIN_GHOSTBOARD_PIN_SECRET="$(openssl rand -hex 32)"
+export GO_SPIN_GHOSTBOARD_PIN_HMAC="$(gb-cli pin-hash 1234)"   # same secret in both commands
+export GO_SPIN_GHOSTBOARD_PRIVATE_BOARDS="lavoro note"
+```
+
+#### Logging and error reporting
+
+| Variable | Default | Description |
+| -------- | ------- | ----------- |
+| `LOG_LEVEL` | unset | Level of the process logger while the configuration is being loaded; once it is loaded the server follows `GO_SPIN_MISC_LOG_LEVEL` |
+| `HONEYBADGER_API_KEY` | unset | Enables Honeybadger error reporting (recovered panics are notified); empty leaves it off |
+| `GO_ENV` | unset | Environment name attached to the Honeybadger notices |
+
+#### Container runtime
+
+| Variable | Default | Description |
+| -------- | ------- | ----------- |
+| `UID` | `1000` | User id the image runs as |
+| `GID` | `1000` | Group id the image runs as |
+
+Both are `ENV` defaults of the image, meant for `docker run -e UID=$(id -u) -e GID=$(id -g)` so the
+mounted `config/` stays writable by the local user.
+
+#### `gb-cli`
+
+The CLI has its own variables, all optional, which override its configuration file:
+
+| Variable | Purpose |
+| -------- | ------- |
+| `GO_SPIN_BOARD_URL` | Server to talk to, e.g. `http://localhost:8084` |
+| `GO_SPIN_BOARD_PIN` | PIN of a private board; preferred to `--pin`, which stays in the shell history and in `ps` |
+| `GO_SPIN_BOARD_TIMEOUT_SECS` | Timeout of a single request |
+| `GO_SPIN_BOARD_TOKEN` | Sent as `Authorization: Bearer <token>` to a board behind an authenticating proxy |
+| `GO_SPIN_GHOSTBOARD_PIN_SECRET` | Secret `gb-cli pin-hash` hashes the PIN with; must be the one the server runs with |
+| `XDG_CONFIG_HOME` | Where the per-user `ghostboard/config.yaml` is looked up (default `~/.config`) |
+| `VISUAL`, `EDITOR` | Editor run by `gb-cli edit`, `VISUAL` first |
+
+`gb-cli config` prints the file and the variables in use, so a mistyped name is visible instead of
+silently ignored. The full reference is in [docs/CLI.md](docs/CLI.md).
 
 ### Base URL for Container Links
 
@@ -255,6 +380,11 @@ The pages are served by the Go binary: `/ui` (dashboard), `/ui/home` (the homepa
 `/ui`. Those routes are the plumbing of the pages, not a public API, and their paths can change
 between releases: the file-to-route map, the cache headers and the frontend rules are in
 [docs/FRONTEND.md](docs/FRONTEND.md).
+
+The page shell needs no internet access: Alpine.js 3.17.5, htmx 1.9.10 and Tailwind 2.2.19 are
+vendored under `ui/assets/vendor/` and served by the binary itself, so `http://<server>:8084/ui`,
+`/ui/home` and `/ui/ghostboard` load on a LAN without an uplink. The only remote fetches left are
+the service icons of `homepage.yaml`, i.e. content you configure yourself.
 
 The web interface provides visual management for:
 
@@ -604,12 +734,24 @@ Sections missing from `homepage.yaml` are returned as empty arrays (`services: [
 | GET | `/ghostboard/:board/events` | Server-Sent Events stream with the current text and every change |
 | GET | `/api/boards/:board` | Read the board text as plain text (unknown boards return an empty `200` body) |
 | POST | `/api/boards/:board` | Replace the board text with the raw request body, byte for byte; `204 No Content` |
-| POST | `/ghostboard/:board/unlock` | Trade the PIN of a private board for a session token (body `{"pin":"..."}`); sets the `gb_pin_session` cookie |
+| POST | `/ghostboard/:board/unlock` | Trade the PIN of a private board for a session token (body `{"pin":"..."}`); sets the `gb_pin_session` cookie. `404` for a board that is not in `ghostboard.private_boards` |
 | DELETE | `/ghostboard/:board/unlock` | End the session of the browser by expiring its `gb_pin_session` cookie; `204 No Content` |
+| GET | `/ghostboard/:board/files` | List the attachments of a board: `{"files":[{id,name,size,content_type,created_at,expires_at}]}` |
+| POST | `/ghostboard/:board/files` | Upload one file as `multipart/form-data` with a part named `file`; `201` with the stored metadata and a `Location` header |
+| GET | `/ghostboard/:board/files/:id` | Download an attachment as `application/octet-stream`; supports `Range` |
+| DELETE | `/ghostboard/:board/files/:id` | Delete one attachment; `204 No Content`, `404` for an unknown id |
+| DELETE | `/ghostboard/:board/files` | Delete every attachment of the board (the second choice of the Clear dialog); `204 No Content` |
+| GET | `/api/boards/:board/files` | Same list as one tab-separated line per file: `id`, `name`, `size_bytes`, `expires_at` |
+| POST | `/api/boards/:board/files` | Same upload, answering `201` with the line of the created file |
+| GET | `/api/boards/:board/files/:id` | Same download |
+| DELETE | `/api/boards/:board/files/:id` | Same delete |
+| DELETE | `/api/boards/:board/files` | Same bulk delete |
 
 A private board answers `401` with `{"error":"pin required"}` on every route above until the
 request carries a valid session, and a wrong PIN answers `401` with `{"error":"invalid pin"}`.
-Too many failures from one address answer `429` with `retry_after_secs` and `Retry-After`.
+Too many failures from one address answer `429` with `retry_after_secs` and `Retry-After`; every
+rejected attempt is logged with the board and the client address, never with the PIN that was
+tried, because that value is a guess of a secret.
 
 #### The Ghostboard page
 
@@ -645,11 +787,76 @@ How it behaves:
   holds text can still push it over the limit; that save fails with a message telling you to
   shorten the text, and the other devices keep the previous board text. **Copy** puts the whole board
   text on the clipboard (falling back to a selection copy where the Clipboard API is
-  unavailable). **Clear** empties the board for every connected device after a confirmation.
+  unavailable). **Clear** asks what to clear: "Clear text only" empties the text for every
+  connected device, "Clear text and files" also deletes the attachments of the board.
+- **Preview** renders the board as Markdown: headings, lists, fenced code, blockquotes, rules,
+  tables with column alignment, bold/italic/strikethrough, inline code, `[text](url)` links and bare
+  `http(s)` URLs or email addresses. Raw HTML is always shown as text, so a board that contains tags
+  cannot inject markup into the page, and any link scheme other than `http(s)`/`mailto` stays literal.
+  A board larger than 262 144 characters shows a notice instead of being rendered, so a huge board
+  cannot freeze the page. **Open .txt** switches back to editing.
 - Boards are **public by default**. Naming a board in `ghostboard.private_boards` protects its
-  reads and writes with one shared PIN, and a page for a private board shows a lock form instead of
-  the text until the PIN is entered. Boards that are not listed stay open to anyone who can reach
-  the server, so keep the instance on a trusted network.
+  reads, writes and attachments with one shared PIN, and a page for a private board shows a lock
+  form instead of the text until the PIN is entered. Boards that are not listed stay open to
+  anyone who can reach the server, so keep the instance on a trusted network.
+
+#### File attachments
+
+The **📎 Files** panel above the textarea moves files between the devices of a board. It is
+collapsible, opens by itself on a board that already carries files, and accepts a click on the drop
+zone or a drop of several files at once. Every file is uploaded by its own request so each row shows
+its own percentage and can be cancelled; the list shows the name, the size, a download link and a
+delete button with a per-file confirmation. Names are rendered as text, never as HTML.
+
+The server stores one file per request: a multi-file drop is a loop of requests, both in the page and
+in `gb-cli`. Downloads are always `Content-Disposition: attachment` with `application/octet-stream`
+and `nosniff`, so an uploaded page cannot run on the dashboard origin, and `Range` works, so a large
+download can resume.
+
+The lifecycle is the one of the board, not an independent file store:
+
+- an **upload or a delete counts as board activity** and re-arms the idle clear;
+- the **idle clear deletes the text and the files together**, so a board nobody touched for
+  `clear_delay_secs` (300 seconds by default) loses both;
+- `file_ttl_secs` (24 hours by default) is a hard cap measured from the upload, which matters for a
+  board kept alive by an open page: the page cannot keep a file past it;
+- emptying the text by typing is the "text only" case and keeps the files until the TTL, while
+  **Clear → Clear text and files** deletes them immediately;
+- the bytes live next to `ghostboard.json`, in `<dir of ghostboard.file_path>/files/<board>/<id>`, and
+the original name is a download label only: the file on disk is named after a random 128-bit id.
+
+With the default configuration, attachments therefore usually disappear **about five minutes after
+the last activity**, not after a day. Raise `clear_delay_secs` when the files must outlive the text,
+and keep `file_ttl_secs` as the upper bound.
+
+Limits are enforced by the server, not only by the page: `max_file_bytes` per upload (800 MiB),
+`max_board_file_bytes` per board (2 GiB), `max_total_file_bytes` for the whole instance (5 GiB) and
+`max_file_count` files per board (10). A rejection names the limit that was hit: `413` for a size,
+`409` for the count, `507` when the disk itself is full. The state is kept in `ghostboard.json`; at
+startup the server reconciles it with the disk, deleting files without metadata, metadata without a
+file, leftovers of interrupted uploads and symlinks, which it never follows. Set
+`ghostboard.files_enabled: false` to remove the routes and hide the panel.
+
+```bash
+# upload (the page and gb-cli send one file per request)
+curl -F "file=@./screenshot.png" http://localhost:8084/ghostboard/lavoro/files
+
+# list: JSON on the dashboard surface, one tab-separated line per file for scripts
+curl http://localhost:8084/ghostboard/lavoro/files
+curl http://localhost:8084/api/boards/lavoro/files
+
+# download (the id comes from the listing)
+curl -OJ http://localhost:8084/ghostboard/lavoro/files/<id>
+
+# delete one, or every file of the board
+curl -X DELETE http://localhost:8084/ghostboard/lavoro/files/<id>
+curl -X DELETE http://localhost:8084/ghostboard/lavoro/files
+```
+
+An upload above the request-body limit is cut off while it streams, before a single byte reaches the
+store, and a body of more than 800 MiB plus a small envelope is refused with `413`. A reverse proxy in
+front of GoSpin needs its own body limit raised: for nginx, `client_max_body_size 800m;` and
+`proxy_request_buffering off;` keep the transfer streaming.
 
 #### Private boards
 
@@ -684,6 +891,9 @@ server at startup instead of leaving the board open while looking protected.
   reconnects the event stream. The cookie works for Server-Sent Events and for
   `navigator.sendBeacon`, which cannot carry a header; it is marked `Secure` when the request
   arrives over HTTPS.
+- **Session lifetime**: the expiry of the token also bounds an already-open event stream, which
+  re-checks the session on every change and every heartbeat. When it expires the stream ends with a
+  `locked` event, the page shows the PIN form again and keeps the text typed locally.
 - **Scripts**: the same endpoint returns the token in its body (`{"token":"..."}`), and every
   route accepts it as `Authorization: Bearer <token>`. `gb-cli` does the exchange by itself when
   it gets a `401`, so `--pin`, `GO_SPIN_BOARD_PIN` or `pin:` in its configuration file is all a
@@ -691,6 +901,10 @@ server at startup instead of leaving the board open while looking protected.
 - **Throttling**: `pin_max_attempts` failures from one address start a `pin_lockout_secs` lockout
   that doubles on every further batch of failures (up to an hour). The counter is keyed on the
   address of the connection, never on `X-Forwarded-For`.
+- **Revoking a session**: the token is signed with a key derived from the secret and the PIN
+  digest, so replacing `ghostboard.pin_hmac` with the digest of a new PIN logs every client out at
+  once, without touching `GO_SPIN_GHOSTBOARD_PIN_SECRET`. Changing the secret does the same and also
+  invalidates the digest, which is what a leaked secret needs.
 
 ```bash
 # Unlock, keep the token, then read and write with it
@@ -811,14 +1025,17 @@ the `GO_SPIN_BOARD_*` variables and the server endpoints it uses — is in
 | `ghostboard.session_ttl_secs` | `28800` | Seconds an unlock stays valid |
 | `ghostboard.pin_max_attempts` | `5` | Failed PIN attempts per client address before a lockout |
 | `ghostboard.pin_lockout_secs` | `60` | First lockout; it doubles on every further batch of failures, up to an hour |
+| `ghostboard.files_enabled` | `true` | Serves the attachment routes and shows the panel; `false` answers `404` on every file route |
+| `ghostboard.max_file_bytes` | `838860800` | Largest single upload (800 MiB); also caps the request body |
+| `ghostboard.max_file_count` | `10` | Files per board; one more answers `409` |
+| `ghostboard.max_board_file_bytes` | `2147483648` | Total size of the files of one board (2 GiB) |
+| `ghostboard.max_total_file_bytes` | `5368709120` | Total size of every attachment on the instance (5 GiB) |
+| `ghostboard.file_ttl_secs` | `86400` | Hard cap on a file's life, measured from the upload |
+| `ghostboard.file_transfer_timeout_secs` | `600` | Read/write window of one upload or download; it replaces the 1-second request timeout on those routes |
 
-All options can be overridden with the environment variables
-`GO_SPIN_GHOSTBOARD_FILE_PATH`, `GO_SPIN_GHOSTBOARD_CLEAR_DELAY_SECS`,
-`GO_SPIN_GHOSTBOARD_MAX_TEXT_BYTES`, `GO_SPIN_GHOSTBOARD_PERSIST_INTERVAL_SECS`,
-`GO_SPIN_GHOSTBOARD_HEARTBEAT_INTERVAL_SECS`, `GO_SPIN_GHOSTBOARD_PRIVATE_BOARDS`,
-`GO_SPIN_GHOSTBOARD_PIN_HMAC`, `GO_SPIN_GHOSTBOARD_PIN_SECRET`,
-`GO_SPIN_GHOSTBOARD_SESSION_TTL_SECS`, `GO_SPIN_GHOSTBOARD_PIN_MAX_ATTEMPTS` and
-`GO_SPIN_GHOSTBOARD_PIN_LOCKOUT_SECS`.
+Every key can also be set from the environment with the `GO_SPIN_GHOSTBOARD_*` variable listed in
+[Environment Variables](#environment-variables), so a PIN-protected board needs no configuration
+file at all.
 
 The PIN digest is computed with HMAC-SHA256 over the PIN and `ghostboard.pin_secret`, so a copy of
 the configuration file alone cannot be brute-forced: the secret is what makes the stored value
@@ -1026,7 +1243,7 @@ gospin/
 │   ├── runtime/           # Runtime abstraction: docker_runtime.go, memory_runtime.go, system_stats.go
 │   ├── scheduler/         # Polling scheduling engine
 │   └── version/           # Build metadata injected through -ldflags
-├── ui/                    # Web UI (Alpine.js, htmx and Tailwind from CDNs)
+├── ui/                    # Web UI (Alpine.js, htmx and Tailwind vendored in assets/vendor)
 │   ├── index.html         # Dashboard (containers, groups, schedules)
 │   ├── home.html          # Homepage dashboard
 │   ├── home.js            # Homepage logic

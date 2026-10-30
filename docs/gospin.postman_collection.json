@@ -25,6 +25,16 @@
 			"key": "scheduleId",
 			"value": "1765309098671-421",
 			"type": "string"
+		},
+		{
+			"key": "board",
+			"value": "lavoro",
+			"type": "string"
+		},
+		{
+			"key": "fileId",
+			"value": "",
+			"type": "string"
 		}
 	],
 	"item": [
@@ -38,8 +48,12 @@
 						"header": [],
 						"url": {
 							"raw": "{{baseUrl}}/health",
-							"host": ["{{baseUrl}}"],
-							"path": ["health"]
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"health"
+							]
 						},
 						"description": "Check application health status"
 					},
@@ -57,8 +71,12 @@
 						"header": [],
 						"url": {
 							"raw": "{{baseUrl}}/configuration",
-							"host": ["{{baseUrl}}"],
-							"path": ["configuration"]
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"configuration"
+							]
 						},
 						"description": "Get application configuration for the frontend. Returns baseUrl, spinUpUrl, refreshIntervalSec, and statsRefreshIntervalSec."
 					},
@@ -76,8 +94,12 @@
 						"header": [],
 						"url": {
 							"raw": "{{baseUrl}}/containers",
-							"host": ["{{baseUrl}}"],
-							"path": ["containers"]
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"containers"
+							]
 						},
 						"description": "Get the list of all configured containers"
 					},
@@ -99,8 +121,12 @@
 						},
 						"url": {
 							"raw": "{{baseUrl}}/container",
-							"host": ["{{baseUrl}}"],
-							"path": ["container"]
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"container"
+							]
 						},
 						"description": "Create or update a container. If a container with the same name exists, it will be updated."
 					},
@@ -113,8 +139,13 @@
 						"header": [],
 						"url": {
 							"raw": "{{baseUrl}}/container/{{containerName}}",
-							"host": ["{{baseUrl}}"],
-							"path": ["container", "{{containerName}}"]
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"container",
+								"{{containerName}}"
+							]
 						},
 						"description": "Delete a container by name"
 					},
@@ -127,8 +158,14 @@
 						"header": [],
 						"url": {
 							"raw": "{{baseUrl}}/container/{{containerName}}/ready",
-							"host": ["{{baseUrl}}"],
-							"path": ["container", "{{containerName}}", "ready"]
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"container",
+								"{{containerName}}",
+								"ready"
+							]
 						},
 						"description": "Check if a container is reachable and responding with HTTP 200. Returns {ready: true/false}."
 					},
@@ -146,8 +183,12 @@
 						"header": [],
 						"url": {
 							"raw": "{{baseUrl}}/groups",
-							"host": ["{{baseUrl}}"],
-							"path": ["groups"]
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"groups"
+							]
 						},
 						"description": "Get the list of all configured groups"
 					},
@@ -169,8 +210,12 @@
 						},
 						"url": {
 							"raw": "{{baseUrl}}/group",
-							"host": ["{{baseUrl}}"],
-							"path": ["group"]
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"group"
+							]
 						},
 						"description": "Create or update a container group"
 					},
@@ -183,8 +228,13 @@
 						"header": [],
 						"url": {
 							"raw": "{{baseUrl}}/group/{{groupName}}",
-							"host": ["{{baseUrl}}"],
-							"path": ["group", "{{groupName}}"]
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"group",
+								"{{groupName}}"
+							]
 						},
 						"description": "Delete a group by name"
 					},
@@ -202,8 +252,12 @@
 						"header": [],
 						"url": {
 							"raw": "{{baseUrl}}/schedules",
-							"host": ["{{baseUrl}}"],
-							"path": ["schedules"]
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"schedules"
+							]
 						},
 						"description": "Get the list of all configured schedules"
 					},
@@ -225,8 +279,12 @@
 						},
 						"url": {
 							"raw": "{{baseUrl}}/schedule",
-							"host": ["{{baseUrl}}"],
-							"path": ["schedule"]
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"schedule"
+							]
 						},
 						"description": "Create or update a schedule. targetType can be 'container' or 'group'. days: 0=Sunday, 1=Monday, ..., 6=Saturday"
 					},
@@ -248,8 +306,12 @@
 						},
 						"url": {
 							"raw": "{{baseUrl}}/schedule",
-							"host": ["{{baseUrl}}"],
-							"path": ["schedule"]
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"schedule"
+							]
 						},
 						"description": "Create a schedule for a group (example: Media active on weekends from 20:00)"
 					},
@@ -262,8 +324,13 @@
 						"header": [],
 						"url": {
 							"raw": "{{baseUrl}}/schedule/{{scheduleId}}",
-							"host": ["{{baseUrl}}"],
-							"path": ["schedule", "{{scheduleId}}"]
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"schedule",
+								"{{scheduleId}}"
+							]
 						},
 						"description": "Delete a schedule by ID"
 					},
@@ -281,8 +348,14 @@
 						"header": [],
 						"url": {
 							"raw": "{{baseUrl}}/runtime/{{containerName}}/status",
-							"host": ["{{baseUrl}}"],
-							"path": ["runtime", "{{containerName}}", "status"]
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"runtime",
+								"{{containerName}}",
+								"status"
+							]
 						},
 						"description": "Check if a container is currently running. Returns {name, running: true/false}."
 					},
@@ -295,8 +368,14 @@
 						"header": [],
 						"url": {
 							"raw": "{{baseUrl}}/runtime/{{containerName}}/start",
-							"host": ["{{baseUrl}}"],
-							"path": ["runtime", "{{containerName}}", "start"]
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"runtime",
+								"{{containerName}}",
+								"start"
+							]
 						},
 						"description": "Start a Docker container. The container is started in background."
 					},
@@ -309,8 +388,14 @@
 						"header": [],
 						"url": {
 							"raw": "{{baseUrl}}/runtime/{{containerName}}/stop",
-							"host": ["{{baseUrl}}"],
-							"path": ["runtime", "{{containerName}}", "stop"]
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"runtime",
+								"{{containerName}}",
+								"stop"
+							]
 						},
 						"description": "Stop a Docker container. The container is stopped in background."
 					},
@@ -323,8 +408,13 @@
 						"header": [],
 						"url": {
 							"raw": "{{baseUrl}}/runtime/containers",
-							"host": ["{{baseUrl}}"],
-							"path": ["runtime", "containers"]
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"runtime",
+								"containers"
+							]
 						},
 						"description": "List all containers present in the Docker runtime. Returns an array of container names."
 					},
@@ -337,8 +427,13 @@
 						"header": [],
 						"url": {
 							"raw": "{{baseUrl}}/runtime/stats",
-							"host": ["{{baseUrl}}"],
-							"path": ["runtime", "stats"]
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"runtime",
+								"stats"
+							]
 						},
 						"description": "Get CPU and memory statistics for all containers defined in the store. Returns an array with name, cpu_percent, memory_mb, and optional error for each container."
 					},
@@ -351,10 +446,132 @@
 						"header": [],
 						"url": {
 							"raw": "{{baseUrl}}/start/{{containerName}}",
-							"host": ["{{baseUrl}}"],
-							"path": ["start", "{{containerName}}"]
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"start",
+								"{{containerName}}"
+							]
 						},
 						"description": "Serves a waiting HTML page for a container or group. Starts containers in background if they are not running. The name parameter can be either a container name/friendly_name or a group name. Returns 404 if not found, 403 if not active."
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Ghostboard files",
+			"item": [
+				{
+					"name": "List board files",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/ghostboard/{{board}}/files",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"ghostboard",
+								"{{board}}",
+								"files"
+							]
+						},
+						"description": "Lists the attachments of a board as JSON. A private board needs the gb_pin_session cookie or an Authorization bearer token; the plain surface is /api/boards/{{board}}/files."
+					},
+					"response": []
+				},
+				{
+					"name": "Upload a file",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "formdata",
+							"formdata": [
+								{
+									"key": "file",
+									"type": "file",
+									"src": ""
+								}
+							]
+						},
+						"url": {
+							"raw": "{{baseUrl}}/ghostboard/{{board}}/files",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"ghostboard",
+								"{{board}}",
+								"files"
+							]
+						},
+						"description": "Uploads exactly one file per request (multipart part named file) and answers 201 with the stored metadata and a Location header. Limits: max_file_bytes, max_file_count, max_board_file_bytes, max_total_file_bytes (413 or 409, with the limiting key in the body)."
+					},
+					"response": []
+				},
+				{
+					"name": "Download a file",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/ghostboard/{{board}}/files/{{fileId}}",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"ghostboard",
+								"{{board}}",
+								"files",
+								"{{fileId}}"
+							]
+						},
+						"description": "Downloads an attachment as application/octet-stream with Content-Disposition: attachment. Range is supported; 404 answers {\"error\":\"file not found\"}."
+					},
+					"response": []
+				},
+				{
+					"name": "Delete a file",
+					"request": {
+						"method": "DELETE",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/ghostboard/{{board}}/files/{{fileId}}",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"ghostboard",
+								"{{board}}",
+								"files",
+								"{{fileId}}"
+							]
+						},
+						"description": "Deletes one attachment from the board and from disk; answers 204, or 404 for an unknown id."
+					},
+					"response": []
+				},
+				{
+					"name": "Delete all board files",
+					"request": {
+						"method": "DELETE",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/ghostboard/{{board}}/files",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"ghostboard",
+								"{{board}}",
+								"files"
+							]
+						},
+						"description": "Deletes every attachment of the board, which is the second choice of the Clear dialog. Answers 204."
 					},
 					"response": []
 				}

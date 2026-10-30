@@ -116,24 +116,3 @@ func TestGhostboardPIN_WithoutConfiguredPIN(t *testing.T) {
 		t.Errorf("status = %d, want 200: without a PIN every board is public", rec.Code)
 	}
 }
-
-func TestBearerToken(t *testing.T) {
-	tests := []struct {
-		header string
-		want   string
-	}{
-		{header: "", want: ""},
-		{header: "Bearer abc", want: "abc"},
-		{header: "bearer abc", want: "abc"},
-		{header: "Bearer  abc ", want: "abc"},
-		{header: "Basic abc", want: ""},
-		{header: "Bearer", want: ""},
-		{header: "Bearer ", want: ""},
-	}
-
-	for _, test := range tests {
-		if got := bearerToken(test.header); got != test.want {
-			t.Errorf("bearerToken(%q) = %q, want %q", test.header, got, test.want)
-		}
-	}
-}

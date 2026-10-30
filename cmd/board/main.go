@@ -191,6 +191,8 @@ func run(program string, args []string, stdin io.Reader, stdout, stderr io.Write
 		return execFollow(ctx, client, opts, positionals, stdout, stderr)
 	case "edit":
 		return execEdit(ctx, client, opts, positionals, stdin, stdout, stderr)
+	case "file":
+		return execFile(ctx, client, opts, positionals, stdin, stdout, stderr)
 	default:
 		// splitCommand only returns the commands listed above.
 		return usageError(program, stderr, command, "unknown command")

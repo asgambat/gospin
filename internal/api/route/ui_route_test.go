@@ -5,6 +5,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -20,7 +21,7 @@ func TestUIRoute_ServiceWorkerServedWithCorrectHeaders(t *testing.T) {
 	t.Chdir("../../..")
 
 	r := gin.New()
-	NewUIRouter(r, 16777216)
+	NewUIRouter(r, GhostboardPageConfig{MaxTextBytes: 16777216, MaxFileBytes: 838860800})
 
 	req, _ := http.NewRequest(http.MethodGet, "/ui/service-worker.js", nil)
 	w := httptest.NewRecorder()
@@ -66,7 +67,7 @@ func TestUIRoute_ServiceWorkerRegistrationServedWithCorrectHeaders(t *testing.T)
 	t.Chdir("../../..")
 
 	r := gin.New()
-	NewUIRouter(r, 16777216)
+	NewUIRouter(r, GhostboardPageConfig{MaxTextBytes: 16777216, MaxFileBytes: 838860800})
 
 	req, _ := http.NewRequest(http.MethodGet, "/ui/sw-register.js", nil)
 	w := httptest.NewRecorder()
@@ -99,7 +100,7 @@ func TestUIRoute_PagesShareServiceWorkerRegistration(t *testing.T) {
 	t.Chdir("../../..")
 
 	r := gin.New()
-	NewUIRouter(r, 16777216)
+	NewUIRouter(r, GhostboardPageConfig{MaxTextBytes: 16777216, MaxFileBytes: 838860800})
 
 	for _, path := range []string{"/ui", "/ui/home", "/ui/ghostboard"} {
 		t.Run(path, func(t *testing.T) {
@@ -127,7 +128,7 @@ func TestUIRoute_CacheBusterInjected(t *testing.T) {
 	t.Chdir("../../..")
 
 	r := gin.New()
-	NewUIRouter(r, 16777216)
+	NewUIRouter(r, GhostboardPageConfig{MaxTextBytes: 16777216, MaxFileBytes: 838860800})
 
 	cases := []struct {
 		name   string
@@ -165,6 +166,146 @@ func TestUIRoute_CacheBusterInjected(t *testing.T) {
 				t.Errorf("expected original un-busted tag to be rewritten, body snippet: %s", body[:min(len(body), 200)])
 			}
 		})
+	}
+}
+
+// TestUIRoute_PagesLoadNoExternalAssets pins the offline requirement: the shell
+// of every page has to come from this server. A CDN reference here means the
+// dashboard and the ghostboard paint an unstyled page with no JavaScript on a
+// LAN that has no internet access.
+func TestUIRoute_PagesLoadNoExternalAssets(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	t.Chdir("../../..")
+
+	r := gin.New()
+	NewUIRouter(r, GhostboardPageConfig{MaxTextBytes: 16777216, MaxFileBytes: 838860800})
+
+	cases := []struct {
+		name   string
+		path   string
+		vendor []string
+	}{
+		{name: "index", path: "/ui", vendor: []string{vendorAlpineJS, vendorHtmx, vendorTailwind}},
+		{name: "home", path: "/ui/home", vendor: []string{vendorAlpineCollapse, vendorAlpineJS, vendorHtmx, vendorTailwind}},
+		{name: "ghostboard", path: "/ui/ghostboard", vendor: []string{vendorAlpineJS, vendorTailwind}},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			w := httptest.NewRecorder()
+			r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, tc.path, nil))
+
+			if w.Code != http.StatusOK {
+				t.Fatalf("expected status 200, got %d", w.Code)
+			}
+
+			body := w.Body.String()
+			for _, external := range []string{`src="http`, `href="http`} {
+				if strings.Contains(body, external) {
+					t.Errorf("the page loads an external asset (%s), so it breaks without internet", external)
+				}
+			}
+
+			// Every library must come from the server and carry the content
+			// hash, so an upgraded file reaches clients with a warm cache.
+			for _, asset := range tc.vendor {
+				needle := "/ui/" + asset + "?v="
+				if !strings.Contains(body, needle) {
+					t.Errorf("the page does not load %q", needle)
+				}
+			}
+		})
+	}
+}
+
+// TestUIRoute_VendoredLibrariesServed checks that the files the pages reference
+// exist, are served with the right content type and get the one-year cache the
+// pages' ?v= hash makes safe.
+func TestUIRoute_VendoredLibrariesServed(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	t.Chdir("../../..")
+
+	r := gin.New()
+	NewUIRouter(r, GhostboardPageConfig{MaxTextBytes: 16777216, MaxFileBytes: 838860800})
+
+	cases := []struct {
+		name        string
+		asset       string
+		contentType string
+		body        string
+	}{
+		{name: "alpine", asset: vendorAlpineJS, contentType: "javascript", body: "Alpine"},
+		{name: "alpine collapse", asset: vendorAlpineCollapse, contentType: "javascript", body: "collapse"},
+		{name: "htmx", asset: vendorHtmx, contentType: "javascript", body: "htmx"},
+		{name: "tailwind", asset: vendorTailwind, contentType: "text/css", body: "tailwindcss"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			w := httptest.NewRecorder()
+			r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/ui/"+tc.asset, nil))
+
+			if w.Code != http.StatusOK {
+				t.Fatalf("expected status 200, got %d", w.Code)
+			}
+			if ct := w.Header().Get("Content-Type"); !strings.Contains(ct, tc.contentType) {
+				t.Errorf("Content-Type = %q, want it to contain %q", ct, tc.contentType)
+			}
+			if cc := w.Header().Get("Cache-Control"); !strings.Contains(cc, "max-age=31536000") {
+				t.Errorf("Cache-Control = %q, want the long-lived asset cache", cc)
+			}
+			if body := w.Body.String(); !strings.Contains(body, tc.body) {
+				t.Errorf("the served body does not look like %s", tc.name)
+			}
+		})
+	}
+}
+
+// TestUIRoute_ServiceWorkerPrecacheFilesExist guards the offline install: a
+// single missing path makes cache.addAll reject, so the worker never installs
+// and the pages stop working offline without any visible error.
+func TestUIRoute_ServiceWorkerPrecacheFilesExist(t *testing.T) {
+	t.Chdir("../../..")
+
+	body, err := os.ReadFile(filepath.Join("ui", "service-worker.js"))
+	if err != nil {
+		t.Fatalf("cannot read the service worker: %v", err)
+	}
+
+	// The precache list also holds the page routes, which are files here.
+	routes := map[string]string{
+		"/ui":            "index.html",
+		"/ui/":           "index.html",
+		"/ui/home":       "home.html",
+		"/ui/ghostboard": "ghostboard.html",
+	}
+
+	// Only the install list matters here; the rest of the worker also quotes
+	// /ui paths, but those are route comparisons rather than files to cache.
+	source := string(body)
+	start := strings.Index(source, "cache.addAll([")
+	end := strings.Index(source, "])")
+	if start < 0 || end < start {
+		t.Fatal("cannot find the cache.addAll list in the service worker")
+	}
+
+	entries := regexp.MustCompile(`'(/ui[^']*)'`).FindAllStringSubmatch(source[start:end], -1)
+	if len(entries) == 0 {
+		t.Fatal("no precached path found: the service worker no longer pre-caches the UI")
+	}
+
+	for _, entry := range entries {
+		path := entry[1]
+		if file, ok := routes[path]; ok {
+			path = file
+		} else {
+			path = strings.TrimPrefix(path, "/ui/")
+		}
+		if _, err := os.Stat(filepath.Join("ui", path)); err != nil {
+			t.Errorf("the service worker pre-caches %q, but ui/%s does not exist: the install would fail and the offline cache would never be filled", entry[1], path)
+		}
 	}
 }
 

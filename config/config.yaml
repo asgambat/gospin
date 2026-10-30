@@ -38,5 +38,12 @@ ghostboard:
   session_ttl_secs: 28800             # how long an unlock stays valid (8 hours)
   pin_max_attempts: 5                 # failed attempts per client address before a lockout
   pin_lockout_secs: 60                # first lockout; it doubles on every further batch of failures
+  files_enabled: true                 # attachments of a board, at /ghostboard/:board/files; false answers 404 and hides the panel
+  max_file_bytes: 838860800           # largest single upload (800 MiB); also caps the request body
+  max_file_count: 10                  # files per board; one more answers 409
+  max_board_file_bytes: 2147483648    # bytes of the files of one board (2 GiB)
+  max_total_file_bytes: 5368709120    # bytes of every attachment on the instance (5 GiB)
+  file_ttl_secs: 86400                # hard cap on a file's life (24h); the idle clear deletes it earlier
+  file_transfer_timeout_secs: 600     # read/write window of one upload or download (10 min); replaces the request timeout on those routes
     
 

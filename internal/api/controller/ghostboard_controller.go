@@ -189,10 +189,22 @@ func (gc *GhostboardController) Events(c *gin.Context) {
 			if !ok {
 				return
 			}
+			// A stream is authorised once, when it opens. The session is
+			// checked before every write, so the text of a private board never
+			// travels on a token that has expired, and on every heartbeat so the
+			// stream does not stay open after it.
+			if gc.sessionExpired(c, name) {
+				writeGhostboardLocked(controller, c)
+				return
+			}
 			if !writeGhostboardEvent(controller, c, event) {
 				return
 			}
 		case <-ticker.C:
+			if gc.sessionExpired(c, name) {
+				writeGhostboardLocked(controller, c)
+				return
+			}
 			if _, err := fmt.Fprint(c.Writer, ": keep-alive\n\n"); err != nil {
 				return
 			}
@@ -210,6 +222,14 @@ func (gc *GhostboardController) Events(c *gin.Context) {
 func (gc *GhostboardController) Unlock(c *gin.Context) {
 	if gc.auth == nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": ghostboard.ErrPINNotConfigured.Error()})
+		return
+	}
+
+	// Only a private board has a PIN to trade. Answering an unlock for a public
+	// board would hand out a session for boards this endpoint never protected.
+	board := ghostboardBoardName(c)
+	if !gc.auth.IsPrivate(board) {
+		c.JSON(http.StatusNotFound, gin.H{"error": fmt.Sprintf("board %q is not protected by a pin", board)})
 		return
 	}
 
@@ -253,8 +273,12 @@ func (gc *GhostboardController) readPIN(c *gin.Context) (string, error) {
 	return strings.TrimSpace(payload.PIN), nil
 }
 
-// writeUnlockError maps a failed unlock to a stable status and body.
+// writeUnlockError maps a failed unlock to a stable status and body. A rejected
+// attempt is also logged, with the board and the client address but never the
+// PIN: the value that failed is a guess of a secret and may be a typo of a
+// credential used elsewhere, so it must not reach the log.
 func (gc *GhostboardController) writeUnlockError(c *gin.Context, err error) {
+	board := ghostboardBoardName(c)
 	var attemptsErr *ghostboard.AttemptsError
 	switch {
 	case errors.As(err, &attemptsErr):
@@ -262,14 +286,37 @@ func (gc *GhostboardController) writeUnlockError(c *gin.Context, err error) {
 		if retryAfter < 1 {
 			retryAfter = 1
 		}
+		logger.WithComponent("ghostboard").Warnf("unlock of private board %q refused for %s: still locked out for %ds", board, clientAddress(c), retryAfter)
 		c.Header("Retry-After", strconv.Itoa(retryAfter))
 		c.Header("Cache-Control", "no-store")
 		c.JSON(http.StatusTooManyRequests, gin.H{"error": "too many pin attempts", "retry_after_secs": retryAfter})
 	case errors.Is(err, ghostboard.ErrInvalidPIN):
+		logger.WithComponent("ghostboard").Warnf("unlock of private board %q failed for %s: invalid pin", board, clientAddress(c))
 		c.Header("Cache-Control", "no-store")
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid pin"})
 	default:
 		writeGhostboardError(c, err)
+	}
+}
+
+// sessionExpired reports whether the session that opened a private board's
+// stream is no longer valid. It is false for a public board and when no PIN is
+// configured, where the stream needs no session at all.
+func (gc *GhostboardController) sessionExpired(c *gin.Context, board string) bool {
+	if gc.auth == nil || !gc.auth.IsPrivate(board) {
+		return false
+	}
+	return !gc.auth.ValidToken(ghostboard.SessionToken(c.Request))
+}
+
+// writeGhostboardLocked tells the page that the session of its stream expired,
+// so the PIN form comes back instead of a connection that silently stops.
+func writeGhostboardLocked(controller *http.ResponseController, c *gin.Context) {
+	if _, err := fmt.Fprint(c.Writer, "event: locked\ndata: {\"error\":\"session expired\"}\n\n"); err != nil {
+		return
+	}
+	if err := controller.Flush(); err != nil {
+		logger.WithComponent("ghostboard").Debugf("cannot flush the expiry event: %v", err)
 	}
 }
 

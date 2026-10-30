@@ -17,6 +17,10 @@ const BASE = process.env.GOSPIN_SHOT_BASE || 'http://demo.local:18084';
 const API = process.env.GOSPIN_SHOT_API || 'http://127.0.0.1:18084';
 const OUT = process.env.GOSPIN_SHOT_DIR || path.join(__dirname, '..', '..', 'docs', 'screenshots');
 
+// Attachment seeded on the board of the screenshot, so the file panel is part
+// of the picture instead of an empty drop zone.
+const BOARD_FILE = path.join(__dirname, 'fixtures', 'demo-note.txt');
+
 // Text seeded on the shared board before the ghostboard screenshot.
 const BOARD_TEXT = `GoSpin demo board
 
@@ -118,7 +122,10 @@ async function main() {
     const ghostboard = await openPage(browser, 1400, 760);
     await ghostboard.goto(`${BASE}/ui/ghostboard/demo`, { waitUntil: 'load' });
     await ghostboard.waitForSelector('textarea', { timeout: 30000 });
-    await ghostboard.waitForTimeout(3000);
+    await ghostboard.getByRole('button', { name: /Files/ }).click();
+    await ghostboard.setInputFiles('#ghostboard-files input[type=file]', BOARD_FILE);
+    await ghostboard.waitForSelector('#ghostboard-files a[download="demo-note.txt"]', { timeout: 30000 });
+    await ghostboard.waitForTimeout(1000);
     await ghostboard.screenshot({ path: path.join(OUT, 'ghostboard.png'), animations: 'disabled' });
     report('wrote ghostboard.png');
   } finally {

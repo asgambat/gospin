@@ -2,6 +2,8 @@ package ghostboard
 
 import (
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -274,6 +276,13 @@ func TestAuthenticator_TokenRejectsTampering(t *testing.T) {
 	auth := newTestAuthenticator(t, nil)
 	token, _ := auth.IssueToken()
 
+	// Flip the last hex digit to a different one: writing a fixed "0" would
+	// leave the token untouched whenever the signature already ends with it.
+	flipped := token[:len(token)-1] + "0"
+	if token == flipped {
+		flipped = token[:len(token)-1] + "1"
+	}
+
 	tests := []struct {
 		name  string
 		token string
@@ -281,8 +290,8 @@ func TestAuthenticator_TokenRejectsTampering(t *testing.T) {
 		{name: "empty", token: ""},
 		{name: "not a token", token: "nope"},
 		{name: "missing signature", token: strings.Join(strings.Split(token, ".")[:2], ".")},
-		{name: "unknown version", token: "v2" + strings.TrimPrefix(token, "v1")},
-		{name: "flipped signature", token: token[:len(token)-1] + "0"},
+		{name: "unknown version", token: "v3" + strings.TrimPrefix(token, "v2")},
+		{name: "flipped signature", token: flipped},
 		{name: "expiry swapped", token: strings.Replace(token, "."+strings.Split(token, ".")[1]+".", ".9999999999.", 1)},
 	}
 
@@ -308,6 +317,64 @@ func TestAuthenticator_TokenExpiry(t *testing.T) {
 	now = expires.Add(time.Second)
 	if auth.ValidToken(token) {
 		t.Error("ValidToken accepted an expired token")
+	}
+}
+
+// TestAuthenticator_TokenIsBoundToThePIN covers the revocation path: a PIN is
+// rotated by replacing ghostboard.pin_hmac, and the sessions issued for the old
+// one must stop working at once instead of lasting until session_ttl_secs.
+func TestAuthenticator_TokenIsBoundToThePIN(t *testing.T) {
+	first := newTestAuthenticator(t, nil)
+	token, _ := first.IssueToken()
+
+	rotated := newTestAuthenticator(t, func(c *AuthConfig) {
+		digest, err := PINDigest(testSecret, "5678")
+		if err != nil {
+			t.Fatalf("PINDigest: %v", err)
+		}
+		c.PINDigest = digest
+	})
+	if rotated.ValidToken(token) {
+		t.Error("a token issued for the previous PIN must not validate after a PIN rotation")
+	}
+
+	if !first.ValidToken(token) {
+		t.Error("the session of the current PIN must stay valid")
+	}
+}
+
+func TestSessionToken(t *testing.T) {
+	tests := []struct {
+		name   string
+		header string
+		cookie string
+		want   string
+	}{
+		{name: "nothing", want: ""},
+		{name: "bearer", header: "Bearer abc", want: "abc"},
+		{name: "lowercase bearer", header: "bearer abc", want: "abc"},
+		{name: "bearer with spaces", header: "Bearer  abc ", want: "abc"},
+		{name: "another scheme", header: "Basic abc", want: ""},
+		{name: "empty bearer", header: "Bearer ", want: ""},
+		{name: "cookie", cookie: "abc", want: "abc"},
+		{name: "cookie with spaces", cookie: " abc ", want: "abc"},
+		{name: "bearer wins over the cookie", header: "Bearer abc", cookie: "def", want: "abc"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, "/ghostboard/lavoro", nil)
+			if test.header != "" {
+				req.Header.Set("Authorization", test.header)
+			}
+			if test.cookie != "" {
+				req.AddCookie(&http.Cookie{Name: SessionCookie, Value: test.cookie})
+			}
+
+			if got := SessionToken(req); got != test.want {
+				t.Errorf("SessionToken() = %q, want %q", got, test.want)
+			}
+		})
 	}
 }
 

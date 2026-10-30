@@ -2,6 +2,7 @@ package controller
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -205,6 +206,100 @@ func TestGhostboardLockExpiresTheCookie(t *testing.T) {
 	}
 	if cookies[0].MaxAge >= 0 {
 		t.Errorf("cookie MaxAge = %d, want a negative value (expired)", cookies[0].MaxAge)
+	}
+}
+
+// TestGhostboardUnlockOnPublicBoard covers the scope of the endpoint: a board
+// that is not in ghostboard.private_boards has no PIN to trade, so it must not
+// hand out a session for the boards that do.
+func TestGhostboardUnlockOnPublicBoard(t *testing.T) {
+	router := newPINTestRouter(t)
+
+	for _, board := range []string{"note", "default", "___"} {
+		rec := postJSON(t, router, "/ghostboard/"+board+"/unlock", `{"pin":"1234"}`)
+		if rec.Code != http.StatusNotFound {
+			t.Errorf("board %q: status = %d, want 404", board, rec.Code)
+		}
+		if cookies := rec.Result().Cookies(); len(cookies) != 0 {
+			t.Errorf("board %q: a refused unlock set a cookie: %v", board, cookies)
+		}
+	}
+}
+
+// TestGhostboardEventsEndsWhenTheSessionExpires covers the stream of a private
+// board: the session is checked when the stream opens, so without a re-check an
+// open page would keep receiving the text of a private board long after its
+// token expired.
+func TestGhostboardEventsEndsWhenTheSessionExpires(t *testing.T) {
+	digest, err := ghostboard.PINDigest(pinTestSecret, "1234")
+	if err != nil {
+		t.Fatalf("PINDigest: %v", err)
+	}
+	auth, err := ghostboard.NewAuthenticator(ghostboard.AuthConfig{
+		PINDigest:     digest,
+		Secret:        pinTestSecret,
+		PrivateBoards: []string{"lavoro"},
+		SessionTTL:    300 * time.Millisecond,
+		MaxAttempts:   3,
+		Lockout:       time.Minute,
+	})
+	if err != nil {
+		t.Fatalf("NewAuthenticator: %v", err)
+	}
+
+	store, err := ghostboard.New(ghostboard.Config{
+		ClearDelay:      time.Minute,
+		MaxTextBytes:    1024,
+		PersistInterval: time.Second,
+	})
+	if err != nil {
+		t.Fatalf("ghostboard.New: %v", err)
+	}
+
+	gc := NewGhostboardController(store, auth, 1024, 10*time.Millisecond)
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.GET("/ghostboard/:board/events", gc.Events)
+
+	token, _ := auth.IssueToken()
+	server := httptest.NewServer(router)
+	defer server.Close()
+
+	req, err := http.NewRequest(http.MethodGet, server.URL+"/ghostboard/lavoro/events", nil)
+	if err != nil {
+		t.Fatalf("building the request: %v", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+
+	client := &http.Client{Timeout: 5 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("opening the stream: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+
+	// The write lands after the 300ms token expired: it must not reach the
+	// stream, whose next event is the expiry notice instead.
+	time.Sleep(400 * time.Millisecond)
+	if _, err := store.Update("lavoro", "scritto-dopo-la-scadenza", ""); err != nil {
+		t.Fatalf("store.Update: %v", err)
+	}
+
+	// Reading to the end returns only when the handler closes the stream, which
+	// the expiry check does once the token is spent.
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("reading the stream: %v", err)
+	}
+	if !strings.Contains(string(body), "event: locked") {
+		t.Fatalf("the stream did not announce the expired session: %q", body)
+	}
+	if strings.Contains(string(body), "scritto-dopo-la-scadenza") {
+		t.Fatalf("the stream delivered a write after its session expired: %q", body)
 	}
 }
 

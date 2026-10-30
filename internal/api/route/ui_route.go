@@ -91,11 +91,40 @@ func cacheBustTag(html, attr, asset string) string {
 	return strings.Replace(html, target, busted, 1)
 }
 
+// cacheBustTags applies cacheBustTag to every asset of one attribute, so a page
+// with several bundles and vendored libraries stays readable.
+func cacheBustTags(html, attr string, assets ...string) string {
+	for _, asset := range assets {
+		html = cacheBustTag(html, attr, asset)
+	}
+	return html
+}
+
+// Vendored browser libraries. The pages load them from ui/assets/vendor instead
+// of a CDN, so the UI keeps working on a LAN without internet access: nothing in
+// the shell of the pages is fetched from a third party. The version is part of
+// the file name, and an upgrade means renaming the file, updating the tags in
+// the pages and the precache list in ui/service-worker.js.
+const (
+	vendorAlpineJS       = "assets/vendor/alpine-3.17.5.min.js"
+	vendorAlpineCollapse = "assets/vendor/alpine-collapse-3.17.5.min.js"
+	vendorHtmx           = "assets/vendor/htmx-1.9.10.min.js"
+	vendorTailwind       = "assets/vendor/tailwind-2.2.19.min.css"
+)
+
+// GhostboardPageConfig carries the limits the ghostboard page needs to enforce
+// them before a request: the board size for the .txt picker and the attachment
+// size for the upload panel.
+type GhostboardPageConfig struct {
+	MaxTextBytes int
+	MaxFileBytes int64
+}
+
 // serveGhostboardPage serves the ghostboard page with the script and icon tags
-// rewritten to carry the content hash of their assets. The configured board
-// size is injected as data-max-bytes, so the file picker can reject an
-// oversized file before reading it into memory.
-func serveGhostboardPage(maxTextBytes int) gin.HandlerFunc {
+// rewritten to carry the content hash of their assets. The configured limits
+// are injected as data attributes, so the page can reject an oversized file
+// before reading it into memory.
+func serveGhostboardPage(cfg GhostboardPageConfig) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		c.Header("Cache-Control", "no-cache, must-revalidate")
 		html, err := os.ReadFile(uiPath("ghostboard.html"))
@@ -106,12 +135,17 @@ func serveGhostboardPage(maxTextBytes int) gin.HandlerFunc {
 		}
 
 		rewritten := string(html)
-		rewritten = cacheBustTag(rewritten, "src", "assets/ghostboard.js")
-		rewritten = cacheBustTag(rewritten, "href", "assets/ghostboard-icon.svg")
-		rewritten = cacheBustTag(rewritten, "href", "assets/ghostboard-icon-32.png")
-		rewritten = cacheBustTag(rewritten, "href", "assets/ghostboard-icon-180.png")
+		rewritten = cacheBustTags(rewritten, "src", "assets/ghostboard.js", vendorAlpineJS)
+		rewritten = cacheBustTags(rewritten, "href",
+			vendorTailwind,
+			"assets/ghostboard-icon.svg",
+			"assets/ghostboard-icon-32.png",
+			"assets/ghostboard-icon-180.png",
+		)
 		rewritten = strings.Replace(rewritten, `data-max-bytes=""`,
-			fmt.Sprintf(`data-max-bytes="%d"`, maxTextBytes), 1)
+			fmt.Sprintf(`data-max-bytes="%d"`, cfg.MaxTextBytes), 1)
+		rewritten = strings.Replace(rewritten, `data-max-file-bytes=""`,
+			fmt.Sprintf(`data-max-file-bytes="%d"`, cfg.MaxFileBytes), 1)
 
 		c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(rewritten))
 	}
@@ -119,7 +153,7 @@ func serveGhostboardPage(maxTextBytes int) gin.HandlerFunc {
 
 // NewUIRouter sets up routes to serve the UI static files under /ui.
 // It serves index.html for the root and any sub-paths (SPA routing).
-func NewUIRouter(r *gin.Engine, ghostboardMaxTextBytes int) {
+func NewUIRouter(r *gin.Engine, ghostboardPage GhostboardPageConfig) {
 	// Serve static assets (JS, CSS, images) with long-term caching.
 	// Manifests are excluded from long-term caching so icon/scope changes
 	// are picked up immediately by browsers.
@@ -180,13 +214,14 @@ func NewUIRouter(r *gin.Engine, ghostboardMaxTextBytes int) {
 			return
 		}
 
-		// Rewrite src="/ui/assets/app.js" → src="/ui/assets/app.js?v=<hash>"
-		rewritten := strings.Replace(
-			string(html),
-			`src="/ui/assets/app.js"`,
-			fmt.Sprintf(`src="/ui/assets/app.js?v=%s"`, assetVersion("assets/app.js")),
-			1,
+		// Rewrite the bundle and library tags to carry their content hash, so a
+		// page always pairs with the assets of the running binary.
+		rewritten := cacheBustTags(string(html), "src",
+			"assets/app.js",
+			vendorAlpineJS,
+			vendorHtmx,
 		)
+		rewritten = cacheBustTags(rewritten, "href", vendorTailwind)
 
 		c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(rewritten))
 	})
@@ -204,13 +239,17 @@ func NewUIRouter(r *gin.Engine, ghostboardMaxTextBytes int) {
 			return
 		}
 
-		// Rewrite src="/ui/home.js" → src="/ui/home.js?v=<hash>"
-		rewritten := strings.Replace(
-			string(html),
-			`src="/ui/home.js"`,
-			fmt.Sprintf(`src="/ui/home.js?v=%s"`, assetVersion("home.js")),
-			1,
+		// Rewrite the bundle and library tags to carry their content hash, so a
+		// page always pairs with the assets of the running binary. The collapse
+		// plugin must stay before Alpine core, which is why the order of the
+		// tags in the page is not changed here.
+		rewritten := cacheBustTags(string(html), "src",
+			"home.js",
+			vendorAlpineCollapse,
+			vendorAlpineJS,
+			vendorHtmx,
 		)
+		rewritten = cacheBustTags(rewritten, "href", vendorTailwind)
 
 		c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(rewritten))
 	})
@@ -222,9 +261,9 @@ func NewUIRouter(r *gin.Engine, ghostboardMaxTextBytes int) {
 	// Serve the shared text board. The board name is part of the path
 	// (/ui/ghostboard/lavoro) and is resolved client-side, so every sub-path
 	// returns the same page.
-	ghostboardPage := serveGhostboardPage(ghostboardMaxTextBytes)
-	r.GET("/ui/ghostboard", ghostboardPage)
-	r.GET("/ui/ghostboard/*board", ghostboardPage)
+	servePage := serveGhostboardPage(ghostboardPage)
+	r.GET("/ui/ghostboard", servePage)
+	r.GET("/ui/ghostboard/*board", servePage)
 
 	// Serve index.html for any sub-path under /ui (SPA client-side routing)
 	r.NoRoute(func(c *gin.Context) {

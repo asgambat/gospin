@@ -874,16 +874,40 @@ func TestGhostboardConfig_WithDefaults(t *testing.T) {
 	if len(empty.PrivateBoards) != 0 {
 		t.Errorf("PrivateBoards = %v, want none (every board is public by default)", empty.PrivateBoards)
 	}
+	if empty.MaxFileBytes != defaults.MaxFileBytes {
+		t.Errorf("MaxFileBytes = %d, want %d", empty.MaxFileBytes, defaults.MaxFileBytes)
+	}
+	if empty.MaxFileCount != defaults.MaxFileCount {
+		t.Errorf("MaxFileCount = %d, want %d", empty.MaxFileCount, defaults.MaxFileCount)
+	}
+	if empty.MaxBoardFileBytes != defaults.MaxBoardFileBytes {
+		t.Errorf("MaxBoardFileBytes = %d, want %d", empty.MaxBoardFileBytes, defaults.MaxBoardFileBytes)
+	}
+	if empty.MaxTotalFileBytes != defaults.MaxTotalFileBytes {
+		t.Errorf("MaxTotalFileBytes = %d, want %d", empty.MaxTotalFileBytes, defaults.MaxTotalFileBytes)
+	}
+	if empty.FileTTL != defaults.FileTTL {
+		t.Errorf("FileTTL = %v, want %v", empty.FileTTL, defaults.FileTTL)
+	}
+	if empty.FileTransferTimeout != defaults.FileTransferTimeout {
+		t.Errorf("FileTransferTimeout = %v, want %v", empty.FileTransferTimeout, defaults.FileTransferTimeout)
+	}
 
 	custom := GhostboardConfig{
-		FilePath:          "/tmp/boards.json",
-		ClearDelay:        time.Minute,
-		MaxTextBytes:      2048,
-		PersistInterval:   time.Second,
-		HeartbeatInterval: 5 * time.Second,
-		SessionTTL:        time.Hour,
-		PINMaxAttempts:    2,
-		PINLockout:        30 * time.Second,
+		FilePath:            "/tmp/boards.json",
+		ClearDelay:          time.Minute,
+		MaxTextBytes:        2048,
+		PersistInterval:     time.Second,
+		HeartbeatInterval:   5 * time.Second,
+		SessionTTL:          time.Hour,
+		PINMaxAttempts:      2,
+		PINLockout:          30 * time.Second,
+		MaxFileBytes:        1024,
+		MaxFileCount:        3,
+		MaxBoardFileBytes:   4096,
+		MaxTotalFileBytes:   8192,
+		FileTTL:             2 * time.Hour,
+		FileTransferTimeout: time.Minute,
 	}
 	if got := custom.WithDefaults(); !reflect.DeepEqual(got, custom) {
 		t.Errorf("WithDefaults() changed a fully configured value: %+v", got)
@@ -938,6 +962,18 @@ func TestConfig_Validate_InvalidGhostboard(t *testing.T) {
 			g.PINHMAC = "not-hex"
 			g.PINSecret = "0123456789abcdef"
 		}},
+		{name: "max file bytes", mutate: func(g *GhostboardConfig) { g.MaxFileBytes = 0 }},
+		{name: "max file count", mutate: func(g *GhostboardConfig) { g.MaxFileCount = 0 }},
+		{name: "max board file bytes", mutate: func(g *GhostboardConfig) { g.MaxBoardFileBytes = 0 }},
+		{name: "max total file bytes", mutate: func(g *GhostboardConfig) { g.MaxTotalFileBytes = 0 }},
+		{name: "file ttl", mutate: func(g *GhostboardConfig) { g.FileTTL = 0 }},
+		{name: "file transfer timeout", mutate: func(g *GhostboardConfig) { g.FileTransferTimeout = 0 }},
+		{name: "file limit above the board limit", mutate: func(g *GhostboardConfig) {
+			g.MaxFileBytes = g.MaxBoardFileBytes + 1
+		}},
+		{name: "board limit above the instance limit", mutate: func(g *GhostboardConfig) {
+			g.MaxBoardFileBytes = g.MaxTotalFileBytes + 1
+		}},
 	}
 
 	for _, tt := range tests {
@@ -975,18 +1011,21 @@ func TestConfig_Validate_ValidPIN(t *testing.T) {
 			ActionsTimeoutSeconds:    30,
 		},
 		Misc: MiscConfig{SchedulingTZ: "Local"},
-		Ghostboard: GhostboardConfig{
-			ClearDelay:        time.Minute,
-			MaxTextBytes:      1024,
-			PersistInterval:   time.Second,
-			HeartbeatInterval: 10 * time.Second,
-			PINHMAC:           digest,
-			PINSecret:         "0123456789abcdef",
-			PrivateBoards:     []string{"lavoro", "note"},
-			SessionTTL:        time.Hour,
-			PINMaxAttempts:    3,
-			PINLockout:        time.Minute,
-		},
+		Ghostboard: func() GhostboardConfig {
+			g := DefaultGhostboardConfig()
+			g.FilePath = "/tmp/ghostboard.json"
+			g.ClearDelay = time.Minute
+			g.MaxTextBytes = 1024
+			g.PersistInterval = time.Second
+			g.HeartbeatInterval = 10 * time.Second
+			g.PINHMAC = digest
+			g.PINSecret = "0123456789abcdef"
+			g.PrivateBoards = []string{"lavoro", "note"}
+			g.SessionTTL = time.Hour
+			g.PINMaxAttempts = 3
+			g.PINLockout = time.Minute
+			return g
+		}(),
 	}
 
 	if err := cfg.validate(); err != nil {
@@ -1038,6 +1077,30 @@ func TestLoadConfig_GhostboardDefaults(t *testing.T) {
 	if len(cfg.Ghostboard.PrivateBoards) != 0 {
 		t.Errorf("PrivateBoards = %v, want none", cfg.Ghostboard.PrivateBoards)
 	}
+	if !cfg.Ghostboard.FilesEnabled {
+		t.Error("FilesEnabled = false, want true (attachments are on by default)")
+	}
+	if cfg.Ghostboard.MaxFileBytes != defaults.MaxFileBytes {
+		t.Errorf("MaxFileBytes = %d, want %d", cfg.Ghostboard.MaxFileBytes, defaults.MaxFileBytes)
+	}
+	if cfg.Ghostboard.MaxFileCount != defaults.MaxFileCount {
+		t.Errorf("MaxFileCount = %d, want %d", cfg.Ghostboard.MaxFileCount, defaults.MaxFileCount)
+	}
+	if cfg.Ghostboard.MaxBoardFileBytes != defaults.MaxBoardFileBytes {
+		t.Errorf("MaxBoardFileBytes = %d, want %d", cfg.Ghostboard.MaxBoardFileBytes, defaults.MaxBoardFileBytes)
+	}
+	if cfg.Ghostboard.MaxTotalFileBytes != defaults.MaxTotalFileBytes {
+		t.Errorf("MaxTotalFileBytes = %d, want %d", cfg.Ghostboard.MaxTotalFileBytes, defaults.MaxTotalFileBytes)
+	}
+	if cfg.Ghostboard.FileTTL != defaults.FileTTL {
+		t.Errorf("FileTTL = %v, want %v", cfg.Ghostboard.FileTTL, defaults.FileTTL)
+	}
+	if cfg.Ghostboard.FileTransferTimeout != defaults.FileTransferTimeout {
+		t.Errorf("FileTransferTimeout = %v, want %v", cfg.Ghostboard.FileTransferTimeout, defaults.FileTransferTimeout)
+	}
+	if want := tempDir + "/data/files"; cfg.Ghostboard.FilesRoot() != want {
+		t.Errorf("FilesRoot() = %q, want %q", cfg.Ghostboard.FilesRoot(), want)
+	}
 }
 
 func TestLoadConfig_GhostboardEnvOverrides(t *testing.T) {
@@ -1049,11 +1112,17 @@ func TestLoadConfig_GhostboardEnvOverrides(t *testing.T) {
 	_ = os.Setenv("GO_SPIN_DATA_FILE_PATH", dataFilePath)
 	_ = os.Setenv("GO_SPIN_GHOSTBOARD_FILE_PATH", boardFilePath)
 	_ = os.Setenv("GO_SPIN_GHOSTBOARD_MAX_TEXT_BYTES", "2048")
+	_ = os.Setenv("GO_SPIN_GHOSTBOARD_MAX_FILE_BYTES", "1024")
+	_ = os.Setenv("GO_SPIN_GHOSTBOARD_MAX_FILE_COUNT", "4")
+	_ = os.Setenv("GO_SPIN_GHOSTBOARD_FILE_TTL_SECS", "3600")
 	defer func() {
 		_ = os.Unsetenv("GO_SPIN_CONFIG_PATH")
 		_ = os.Unsetenv("GO_SPIN_DATA_FILE_PATH")
 		_ = os.Unsetenv("GO_SPIN_GHOSTBOARD_FILE_PATH")
 		_ = os.Unsetenv("GO_SPIN_GHOSTBOARD_MAX_TEXT_BYTES")
+		_ = os.Unsetenv("GO_SPIN_GHOSTBOARD_MAX_FILE_BYTES")
+		_ = os.Unsetenv("GO_SPIN_GHOSTBOARD_MAX_FILE_COUNT")
+		_ = os.Unsetenv("GO_SPIN_GHOSTBOARD_FILE_TTL_SECS")
 	}()
 
 	cfg, err := LoadConfig()
@@ -1065,5 +1134,14 @@ func TestLoadConfig_GhostboardEnvOverrides(t *testing.T) {
 	}
 	if cfg.Ghostboard.MaxTextBytes != 2048 {
 		t.Errorf("MaxTextBytes = %d, want 2048", cfg.Ghostboard.MaxTextBytes)
+	}
+	if cfg.Ghostboard.MaxFileBytes != 1024 {
+		t.Errorf("MaxFileBytes = %d, want 1024", cfg.Ghostboard.MaxFileBytes)
+	}
+	if cfg.Ghostboard.MaxFileCount != 4 {
+		t.Errorf("MaxFileCount = %d, want 4", cfg.Ghostboard.MaxFileCount)
+	}
+	if cfg.Ghostboard.FileTTL != time.Hour {
+		t.Errorf("FileTTL = %v, want 1h", cfg.Ghostboard.FileTTL)
 	}
 }

@@ -22,8 +22,8 @@
     <link rel="icon" type="image/png" sizes="32x32" href="/ui/assets/ghostboard-icon-32.png">
     <link rel="apple-touch-icon" sizes="180x180" href="/ui/assets/ghostboard-icon-180.png">
     <meta name="theme-color" content="#1976d2">
-    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
-    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <script defer src="/ui/assets/vendor/alpine-3.17.5.min.js"></script>
+    <link href="/ui/assets/vendor/tailwind-2.2.19.min.css" rel="stylesheet">
     <style>
         [x-cloak] { display: none !important; }
 
@@ -107,6 +107,102 @@
         .gb-pill-locked { color: var(--gb-warn); }
         .gb-pill-error { color: var(--gb-error); }
 
+        .gb-preview {
+            background-color: var(--gb-panel);
+            color: var(--gb-text);
+            border: 1px solid var(--gb-border);
+            border-radius: .25rem;
+            padding: 1rem 1.25rem;
+            min-height: 24rem;
+            max-height: 70vh;
+            overflow: auto;
+            line-height: 1.6;
+        }
+
+        .gb-preview:focus {
+            outline: none;
+            border-color: var(--gb-accent);
+            box-shadow: 0 0 0 3px rgba(37, 99, 235, .15);
+        }
+
+        .gb-preview > :first-child { margin-top: 0; }
+        .gb-preview > :last-child { margin-bottom: 0; }
+        .gb-preview p,
+        .gb-preview ul,
+        .gb-preview ol,
+        .gb-preview blockquote,
+        .gb-preview pre { margin: .75rem 0; }
+        .gb-preview h1,
+        .gb-preview h2,
+        .gb-preview h3,
+        .gb-preview h4,
+        .gb-preview h5,
+        .gb-preview h6 {
+            font-weight: 600;
+            line-height: 1.3;
+            margin: 1.25rem 0 .5rem;
+        }
+        .gb-preview h1 { font-size: 1.75rem; }
+        .gb-preview h2 { font-size: 1.4rem; }
+        .gb-preview h3 { font-size: 1.2rem; }
+        .gb-preview h4,
+        .gb-preview h5,
+        .gb-preview h6 { font-size: 1rem; }
+        .gb-preview ul { list-style: disc; padding-left: 1.5rem; }
+        .gb-preview ol { list-style: decimal; padding-left: 1.5rem; }
+        .gb-preview li { margin: .2rem 0; }
+        .gb-preview a { color: var(--gb-accent); text-decoration: underline; }
+        .gb-preview code {
+            background-color: var(--gb-bg);
+            border: 1px solid var(--gb-border);
+            border-radius: .25rem;
+            padding: 0 .25rem;
+            font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+            font-size: .875em;
+        }
+        .gb-preview pre {
+            background-color: var(--gb-bg);
+            border: 1px solid var(--gb-border);
+            border-radius: .25rem;
+            padding: .75rem;
+            overflow-x: auto;
+        }
+        .gb-preview pre code {
+            background: none;
+            border: 0;
+            padding: 0;
+            font-size: .85em;
+        }
+        .gb-preview blockquote {
+            border-left: 3px solid var(--gb-border);
+            padding-left: .75rem;
+            color: var(--gb-muted);
+        }
+        .gb-preview hr {
+            border: 0;
+            border-top: 1px solid var(--gb-border);
+            margin: 1.25rem 0;
+        }
+        .gb-preview table {
+            border-collapse: collapse;
+            display: block;
+            max-width: 100%;
+            overflow-x: auto;
+        }
+        .gb-preview th,
+        .gb-preview td {
+            border: 1px solid var(--gb-border);
+            padding: .35rem .6rem;
+        }
+        .gb-preview th {
+            background-color: var(--gb-bg);
+            font-weight: 600;
+        }
+        .gb-preview .gb-align-left { text-align: left; }
+        .gb-preview .gb-align-center { text-align: center; }
+        .gb-preview .gb-align-right { text-align: right; }
+        .gb-preview-empty { color: var(--gb-muted); }
+
         .gb-pin {
             background-color: var(--gb-panel);
             color: var(--gb-text);
@@ -133,14 +229,43 @@
             padding: 0 .25rem;
             font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
         }
+
+        .gb-drop {
+            border-color: var(--gb-border);
+            color: var(--gb-muted);
+        }
+
+        .gb-drop:hover, .gb-drop:focus-visible, .gb-drop-active {
+            border-color: var(--gb-accent);
+            color: var(--gb-accent);
+            outline: none;
+        }
+
+        .gb-progress {
+            width: 7rem;
+            height: .5rem;
+            background-color: var(--gb-bg);
+            border: 1px solid var(--gb-border);
+            border-radius: 9999px;
+            overflow: hidden;
+        }
+
+        .gb-progress-bar {
+            height: 100%;
+            background-color: var(--gb-accent);
+            transition: width .1s linear;
+        }
+
+        .gb-file-list > li { border-top: 1px solid var(--gb-border); }
+        .gb-file-list > li:first-child { border-top: 0; }
     </style>
 </head>
-<body class="min-h-screen" x-data="ghostboard()" x-cloak>
+<body class="min-h-screen" data-max-file-bytes="" x-data="ghostboard()" x-cloak>
     <div class="container mx-auto px-4 py-8 max-w-4xl">
         <header class="flex flex-wrap items-start justify-between gap-4 mb-6">
             <div>
                 <h1 class="text-3xl font-bold">👻 Ghostboard</h1>
-                <p class="gb-muted">Share text between computers: every browser on this board sees the same text, live.</p>
+                <p class="gb-muted">Share text and files between computers: every browser on this board sees the same text, live.</p>
             </div>
             <div class="flex items-center gap-2">
                 <span class="gb-pill" :class="statusClass" x-text="statusLabel"></span>
@@ -186,6 +311,13 @@
                     <span class="gb-muted ml-3" x-text="revisionLabel"></span>
                 </div>
                 <div class="flex flex-wrap items-center gap-2">
+                    <button type="button" @click="togglePreview()" :disabled="!boardValid"
+                            :aria-pressed="preview ? 'true' : 'false'"
+                            class="gb-btn px-3 py-1 rounded text-sm"
+                            :title="preview ? 'Switch back to editing the board text' : 'Show the board text with Markdown formatting'">
+                        <span x-show="!preview">👁 Preview</span>
+                        <span x-show="preview">✏️ Edit</span>
+                    </button>
                     <!-- mousedown.prevent keeps the focus (and the caret) in the textarea,
                          so the picked file is inserted where the user was typing. -->
                     <button type="button" @click="$refs.fileInput.click()" @mousedown.prevent :disabled="!boardValid"
@@ -198,7 +330,7 @@
                         <span x-show="!copied">📋 Copy</span>
                         <span x-show="copied">✓ Copied</span>
                     </button>
-                    <button type="button" @click="clearBoard()" :disabled="!text" class="gb-btn px-3 py-1 rounded text-sm"
+                    <button type="button" @click="askClear()" :disabled="!text && files.length === 0" class="gb-btn px-3 py-1 rounded text-sm"
                             title="Clear this board on every connected device">
                         🗑 Clear
                     </button>
@@ -211,11 +343,90 @@
                 </div>
             </div>
 
+            <!-- Clear asks first: the text and the attachments of a board are
+                 two things, and deleting the files is not implied by clearing
+                 the text. -->
+            <div class="gb-panel rounded px-4 py-3 mb-3 flex flex-wrap items-center gap-3"
+                 x-show="confirmClear" x-cloak x-transition role="alertdialog" aria-label="Clear this board">
+                <span class="text-sm">Clear this board?</span>
+                <button type="button" @click="clearTextOnly()" class="gb-btn px-3 py-1 rounded text-sm">
+                    Clear text only
+                </button>
+                <button type="button" @click="clearTextAndFiles()" x-show="files.length > 0"
+                        class="gb-btn px-3 py-1 rounded text-sm">
+                    Clear text and files
+                </button>
+                <button type="button" @click="confirmClear = false" class="gb-btn px-3 py-1 rounded text-sm">
+                    Cancel
+                </button>
+            </div>
+
+            <div class="mb-3" x-show="filesEnabled" x-cloak>
+                <button type="button" @click="toggleFiles()" :aria-expanded="filesOpen ? 'true' : 'false'"
+                        aria-controls="ghostboard-files" class="gb-btn px-3 py-1 rounded text-sm"
+                        title="Files attached to this board">
+                    📎 Files<span x-show="files.length > 0" x-text="' (' + files.length + ')'"></span>
+                </button>
+
+                <div id="ghostboard-files" x-show="filesOpen" x-transition class="mt-2">
+                    <div class="gb-drop rounded border-2 border-dashed px-4 py-6 text-center text-sm cursor-pointer"
+                         role="button" tabindex="0" @click="$refs.uploadInput.click()"
+                         @keydown.enter.prevent="$refs.uploadInput.click()" @keydown.space.prevent="$refs.uploadInput.click()"
+                         @dragover.prevent="dragging = true" @dragleave.prevent="dragging = false"
+                         @drop.prevent="onDrop($event)" :class="dragging ? 'gb-drop-active' : ''"
+                         aria-label="Upload files to this board">
+                        <span x-show="uploads.length === 0">Drop files here, or click to choose them.</span>
+                        <span x-show="uploads.length > 0" x-text="uploadingLabel"></span>
+                    </div>
+                    <input type="file" multiple x-ref="uploadInput" class="hidden" aria-hidden="true"
+                           tabindex="-1" @change="onFilesPicked($event)">
+
+                    <p class="gb-error px-3 py-2 rounded mt-2 text-sm" x-show="filesError" x-text="filesError"></p>
+
+                    <ul class="gb-file-list mt-2 text-sm">
+                        <template x-for="upload in uploads" :key="upload.id">
+                            <li class="py-2 flex items-center gap-3">
+                                <span class="flex-1 truncate" x-text="upload.name"></span>
+                                <div class="gb-progress" role="progressbar" :aria-valuenow="upload.percent"
+                                     aria-valuemin="0" aria-valuemax="100" :aria-label="'Uploading ' + upload.name">
+                                    <div class="gb-progress-bar" :style="'width: ' + upload.percent + '%'"></div>
+                                </div>
+                                <span class="gb-muted tabular-nums w-10 text-right" x-text="upload.percent + '%'"></span>
+                                <button type="button" class="gb-btn px-2 py-0.5 rounded text-xs"
+                                        @click="cancelUpload(upload)" :aria-label="'Cancel the upload of ' + upload.name">
+                                    Cancel
+                                </button>
+                            </li>
+                        </template>
+                        <template x-for="file in files" :key="file.id">
+                            <li class="py-2 flex items-center gap-3">
+                                <a class="flex-1 truncate underline" :href="fileUrl(file)" :download="file.name"
+                                   :title="'Download ' + file.name" x-text="file.name"></a>
+                                <span class="gb-muted whitespace-nowrap" x-text="humanSize(file.size)"></span>
+                                <button type="button" class="gb-btn px-2 py-0.5 rounded text-xs"
+                                        @click="deleteFile(file)" :title="'Delete ' + file.name"
+                                        :aria-label="'Delete ' + file.name">✕</button>
+                            </li>
+                        </template>
+                    </ul>
+                    <p class="gb-muted text-xs mt-2" x-show="files.length === 0 && uploads.length === 0">
+                        No files on this board yet.
+                    </p>
+                </div>
+            </div>
+
             <textarea id="ghostboard-text" data-max-bytes="" x-model="text" @input="onInput()" @blur="onBlur()"
-                      :disabled="!boardValid"
+                      :disabled="!boardValid" x-show="!preview"
                       class="gb-textarea w-full font-mono text-sm rounded border p-3"
                       rows="20" spellcheck="false" aria-label="Shared board text"
                       placeholder="Paste or type anything. Every connected device sees it live."></textarea>
+
+            <!-- x-html is safe here: ghostboardMarkdown escapes the whole text
+                 before adding its own tags, and only http(s)/mailto links are
+                 turned into anchors. -->
+            <div id="ghostboard-preview" x-ref="previewPane" x-show="preview" x-cloak tabindex="0"
+                 class="gb-preview w-full text-sm" aria-label="Board text rendered as Markdown"
+                 x-html="previewHtml"></div>
 
             <div class="flex flex-wrap justify-between gap-2 text-xs gb-muted mt-2">
                 <span x-text="saveLabel"></span>

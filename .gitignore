@@ -47,3 +47,6 @@ config/actions.yml
 # Local assistant/tooling state (e.g. CommandCode taste notes), not part of the app.
 .commandcode/
 
+# Ghostboard attachments live next to ghostboard.json; they are runtime data.
+config/data/files/
+

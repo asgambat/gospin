@@ -18,16 +18,28 @@ func isGhostboardEventStream(path string) bool {
 	return strings.HasPrefix(path, "/ghostboard/") && strings.HasSuffix(path, "/events")
 }
 
+// isGhostboardFileRoute reports whether path targets the attachments of a
+// board. They are not compressed: an upload or a download is an opaque stream
+// whose bytes are usually already compressed, and gzip would buffer it, drop
+// the Content-Length and break the Range support of the download.
+func isGhostboardFileRoute(path string) bool {
+	if strings.HasPrefix(path, "/ghostboard/") || strings.HasPrefix(path, "/api/boards/") {
+		return strings.Contains(path, "/files")
+	}
+	return false
+}
+
 func SetupRoutes(appCtx *app.App, logger *logrus.Logger) *gin.Engine {
 	r := gin.New()
 	r.Use(middleware.HoneybadgerMiddleware(logger))
 	r.Use(gin.Recovery())
 	gzipHandler := gzip.Gzip(gzip.DefaultCompression)
 	r.Use(func(c *gin.Context) {
-		if isGhostboardEventStream(c.Request.URL.Path) {
+		if isGhostboardEventStream(c.Request.URL.Path) || isGhostboardFileRoute(c.Request.URL.Path) {
 			// Compression buffers the response and hides the underlying
 			// http.ResponseWriter, so the stream handler could not clear the
-			// server write timeout for the long-lived connection.
+			// server write timeout for the long-lived connection, and a file
+			// would lose its Content-Length and Range support.
 			c.Next()
 			return
 		}
@@ -52,9 +64,17 @@ func SetupRoutes(appCtx *app.App, logger *logrus.Logger) *gin.Engine {
 	NewHomepageRouter(appCtx, publicRouter)
 	NewGhostboardRouter(appCtx, publicRouter)
 
-	// UI static files. The Ghostboard page receives the configured board size
+	// UI static files. The Ghostboard page receives the configured size limits
 	// so it can refuse oversized files before loading them.
-	NewUIRouter(r, appCtx.Config.Ghostboard.WithDefaults().MaxTextBytes)
+	ghostboardCfg := appCtx.Config.Ghostboard.WithDefaults()
+	maxFileBytes := int64(0)
+	if ghostboardCfg.FilesEnabled {
+		maxFileBytes = ghostboardCfg.MaxFileBytes
+	}
+	NewUIRouter(r, GhostboardPageConfig{
+		MaxTextBytes: ghostboardCfg.MaxTextBytes,
+		MaxFileBytes: maxFileBytes,
+	})
 
 	return r
 }

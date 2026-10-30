@@ -8,7 +8,7 @@ import (
 
 const (
 	// completionCommands are the subcommands offered by every generated script.
-	completionCommands = "add set read upload download follow edit config pin-hash completion version help"
+	completionCommands = "add set read upload download follow edit file config pin-hash completion version help"
 
 	// completionFlags are the flags offered by every generated script.
 	completionFlags = "-b --board -u --url --pin --timeout --config --no-config --retry --header -q --quiet --json -f --append -o --force --stat --diff --dry-run --paths -h --help"

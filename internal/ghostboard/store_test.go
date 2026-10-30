@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -91,7 +92,7 @@ func TestUpdateAndGet(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Get() error = %v", err)
 	}
-	if got != board {
+	if !reflect.DeepEqual(got, board) {
 		t.Errorf("Get() = %+v, want %+v", got, board)
 	}
 }
