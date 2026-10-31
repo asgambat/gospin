@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -107,7 +108,10 @@ func newTestAppCtx(rt runtime.ContainerRuntime, store cache.AppStore) *app.App {
 }
 
 // mockContainerRuntime implements runtime.ContainerRuntime for testing purposes.
+// A mutex protects the map: the controller starts containers in background
+// goroutines while the request path reads the same state.
 type mockContainerRuntime struct {
+	mu                sync.Mutex
 	runningContainers map[string]bool
 }
 
@@ -118,6 +122,9 @@ func newMockRuntime() *mockContainerRuntime {
 }
 
 func (m *mockContainerRuntime) IsRunning(_ context.Context, containerName string) (bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
 	running, exists := m.runningContainers[containerName]
 	if !exists {
 		return false, nil
@@ -126,21 +133,39 @@ func (m *mockContainerRuntime) IsRunning(_ context.Context, containerName string
 }
 
 func (m *mockContainerRuntime) Start(_ context.Context, containerName string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
 	m.runningContainers[containerName] = true
 	return nil
 }
 
 func (m *mockContainerRuntime) Stop(_ context.Context, containerName string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
 	m.runningContainers[containerName] = false
 	return nil
 }
 
 func (m *mockContainerRuntime) ListContainers(_ context.Context) ([]string, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
 	var names []string
 	for name := range m.runningContainers {
 		names = append(names, name)
 	}
 	return names, nil
+}
+
+// setRunning primes the mock state before a request: it must go through the
+// mutex so background goroutines never race the test setup.
+func (m *mockContainerRuntime) setRunning(containerName string, running bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	m.runningContainers[containerName] = running
 }
 
 func (m *mockContainerRuntime) Stats(_ context.Context, containerName string) (runtime.ContainerStats, error) {
@@ -183,7 +208,7 @@ func setupWaitingServerRoutes(r *gin.Engine, rc *controller.RuntimeController, c
 func TestWaitingServerRouting_ContainerReady(t *testing.T) {
 	store := newTestStore()
 	rt := newMockRuntime()
-	rt.runningContainers["Deluge"] = false
+	rt.setRunning("Deluge", false)
 
 	testApp := newTestAppCtx(rt, store)
 	rc := controller.NewRuntimeController(testApp)
@@ -245,7 +270,7 @@ func TestWaitingServerRouting_WaitingPage(t *testing.T) {
 func TestWaitingServerRouting_BothRoutesWork(t *testing.T) {
 	store := newTestStore()
 	rt := newMockRuntime()
-	rt.runningContainers["Deluge"] = false
+	rt.setRunning("Deluge", false)
 
 	testApp := newTestAppCtx(rt, store)
 	rc := controller.NewRuntimeController(testApp)

@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -55,22 +56,41 @@ func TestApplyLogLevel(t *testing.T) {
 	}
 }
 
+// syncBuffer is a bytes.Buffer safe to share between the test goroutine and
+// the goroutines logrus spawns for its writer shim: both read and write here.
+type syncBuffer struct {
+	mu     sync.Mutex
+	buffer bytes.Buffer
+}
+
+func (b *syncBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buffer.Write(p)
+}
+
+func (b *syncBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buffer.String()
+}
+
 // captureLogs redirects the application logger into a buffer for the duration
 // of a test, so a log assertion does not depend on the process output.
-func captureLogs(t *testing.T) *bytes.Buffer {
+func captureLogs(t *testing.T) *syncBuffer {
 	t.Helper()
 
-	var buffer bytes.Buffer
+	buffer := &syncBuffer{}
 	previous := logger.Logger.Out
-	logger.Logger.SetOutput(&buffer)
+	logger.Logger.SetOutput(buffer)
 	t.Cleanup(func() { logger.Logger.SetOutput(previous) })
 
-	return &buffer
+	return buffer
 }
 
 // waitForText polls the buffer: the logrus writer hands the bytes to the logger
 // through a pipe, so the line arrives shortly after the write, not inside it.
-func waitForText(t *testing.T, buffer *bytes.Buffer, want string) {
+func waitForText(t *testing.T, buffer *syncBuffer, want string) {
 	t.Helper()
 
 	deadline := time.Now().Add(2 * time.Second)

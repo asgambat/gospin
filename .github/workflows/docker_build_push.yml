@@ -40,7 +40,7 @@ jobs:
         # fetch-depth: 0 is required so `git describe --tags` below can find
         # the nearest tag. The default shallow clone (depth=1) would always
         # miss tags and force `--always` fallback to the short SHA.
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
@@ -65,7 +65,7 @@ jobs:
       # silently from the Dockerfile's `FROM golang:1.25.6-alpine` builder.
       # MUST run before "Compute build metadata" — that step shells out to `go version`.
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version-file: 'go.mod'
 
