@@ -59,8 +59,8 @@ func TestApplyLogLevel(t *testing.T) {
 // syncBuffer is a bytes.Buffer safe to share between the test goroutine and
 // the goroutines logrus spawns for its writer shim: both read and write here.
 type syncBuffer struct {
-	mu     sync.Mutex
 	buffer bytes.Buffer
+	mu     sync.Mutex
 }
 
 func (b *syncBuffer) Write(p []byte) (int, error) {

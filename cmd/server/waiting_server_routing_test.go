@@ -111,8 +111,8 @@ func newTestAppCtx(rt runtime.ContainerRuntime, store cache.AppStore) *app.App {
 // A mutex protects the map: the controller starts containers in background
 // goroutines while the request path reads the same state.
 type mockContainerRuntime struct {
-	mu                sync.Mutex
 	runningContainers map[string]bool
+	mu                sync.Mutex
 }
 
 func newMockRuntime() *mockContainerRuntime {
